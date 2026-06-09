@@ -23,3 +23,6 @@ npm-debug.log*
 # Claude workflow docs (skill specs/plans + handoff) — kept local, untracked
 docs/superpowers/
 docs/HANDOFF.md
+
+# Vite dep pre-bundle cache
+.vite/
