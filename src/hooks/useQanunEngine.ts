@@ -30,7 +30,7 @@ import { scheduleVideoFrame, type FrameHandle } from '../lib/vision/scheduleVide
 import { startCamera } from '../lib/vision/startCamera'
 import { stopCamera } from '../lib/vision/stopCamera'
 import { INDEX_TIP, THUMB_TIP } from '../lib/vision/constants'
-import { drawFingerRing } from '../lib/draw/drawFingerRing'
+import { projectPoint } from '../lib/draw/projectPoint'
 import { deriveHandRoles } from './deriveHandRoles'
 
 const READING_PUSH_EVERY_N_FRAMES = 4
@@ -43,6 +43,8 @@ const PLUCK_GLOW_FRAMES = 6
 const PLAY_RING_COLOR = 'rgba(255, 244, 214, 0.92)'
 const PLUCK_RING_COLOR = 'rgba(255, 255, 255, 1)'
 const MANDAL_RING_COLOR = 'rgba(226, 184, 110, 0.85)'
+// Pinch distance below which a fingertip shows "pressed" feedback (tighter ring + filled dot).
+const PINCH_VISUAL_THRESHOLD = 0.06
 const OVERLAY_SHADOW = 'rgba(0, 0, 0, 0.55)'
 const OVERLAY_SHADOW_BLUR = 6
 
@@ -533,17 +535,20 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     // Fingertips to draw this frame, collected during detection and rendered
     // AFTER the audio path so canvas work never delays a pluck.
     let mandalTip: NormPoint | null = null
-    const playTips: NormPoint[] = []
+    let mandalPinched = false
+    const playTips: { tip: NormPoint; pinched: boolean }[] = []
 
     // --- Mandal hand ---
     if (mandalHandIdx !== null) {
       const lm = result.landmarks[mandalHandIdx]
       const tip = lm[INDEX_TIP]
       mandalTip = tip
+      const mandalPinchDist = pinchDistance({ a: tip, b: lm[THUMB_TIP] })
+      mandalPinched = mandalPinchDist < PINCH_VISUAL_THRESHOLD
       const ev = mandalGestureRef.current.update({
         x: 1 - tip.x,
         y: tip.y,
-        pinchDist: pinchDistance({ a: tip, b: lm[THUMB_TIP] }),
+        pinchDist: mandalPinchDist,
         tNow
       })
       if (ev) setMandalAll(cycleMandal(mandalRef.current, ev.degree, ev.direction))
@@ -559,7 +564,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       if (slot > 1) return // two-slot pool
       const lm = result.landmarks[handIdx]
       const tip = lm[INDEX_TIP]
-      playTips.push(tip)
+      const pinchDist = pinchDistance({ a: tip, b: lm[THUMB_TIP] })
+      playTips.push({ tip, pinched: pinchDist < PINCH_VISUAL_THRESHOLD })
       const screenX = fingerFiltersRef.current[slot].filter({ x: 1 - tip.x, tNow })
       const course = nearestCourse({
         x: screenX,
@@ -571,7 +577,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       if (slot === 0) primaryCourse = course
       // Pinch-as-button: pluck on close edge, sustain when held, glide on course change.
       const pinchEvts = pinchPlayRef.current[slot].update({
-        pinchDist: pinchDistance({ a: tip, b: lm[THUMB_TIP] }),
+        pinchDist,
         courseIndex: course,
         tNow
       })
@@ -630,9 +636,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     }
 
     // --- Overlay drawing (finger rings) ---
-    // Reuses lib/draw exactly like useThereminEngine.tick: clear, draw a halo'd
-    // ring per tracked fingertip, mirror=true. Strictly after the audio path so
-    // it never blocks a pluck.
+    // Small, calm rings that sit on the fingertip. The canvas shares the video's
+    // CSS scaleX(-1), so we draw in raw (un-mirrored) coords. On a pinch the ring
+    // tightens and a bright dot fills the centre — immediate "press" feedback.
+    // Strictly after the audio path so canvas work never delays a pluck.
     const ctx = canvas.getContext('2d')
     if (ctx) {
       const w = canvas.width
@@ -640,28 +647,25 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       ctx.clearRect(0, 0, w, h)
       ctx.shadowColor = OVERLAY_SHADOW
       ctx.shadowBlur = OVERLAY_SHADOW_BLUR
-      // Modulating (mandal) hand: a calmer brass ring.
-      // canvas shares the video's CSS scaleX(-1), so draw rings in raw (un-mirrored)
-      // coords to sit on the finger.
-      if (mandalTip) {
-        drawFingerRing({ ctx, tip: mandalTip, width: w, height: h, mirror: false, color: MANDAL_RING_COLOR, radius: 13, lineWidth: 2 })
+      const drawTip = (tip: NormPoint, pinched: boolean, ringColor: string, radius: number): void => {
+        const { x, y } = projectPoint({ p: tip, width: w, height: h, mirror: false })
+        ctx.strokeStyle = pinched ? PLUCK_RING_COLOR : ringColor
+        ctx.lineWidth = pinched ? 2.25 : 1.6
+        ctx.beginPath()
+        ctx.arc(x, y, pinched ? radius - 1.5 : radius, 0, Math.PI * 2)
+        ctx.stroke()
+        if (pinched) {
+          // Filled centre dot — the pinch "registered" cue.
+          ctx.fillStyle = PLUCK_RING_COLOR
+          ctx.beginPath()
+          ctx.arc(x, y, 3, 0, Math.PI * 2)
+          ctx.fill()
+        }
       }
-      // Playing hands: bright rings; a thicker, white ring on the frame a string sounds.
-      // mirror: false — canvas shares the video's CSS scaleX(-1), no double-flip needed.
-      const pluckedThisFrame = pluckedCourse !== null
-      playTips.forEach((tip, slot) => {
-        const isPrimary = slot === 0
-        drawFingerRing({
-          ctx,
-          tip,
-          width: w,
-          height: h,
-          mirror: false,
-          color: isPrimary && pluckedThisFrame ? PLUCK_RING_COLOR : PLAY_RING_COLOR,
-          radius: isPrimary && pluckedThisFrame ? 17 : 14,
-          lineWidth: isPrimary && pluckedThisFrame ? 3 : 2.25
-        })
-      })
+      // Modulating (mandal) hand: a calmer brass ring.
+      if (mandalTip) drawTip(mandalTip, mandalPinched, MANDAL_RING_COLOR, 8)
+      // Playing hands: bone-white rings; tighten + fill on pinch.
+      playTips.forEach(({ tip, pinched }) => drawTip(tip, pinched, PLAY_RING_COLOR, 9))
       // Reset shadow so the next frame's clearRect / draws aren't haloed twice.
       ctx.shadowColor = 'rgba(0, 0, 0, 0)'
       ctx.shadowBlur = 0
