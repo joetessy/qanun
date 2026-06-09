@@ -21,6 +21,7 @@ import { createRecorder, type Recorder, type RecorderState } from '../lib/audio/
 import { formatElapsed } from '../lib/audio/formatElapsed'
 import { createDrone, type DroneEngine } from '../lib/practice/createDrone'
 import { createMetronome, type MetronomeEngine } from '../lib/practice/createMetronome'
+import { createMidiOut, type MidiOutEngine, type MidiSupportState, type MidiOutputInfo } from '../lib/midi/createMidiOut'
 import { velocityCurve } from '../lib/audio/velocityCurve'
 import { createOneEuroFilter } from '../lib/oneEuro/createOneEuroFilter'
 import { findHandedness } from '../lib/vision/findHandedness'
@@ -103,6 +104,15 @@ export interface UseQanunEngine {
   metronomeBpm: number
   setMetronomeBpm: (bpm: number) => void
   tapMetronome: () => void
+  // P4b: microtonal MIDI out (off by default)
+  midiEnabled: boolean
+  setMidiEnabled: (b: boolean) => Promise<void>
+  midiSupport: MidiSupportState
+  midiOutputs: readonly MidiOutputInfo[]
+  midiOutputId: string | null
+  setMidiOutputId: (id: string | null) => void
+  midiBendRange: number
+  setMidiBendRange: (semitones: number) => void
 }
 
 const EMPTY_READING: QanunReading = {
@@ -144,6 +154,14 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // P4a: metronome state (off by default, 120 BPM default).
   const [metronomeEnabled, setMetronomeEnabledState] = useState(false)
   const [metronomeBpm, setMetronomeBpmState] = useState(120)
+
+  // P4b: MIDI out state (off by default).
+  const [midiEnabled, setMidiEnabledState] = useState(false)
+  const [midiSupport, setMidiSupportState] = useState<MidiSupportState>('unknown')
+  const [midiOutputs, setMidiOutputsState] = useState<readonly MidiOutputInfo[]>([])
+  const [midiOutputId, setMidiOutputIdState] = useState<string | null>(null)
+  const [midiBendRange, setMidiBendRangeState] = useState(2)
+  const midiRef = useRef<MidiOutEngine | null>(null)
 
   // Hot refs (read inside the frame loop without re-subscribing).
   const tonicRef = useRef(DEFAULT_TONIC_MIDI)
@@ -378,6 +396,44 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     })
   }, [ensureAudioEngine, ensureMetronome])
 
+  // ── P4b: MIDI out helpers ────────────────────────────────────────────────────
+
+  /** Lazily create the MIDI engine (constructed once). */
+  const ensureMidi = useCallback((): MidiOutEngine => {
+    if (!midiRef.current) {
+      midiRef.current = createMidiOut()
+    }
+    return midiRef.current
+  }, [])
+
+  const setMidiEnabled = useCallback(async (b: boolean): Promise<void> => {
+    setMidiEnabledState(b)
+    if (!b) return
+    const midi = ensureMidi()
+    await midi.start()
+    setMidiSupportState(midi.support)
+    setMidiOutputsState(midi.outputs)
+  }, [ensureMidi])
+
+  const setMidiOutputId = useCallback((id: string | null): void => {
+    setMidiOutputIdState(id)
+    midiRef.current?.setOutput(id)
+  }, [])
+
+  const setMidiBendRange = useCallback((semitones: number): void => {
+    setMidiBendRangeState(semitones)
+    midiRef.current?.setBendRange(semitones)
+  }, [])
+
+  /**
+   * Fire-and-forget MIDI note emission. Called alongside every audio.pluck() when
+   * MIDI is enabled. Deliberately cheap — just delegates to playNote() with no await.
+   */
+  const emitMidi = useCallback((freqHz: number, velocity: number): void => {
+    if (!midiEnabled) return
+    midiRef.current?.playNote({ freqHz, velocity })
+  }, [midiEnabled])
+
   // ── Pointer play primitives ─────────────────────────────────────────────────
   // These work without the webcam — ensureAudioEngine() handles lazy audio init.
 
@@ -401,8 +457,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       } else {
         audio.pluck({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY })
       }
+      emitMidi(field[index].freqHz, POINTER_VELOCITY)
     })
-  }, [ensureAudioEngine, trillEnabled])
+  }, [ensureAudioEngine, trillEnabled, emitMidi])
 
   const glideCourse = useCallback((index: number): void => {
     void ensureAudioEngine().then(() => {
@@ -413,8 +470,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       setPluckedIndex(index)
       pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
       audio.pluck({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY })
+      emitMidi(field[index].freqHz, POINTER_VELOCITY)
     })
-  }, [ensureAudioEngine])
+  }, [ensureAudioEngine, emitMidi])
 
   const holdCourse = useCallback((index: number): void => {
     void ensureAudioEngine().then(() => {
@@ -424,8 +482,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       setHighlightIndex(index)
       holdingRef.current = true
       audio.holdStart({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY })
+      emitMidi(field[index].freqHz, POINTER_VELOCITY)
     })
-  }, [ensureAudioEngine])
+  }, [ensureAudioEngine, emitMidi])
 
   const releaseHold = useCallback((): void => {
     if (!holdingRef.current) return
@@ -514,6 +573,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       })
       if (pluck && field[pluck.courseIndex]) {
         audio.pluck({ freqHz: field[pluck.courseIndex].freqHz, velocity: pluck.velocity })
+        emitMidi(field[pluck.courseIndex].freqHz, pluck.velocity)
         lastPluckMidi = field[pluck.courseIndex].midi
         pluckedCourse = pluck.courseIndex
       }
@@ -522,6 +582,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       for (const c of raked) {
         if (field[c]) {
           audio.pluck({ freqHz: field[c].freqHz, velocity: velocityCurve(0.7) })
+          emitMidi(field[c].freqHz, velocityCurve(0.7))
           lastPluckMidi = field[c].midi
           pluckedCourse = c
         }
@@ -578,7 +639,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     }
 
     scheduleNext()
-  }, [videoRef, canvasRef, setMandalAll])
+  }, [videoRef, canvasRef, setMandalAll, emitMidi])
 
   const start = useCallback(async (): Promise<void> => {
     if (status === 'running' || status === 'loading') return
@@ -643,6 +704,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       metronomeRef.current?.dispose()
       audioRef.current?.dispose()
       landmarkerRef.current?.close()
+      midiRef.current?.dispose()
     },
     []
   )
@@ -705,5 +767,14 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     metronomeBpm,
     setMetronomeBpm,
     tapMetronome,
+    // P4b: MIDI out
+    midiEnabled,
+    setMidiEnabled,
+    midiSupport,
+    midiOutputs,
+    midiOutputId,
+    setMidiOutputId,
+    midiBendRange,
+    setMidiBendRange,
   }
 }

@@ -2,6 +2,7 @@ import type { MandalState } from '../lib/music/types'
 import type { RakeSensitivity } from '../types'
 import type { SoundSource } from '../lib/audio/createQanunEngine'
 import type { RecorderState } from '../lib/audio/createRecorder'
+import type { MidiSupportState, MidiOutputInfo } from '../lib/midi/createMidiOut'
 import { TypedSelect } from './TypedSelect'
 import { JINS_PAIRS, isPairActive, type JinsPair } from '../lib/music/sayr/jinsPairs'
 import { midiName } from '../lib/music/midiName'
@@ -39,6 +40,15 @@ interface ControlsProps {
   onMetronomeEnabled: (b: boolean) => void
   onMetronomeBpm: (bpm: number) => void
   onTapMetronome: () => void
+  // P4b: MIDI out
+  midiEnabled: boolean
+  midiSupport: MidiSupportState
+  midiOutputs: readonly MidiOutputInfo[]
+  midiOutputId: string | null
+  midiBendRange: number
+  onMidiEnabled: (b: boolean) => void
+  onMidiOutputId: (id: string | null) => void
+  onMidiBendRange: (semitones: number) => void
 }
 
 // 12 tonic choices, one per pitch class, anchored near the qanun's low register.
@@ -53,9 +63,17 @@ const RAKE_OPTIONS: ReadonlyArray<{ value: RakeSensitivity; label: string }> = [
   { value: 'full', label: 'rake: full' }
 ]
 
+const BEND_RANGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: '2', label: '±2 st' },
+  { value: '12', label: '±12 st' },
+  { value: '24', label: '±24 st' },
+  { value: '48', label: '±48 st' },
+]
+
 // Progressive disclosure (spec §1): tonic + rake + trill ornament toggle +
 // sound-source toggle + sayr/emphasis toggles + the headline jins-pair quick-swaps.
 // P4a: opt-in studio section (off by default) — record/drone/metronome.
+// P4b: opt-in MIDI section (off by default) — microtonal MIDI out.
 export const Controls = ({
   tonicMidi,
   rakeSensitivity,
@@ -86,6 +104,14 @@ export const Controls = ({
   onMetronomeEnabled,
   onMetronomeBpm,
   onTapMetronome,
+  midiEnabled,
+  midiSupport,
+  midiOutputs,
+  midiOutputId,
+  midiBendRange,
+  onMidiEnabled,
+  onMidiOutputId,
+  onMidiBendRange,
 }: ControlsProps) => (
   <div className="controls">
     <label className="ctrl">
@@ -236,6 +262,55 @@ export const Controls = ({
           tap
         </button>
       </div>
+    </div>
+
+    {/* P4b: MIDI out — off by default */}
+    <div className="studio-section">
+      <span className="studio-label">midi</span>
+
+      <div className="studio-row">
+        <span className="studio-row-label">enable</span>
+        <button
+          type="button"
+          className={`toggle ${midiEnabled ? 'is-on' : ''}`}
+          onClick={() => onMidiEnabled(!midiEnabled)}
+          aria-pressed={midiEnabled}
+        >
+          {midiEnabled ? 'on' : 'off'}
+        </button>
+      </div>
+
+      {midiSupport === 'unsupported' && (
+        <div className="studio-row">
+          <span className="studio-hint">Web MIDI not supported in this browser</span>
+        </div>
+      )}
+
+      {midiEnabled && midiSupport === 'ready' && (
+        <>
+          <div className="studio-row">
+            <span className="studio-row-label">output</span>
+            <select
+              value={midiOutputId ?? ''}
+              onChange={(e) => onMidiOutputId(e.target.value || null)}
+              aria-label="MIDI output"
+            >
+              <option value="">— none —</option>
+              {midiOutputs.map((o) => (
+                <option key={o.id} value={o.id}>{o.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="studio-row">
+            <span className="studio-row-label">bend</span>
+            <TypedSelect
+              value={String(midiBendRange)}
+              options={BEND_RANGE_OPTIONS}
+              onChange={(v) => onMidiBendRange(Number(v))}
+            />
+          </div>
+        </>
+      )}
     </div>
   </div>
 )

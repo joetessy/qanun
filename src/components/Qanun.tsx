@@ -124,6 +124,14 @@ export const Qanun = () => {
           onMetronomeEnabled={engine.setMetronomeEnabled}
           onMetronomeBpm={engine.setMetronomeBpm}
           onTapMetronome={engine.tapMetronome}
+          midiEnabled={engine.midiEnabled}
+          midiSupport={engine.midiSupport}
+          midiOutputs={engine.midiOutputs}
+          midiOutputId={engine.midiOutputId}
+          midiBendRange={engine.midiBendRange}
+          onMidiEnabled={engine.setMidiEnabled}
+          onMidiOutputId={engine.setMidiOutputId}
+          onMidiBendRange={engine.setMidiBendRange}
         />
       </div>
     </div>
