@@ -56,9 +56,9 @@ A sayr "touches specific notes in a specific order, like a mail-truck route" (p.
 ## 4. The two modulation techniques (p. 300) → how they map to the qanun
 
 1. **Alter the intervals** (same tonic; change a note above it → new jins). *Unambiguous.* As little as one quarter-tone flip suffices (e.g. Nahawand→Rast by raising the 3rd; Bayati↔Hijaz). **→ This is exactly what flipping a mandal does.** The mandal rack *is* technique 1.
-2. **Change the tonic** (tonicize a higher degree, usually the ghammāz). *Ambiguous* — depends on the ear feeling a new resolution. **→ This is a *playing* behavior, not a mandal flip**: the notes are already on the strings; the player shifts emphasis/resolution to a new degree. The instrument can *guide* this (highlight the ghammāz, show the sayr) and optionally *detect* it (dwell + resolution heuristic), but it isn't a control.
+2. **Change the tonic** (tonicize a higher degree, usually the ghammāz). *Ambiguous* — depends on the ear feeling a new resolution. **→ Out of scope for this instrument.** Shifting the tonal centre is left to the player's melody; we do not detect or handle it. (The emphasis overlay merely *shows* where the ghammāz and tonic are, as a playing aid.)
 
-**Tonicization vs accidental (pp. 301–302, 305) — the gate for "did a modulation happen":** emphasizing a note ≠ tonicizing it. A brief foreign note = a **hint/ornament**; a foreign note **held for a whole phrase and resolved to** = a **modulation**. "Rely on the ear's sense of resolution" (p. 302). For v1, mandal state defines the *available* jins (technique 1); auto-detecting technique-2 tonicization from dwell/resolution is a later, optional feature.
+**Tonicization vs accidental (pp. 301–302, 305) — the gate for "did a modulation happen":** emphasizing a note ≠ tonicizing it. A brief foreign note = a **hint/ornament**; a foreign note **held for a whole phrase and resolved to** = a **modulation**. "Rely on the ear's sense of resolution" (p. 302). **This instrument implements technique 1 only:** mandal state defines the available jins; technique-2 tonicization is out of scope (no detection, no special handling).
 
 **Mid-jins switch** (p. 303): switch between two ajnas sharing the *same tonic and ghammāz* (e.g. Hijaz↔Bayati on D, switching the 3rd F♯↔F) — best rendered with a glide on the differing string.
 
@@ -93,5 +93,5 @@ Maqam = lower jins (tonic on degree 1) + upper jins **starting on the lower jins
 - **Mandals = technique 1.** Flipping the 7 degree-mandals alters intervals → changes the jins. **Jins-pair swaps are single-mandal flips** and become the headline quick-swap suggestions.
 - **Emphasis overlay.** Highlight the current maqam's emphasis notes on the string field (tonic, ghammāz, octave, leading tone, the ʿatabāt staircase) to guide the player along the sayr. Optionally drone/tremolo the tonic.
 - **Sayr guide (the upgraded "idiomatic jumps").** From the current jins, surface the outgoing edges of the maqam's sayr network — the idiomatic next modulations, ordered by edge weight, jins-pair swaps flagged, the qafla (cadence) hinted. This is "the space within the modulation."
-- **Technique 2 (tonicization)** is played, not flipped — guided by the overlay/guide now; optionally auto-detected later (dwell+resolution).
+- **Technique 2 (tonicization) is not implemented.** Shifting the tonal centre is left to the player's melodic choices; the emphasis overlay simply helps them hear where home and the ghammāz are.
 - Per-maqam network data is seeded from [`maqam-sayr-catalog.md`](./maqam-sayr-catalog.md).
