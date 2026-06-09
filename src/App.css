@@ -370,245 +370,7 @@
   }
 }
 
-/* ═══ MANDAL RACK — brass levers seated in wood, at the LEFT ════════════════ */
-.mandal-rack {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  z-index: 4;
-  width: 19%;            /* aligns with PLAY_FIELD_LEFT (0.2) — strings start after */
-  min-width: 132px;
-  max-width: 230px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: clamp(3px, 0.9vmin, 9px);
-  padding: clamp(10px, 2.2vmin, 22px) clamp(8px, 1.4vw, 16px);
-  /* A darker walnut block with a raised inner bezel and a hard right edge. */
-  background:
-    repeating-linear-gradient(2deg, rgba(0, 0, 0, 0.18) 0 3px, rgba(0, 0, 0, 0) 3px 7px),
-    linear-gradient(100deg, #1d1209 0%, #2e1d10 60%, #25180d 100%);
-  border-right: 2px solid rgba(0, 0, 0, 0.7);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 222, 150, 0.08),
-    inset -8px 0 16px -8px rgba(0, 0, 0, 0.7),
-    4px 0 18px -6px rgba(0, 0, 0, 0.6);
-}
-
-.mandal-rack .rack-label {
-  font-family: var(--font-body);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  text-align: center;
-  margin-bottom: 4px;
-}
-
-.mandal-rack .lever {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 6px;
-  padding: clamp(3px, 0.7vmin, 7px) 8px;
-  border-radius: 5px;
-  /* Each lever sits in its own routed slot. */
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.32), rgba(40, 26, 14, 0.2));
-  box-shadow:
-    inset 0 1px 1px rgba(0, 0, 0, 0.6),
-    inset 0 -1px 0 rgba(255, 222, 150, 0.06);
-  transition: box-shadow 0.18s, background 0.18s;
-}
-
-/* The lever under the left hand — lit brass. */
-.mandal-rack .lever.is-active {
-  background: linear-gradient(180deg, rgba(231, 194, 91, 0.22), rgba(120, 80, 30, 0.12));
-  box-shadow:
-    inset 0 0 0 1px rgba(231, 194, 91, 0.5),
-    0 0 14px rgba(231, 194, 91, 0.35);
-}
-
-/* Fixed pillar degrees (1 & 5) read as locked/dim. */
-.mandal-rack .lever.is-fixed {
-  opacity: 0.55;
-}
-
-.mandal-rack .lever button {
-  width: 18px;
-  height: 16px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(180deg, #3a2814, #241608);
-  color: var(--brass-base);
-  border: 1px solid rgba(0, 0, 0, 0.5);
-  border-radius: 3px;
-  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.12);
-  cursor: pointer;
-  font-size: 9px;
-  line-height: 1;
-  padding: 0;
-  transition: color 0.15s, box-shadow 0.15s, transform 0.05s;
-}
-.mandal-rack .lever button:not(:disabled):hover {
-  color: var(--brass-glow);
-  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.2), 0 0 8px rgba(231, 194, 91, 0.3);
-}
-.mandal-rack .lever button:not(:disabled):active {
-  transform: translateY(1px);
-}
-.mandal-rack .lever button:disabled {
-  opacity: 0.25;
-  cursor: default;
-}
-
-/* ── Lever body: the tactile switch key ────────────────────────────────────── */
-/* Reset the generic button size rules for the center key — it stretches to fill
-   the available track, so width/height from the generic rule must be overridden. */
-.mandal-rack .lever .lever-body {
-  width: auto;
-  height: auto;
-}
-
-/* The central clickable key in each lever row. Styled as a physical routed
-   brass-trimmed switch — dark when natural, lit when the degree is altered. */
-.mandal-rack .lever-body {
-  flex: 1;
-  min-width: 0;
-  height: clamp(22px, 3.4vmin, 32px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 6px;
-  border-radius: 4px;
-  /* Resting: a recessed dark slot with a faint brass rim. */
-  background: linear-gradient(180deg, #161009 0%, #231710 60%, #1a1008 100%);
-  border: 1px solid rgba(110, 79, 28, 0.28);
-  box-shadow:
-    inset 0 2px 3px rgba(0, 0, 0, 0.7),
-    inset 0 -1px 0 rgba(255, 222, 150, 0.05),
-    0 1px 0 rgba(255, 222, 150, 0.08);
-  cursor: pointer;
-  transition: background 0.18s, border-color 0.18s, box-shadow 0.18s, transform 0.05s;
-}
-.mandal-rack .lever-body:not(:disabled):hover {
-  background: linear-gradient(180deg, #1e140a 0%, #2e1f10 60%, #231508 100%);
-  border-color: rgba(184, 138, 46, 0.45);
-  box-shadow:
-    inset 0 2px 3px rgba(0, 0, 0, 0.6),
-    inset 0 -1px 0 rgba(255, 222, 150, 0.08),
-    0 0 8px rgba(231, 194, 91, 0.15);
-}
-.mandal-rack .lever-body:not(:disabled):active {
-  transform: translateY(1px);
-  box-shadow:
-    inset 0 3px 5px rgba(0, 0, 0, 0.75),
-    inset 0 -1px 0 rgba(255, 222, 150, 0.04);
-}
-.mandal-rack .lever-body:disabled {
-  cursor: default;
-}
-
-/* Altered state: the switch is engaged — raised brass glow, lit key surface. */
-.mandal-rack .lever.is-altered .lever-body {
-  background: linear-gradient(180deg, #3d2c10 0%, #2e1f0a 50%, #1e1308 100%);
-  border-color: rgba(184, 138, 46, 0.65);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 248, 200, 0.18),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.5),
-    0 0 10px rgba(231, 194, 91, 0.28),
-    0 0 22px rgba(184, 138, 46, 0.12);
-  animation: key-engage 0.28s ease-out;
-}
-
-/* Note label inside the key. */
-.mandal-rack .lever-label {
-  font-family: var(--font-display);
-  font-size: clamp(12px, 1.5vmin, 15px);
-  font-weight: 500;
-  line-height: 1;
-  color: var(--ink-dim);
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  transition: color 0.18s, text-shadow 0.18s;
-  /* Prevent the accidental glyphs (½♭ ♭ ♯) from overflowing. */
-  overflow: hidden;
-  text-overflow: clip;
-}
-
-/* Altered: label brightens to brass-glow. */
-.mandal-rack .lever.is-altered .lever-label {
-  color: var(--brass-glow);
-  text-shadow: 0 0 8px rgba(255, 221, 128, 0.45);
-}
-
-/* Workhorse degrees (3 & 7): a faint brass tint on the slot border so they
-   read as the "modulation workhorses" at a glance. */
-.mandal-rack .lever.is-workhorse {
-  border: 1px solid rgba(184, 138, 46, 0.16);
-  border-radius: 5px;
-}
-.mandal-rack .lever.is-workhorse .lever-body {
-  border-color: rgba(184, 138, 46, 0.38);
-}
-
-/* Key-engage animation: a quick brightness bloom when a switch fires. */
-@keyframes key-engage {
-  0%   { filter: brightness(1.6); transform: scaleY(0.96); }
-  55%  { filter: brightness(1.1); transform: scaleY(1.02); }
-  100% { filter: brightness(1);   transform: scaleY(1); }
-}
-
-/* Preserve the old lever-flip for the tick animation (kept for compat). */
-/* .mandal-rack .lever .pos / .tick — replaced by .lever-body / .lever-label */
-@keyframes lever-flip {
-  0% { transform: scaleX(0.4); filter: brightness(1.8); }
-  60% { transform: scaleX(1.15); }
-  100% { transform: scaleX(1); filter: brightness(1); }
-}
-
-/* ── Camera inset (PIP) ────────────────────────────────────────────────────── */
-.camera-inset {
-  position: absolute;
-  top: clamp(10px, 1.8vmin, 18px);
-  right: clamp(10px, 1.8vmin, 18px);
-  z-index: 4;
-  width: clamp(116px, 13vw, 168px);
-  aspect-ratio: 16 / 9;
-  border-radius: 6px;
-  pointer-events: none;
-  /* A brass-rimmed window cut into the board. */
-  background: rgba(10, 6, 3, 0.25);
-  border: 1px solid rgba(231, 194, 91, 0.35);
-  box-shadow:
-    inset 0 0 0 1px rgba(0, 0, 0, 0.6),
-    inset 0 0 18px rgba(0, 0, 0, 0.5),
-    0 4px 14px rgba(0, 0, 0, 0.5);
-  overflow: hidden;
-}
-.camera-inset-video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transform: scaleX(-1); /* selfie mirror, matches the main view */
-  opacity: 0.92;
-}
-.camera-inset::after {
-  content: 'your hands';
-  position: absolute;
-  bottom: 4px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: rgba(231, 194, 91, 0.6);
-}
+/* (mandal-rack and camera-inset CSS removed — both components retired in Cluster A) */
 
 /* ═══ STAGE COVER — zero-config start / loading / error ═════════════════════ */
 .stage-cover {
@@ -1085,10 +847,91 @@
   font-weight: 600;
 }
 
-/* Soundboard must account for both rails (maqam-presets + upper-jins switcher)
-   so strings and the mandal-rack don't overlap them. */
-.mandal-rack {
+/* ═══ MAQAM READOUT — always-on compact strip above the jins rails ═══════════
+   Sits between the upper-jins switcher and the string field. Shows the current
+   maqam name + home note, plus up to 4 sayr suggestion chips. */
+.maqam-readout {
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* Sits just above the two bottom rails: upper-jins-switcher + jins-selector. */
   bottom: calc(clamp(32px, 5vmin, 46px) + clamp(28px, 4.5vmin, 40px));
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: clamp(6px, 1vw, 12px);
+  padding: clamp(3px, 0.6vmin, 6px) clamp(12px, 2vw, 24px);
+  background:
+    repeating-linear-gradient(2deg, rgba(0, 0, 0, 0.10) 0 2px, rgba(0, 0, 0, 0) 2px 6px),
+    linear-gradient(180deg, rgba(18, 11, 5, 0.92) 0%, rgba(12, 7, 3, 0.92) 100%);
+  border-top: 1px solid rgba(0, 0, 0, 0.5);
+  border-bottom: 1px solid rgba(255, 222, 150, 0.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 222, 150, 0.06),
+    0 -1px 8px -3px rgba(0, 0, 0, 0.5);
+}
+
+/* Current maqam name — brass-glow, display font. */
+.maqam-readout .mr-maqam {
+  font-family: var(--font-display);
+  font-size: clamp(11px, 1.4vmin, 14px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--brass-glow);
+  text-shadow: 0 0 8px rgba(255, 221, 128, 0.18);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Home note — muted annotation. */
+.maqam-readout .mr-home {
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Sayr chip container. */
+.maqam-readout .mr-sayr {
+  display: flex;
+  align-items: center;
+  gap: clamp(4px, 0.6vw, 8px);
+  flex-wrap: nowrap;
+  overflow: hidden;
+  margin-left: auto;
+}
+
+/* Individual sayr move chip — subtle pill, activates on hover/click. */
+.maqam-readout .mr-move {
+  font-family: var(--font-body);
+  font-size: clamp(9px, 1.1vmin, 11px);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  flex-shrink: 0;
+  color: var(--ink-faint);
+  background: linear-gradient(180deg, rgba(44, 29, 16, 0.7) 0%, rgba(27, 17, 7, 0.7) 100%);
+  border: 1px solid rgba(110, 79, 28, 0.28);
+  border-radius: 999px;
+  padding: clamp(2px, 0.4vmin, 4px) clamp(8px, 1.2vw, 12px);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.05);
+}
+.maqam-readout .mr-move:hover {
+  color: var(--brass-lit);
+  border-color: rgba(184, 138, 46, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 222, 150, 0.1),
+    0 0 7px rgba(184, 138, 46, 0.18);
+}
+.maqam-readout .mr-move:active {
+  transform: translateY(1px);
 }
 
 /* ═══ EMPHASIS OVERLAY — sayr emphasis-note glows ════════════════════════════
@@ -1316,9 +1159,7 @@
 @media (prefers-reduced-motion: reduce) {
   .stage-cover .primary,
   .stage-cover .spinner,
-  .string-field .course.is-plucked .str,
-  .mandal-rack .lever .tick.on,
-  .mandal-rack .lever.is-altered .lever-body {
+  .string-field .course.is-plucked .str {
     animation: none;
   }
   .controls-drawer { transition: none; }
