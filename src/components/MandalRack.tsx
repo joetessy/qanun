@@ -1,33 +1,65 @@
 import type { MandalState } from '../lib/music/types'
 import { MANDAL_DEGREES, offsetOf } from '../lib/music/ajnas/MANDALS'
+import { degreeNoteLabel } from '../lib/music/degreeLabel'
 
 interface MandalRackProps {
   mandalState: MandalState
-  activeDegree: number | null                     // lever under the left hand
+  tonicMidi: number
+  activeDegree: number | null                      // lever under the left hand
   onCycle: (degree: number, direction: 1 | -1) => void
 }
 
-// Seven stacked levers (degree 7 at the top → degree 1 at the bottom, matching
-// mandalLeverFromY). Each shows its current position within the degree's set.
-// Click affordances mirror the flick gesture so the rack is usable without a camera.
-export const MandalRack = ({ mandalState, activeDegree, onCycle }: MandalRackProps) => (
+// NATURAL_OFFSETS mirrors the constant in degreeLabel — the major-scale
+// reference point per degree. A lever is "altered" when its offset differs.
+const NATURAL_OFFSETS = [0, 2, 4, 5, 7, 9, 11]
+
+// Degrees that are the "workhorses" of maqam modulation — subtly emphasised.
+const WORKHORSE_DEGREES = new Set([3, 7])
+
+export const MandalRack = ({ mandalState, tonicMidi, activeDegree, onCycle }: MandalRackProps) => (
   <div className="mandal-rack">
     <span className="rack-label">mandal</span>
     {[...MANDAL_DEGREES].reverse().map((md) => {
       const current = offsetOf(mandalState, md.degree)
-      const posIndex = md.positions.indexOf(current)
+      const isAltered = current !== NATURAL_OFFSETS[md.degree - 1]
+      const isWorkhorse = WORKHORSE_DEGREES.has(md.degree)
+      const label = degreeNoteLabel({ tonicMidi, degree: md.degree, offset: current })
+
       return (
         <div
           key={md.degree}
-          className={`lever degree-${md.degree} ${activeDegree === md.degree ? 'is-active' : ''} ${md.fixed ? 'is-fixed' : ''}`}
+          className={[
+            'lever',
+            `degree-${md.degree}`,
+            activeDegree === md.degree ? 'is-active' : '',
+            md.fixed ? 'is-fixed' : '',
+            isAltered ? 'is-altered' : '',
+            isWorkhorse ? 'is-workhorse' : '',
+          ].filter(Boolean).join(' ')}
         >
-          <button className="up" disabled={md.fixed} onClick={() => onCycle(md.degree, 1)} aria-label={`raise degree ${md.degree}`}>▲</button>
-          <span className="pos" data-degree={md.degree}>
-            {md.positions.map((p, i) => (
-              <span key={p} className={`tick ${i === posIndex ? 'on' : ''}`} />
-            ))}
-          </span>
-          <button className="down" disabled={md.fixed} onClick={() => onCycle(md.degree, -1)} aria-label={`lower degree ${md.degree}`}>▼</button>
+          <button
+            className="up"
+            disabled={md.fixed}
+            onClick={() => onCycle(md.degree, 1)}
+            aria-label={`raise degree ${md.degree}`}
+          >▲</button>
+
+          {/* Lever body — click cycles up (same as ▲ button). */}
+          <button
+            className="lever-body"
+            disabled={md.fixed}
+            onClick={() => onCycle(md.degree, 1)}
+            aria-label={`cycle degree ${md.degree}`}
+          >
+            <span className="lever-label">{label}</span>
+          </button>
+
+          <button
+            className="down"
+            disabled={md.fixed}
+            onClick={() => onCycle(md.degree, -1)}
+            aria-label={`lower degree ${md.degree}`}
+          >▼</button>
         </div>
       )
     })}

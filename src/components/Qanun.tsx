@@ -3,6 +3,7 @@ import { Stage } from './Stage'
 import { StageCover } from './StageCover'
 import { StringField } from './StringField'
 import { MandalRack } from './MandalRack'
+import { MaqamPresets } from './MaqamPresets'
 import { QanunHud } from './QanunHud'
 import { CameraInset } from './CameraInset'
 import { Controls } from './Controls'
@@ -51,11 +52,17 @@ export const Qanun = () => {
           <Rosette className="rosette-minor" />
         </div>
 
-        {/* Soundboard overlays — painted chrome layered over the camera/canvas. */}
+        {/* Modulation panel — always visible (spec §1 keyboard-style switches). */}
         <MandalRack
           mandalState={engine.mandalState}
+          tonicMidi={engine.tonicMidi}
           activeDegree={null}
           onCycle={engine.cycleMandalDegree}
+        />
+        <MaqamPresets
+          mandalState={engine.mandalState}
+          onSelectPreset={engine.setMaqamPreset}
+          onReset={() => engine.setMaqamPreset('rast')}
         />
         <StringField
           courses={engine.courses}
