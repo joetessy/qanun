@@ -63,11 +63,26 @@ describe('createQanunEngine', () => {
     expect(lastGain).toBeGreaterThan(0)
   })
 
-  it('round-robins voices across successive plucks', () => {
-    const { ToneMock, triggerAttack } = makeMockTone()
+  it('round-robins voices across successive plucks (wraps back to voice 0 on the 5th)', () => {
+    // Per-voice spies so we can prove distinct voices fire — a shared spy would
+    // pass even if every pluck reused voice 0.
+    const base = makeMockTone()
+    const spies: Array<ReturnType<typeof vi.fn>> = []
+    const ToneMock = {
+      ...base.ToneMock,
+      PluckSynth: vi.fn().mockImplementation(() => {
+        const triggerAttack = vi.fn()
+        spies.push(triggerAttack)
+        return { triggerAttack, connect: vi.fn().mockReturnThis(), dispose: vi.fn() }
+      })
+    }
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     for (let i = 0; i < 5; i++) e.pluck({ freqHz: 200 + i, velocity: 0.5 })
-    expect(triggerAttack).toHaveBeenCalledTimes(5) // 4-voice pool reused on the 5th
+    expect(spies).toHaveLength(4)
+    expect(spies[0]).toHaveBeenCalledTimes(2) // voices 0 and 4th-wrap
+    expect(spies[1]).toHaveBeenCalledTimes(1)
+    expect(spies[2]).toHaveBeenCalledTimes(1)
+    expect(spies[3]).toHaveBeenCalledTimes(1)
   })
 
   it('setReverbEnabled(false) forces wet → 0', () => {
@@ -78,10 +93,20 @@ describe('createQanunEngine', () => {
     expect(reverbWetRampTo.mock.calls.at(-1)?.[0]).toBe(0)
   })
 
-  it('start() unlocks the audio context once', async () => {
+  it('setReverbEnabled(true) restores the stored wet level', () => {
+    const { ToneMock, reverbWetRampTo } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.setReverbWet(0.6)
+    e.setReverbEnabled(false)
+    e.setReverbEnabled(true)
+    expect(reverbWetRampTo.mock.calls.at(-1)?.[0]).toBeCloseTo(0.6, 6)
+  })
+
+  it('start() unlocks the audio context once, even when called twice', async () => {
     const { ToneMock } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     await e.start()
+    await e.start() // idempotent — guarded by `started`
     expect(ToneMock.start).toHaveBeenCalledTimes(1)
     expect(e.isStarted).toBe(true)
   })

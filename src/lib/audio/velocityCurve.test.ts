@@ -22,4 +22,8 @@ describe('velocityCurve', () => {
     expect(velocityCurve(0, { min: 0.3, max: 0.9 })).toBeCloseTo(0.3, 6)
     expect(velocityCurve(1, { min: 0.3, max: 0.9 })).toBeCloseTo(0.9, 6)
   })
+  it('applies gamma shaping between the endpoints', () => {
+    // gamma 2 at s=0.5: shaped = 0.5² = 0.25 → min + (max-min)*0.25
+    expect(velocityCurve(0.5, { min: 0, max: 1, gamma: 2 })).toBeCloseTo(0.25, 6)
+  })
 })

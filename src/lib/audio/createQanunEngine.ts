@@ -52,6 +52,8 @@ export const createQanunEngine = ({
   const voices = Array.from({ length: polyphony }, () => {
     const g = new Tone.Gain(0)
     g.connect(reverb)
+    // Karplus-Strong qanun timbre: full attack noise, 4 kHz dampening (sets
+    // string brightness), tight resonance for a long ringing decay.
     const synth = new Tone.PluckSynth({ attackNoise: 1, dampening: 4000, resonance: 0.9 })
     synth.connect(g)
     return { synth, gain: g }
