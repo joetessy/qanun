@@ -320,7 +320,7 @@
     0 0 14px 2px rgba(231, 194, 91, 0.18),
     0 1px 5px rgba(0, 0, 0, 0.4);
   opacity: 1;
-  width: calc(var(--string-w, 1px) + 0.5px); /* fractionally thicker than base */
+  width: 3.2px; /* the boldest string on the field — the anchor, regardless of degree */
 }
 
 /* Nearest string under a finger: lit and haloed. */

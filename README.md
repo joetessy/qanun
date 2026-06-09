@@ -11,10 +11,10 @@ npm install
 npm run dev      # http://localhost:5173
 ```
 
-Click a string to pluck (drag to glide, hold to sustain), or press **play** to use your hands. Modulate with the mandal switches, the **upper-jins** switcher, or the one-tap **maqam presets**. The first-run guide (and the **?** button) explains the rest.
+Click a string to pluck (drag to glide, hold to sustain), or press **play** to use your hands. Modulate by picking a **lower jins** (chips or keys `Q`–`O`) and an **upper jins** (`1`–`5`); the mandal switches give per-degree control. See [How modulation works](#how-modulation-works). The first-run guide (and the **?** button) explains the rest.
 
 ```bash
-npm run test:run   # 297 tests
+npm run test:run   # 295 tests
 npm run build      # production build → dist/
 ```
 
