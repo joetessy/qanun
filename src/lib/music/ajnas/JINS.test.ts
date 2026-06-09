@@ -54,4 +54,9 @@ describe('JINS table', () => {
   it('jinsById throws on an unknown id', () => {
     expect(() => jinsById('nope')).toThrow()
   })
+
+  it('declares hijaz before hijazkar (identifyAjnas tie-break relies on order)', () => {
+    const ids = JINS.map((j) => j.id)
+    expect(ids.indexOf('hijaz')).toBeLessThan(ids.indexOf('hijazkar'))
+  })
 })

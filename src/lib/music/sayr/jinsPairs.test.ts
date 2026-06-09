@@ -66,4 +66,18 @@ describe('isPairActive', () => {
     expect(isPairActive(BAYATI, pair)).toBe(true)              // degree 4 = 5
     expect(isPairActive(applyJinsPair(BAYATI, pair), pair)).toBe(true) // degree 4 = 4
   })
+  it('is false when the degree sits at neither pole', () => {
+    const pair = JINS_PAIRS.find((p) => p.id === 'bayati-saba')!
+    const neutral = setMandal(DEFAULT_RAST_STATE, 4, 6) // degree 4 = 6, neither 4 nor 5
+    expect(isPairActive(neutral, pair)).toBe(false)
+  })
+})
+
+describe('jins-pair labels', () => {
+  it('carries the human-readable poles for the UI', () => {
+    const bayatiSaba = JINS_PAIRS.find((p) => p.id === 'bayati-saba')!
+    expect([bayatiSaba.fromLabel, bayatiSaba.toLabel]).toEqual(['Bayati', 'Saba'])
+    const hijazHijazkar = JINS_PAIRS.find((p) => p.id === 'hijaz-hijazkar')!
+    expect([hijazHijazkar.fromLabel, hijazHijazkar.toLabel]).toEqual(['Hijaz', 'Hijazkar'])
+  })
 })

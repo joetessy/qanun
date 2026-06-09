@@ -11,6 +11,10 @@ export const MAQAM_NAMES: readonly MaqamNameEntry[] = [
   { lower: 'rast',     upper: 'rast',     ghammazDegree: 5, name: 'Maqam Rast' },
   { lower: 'rast',     upper: 'nahawand', ghammazDegree: 5, name: 'Maqam Rast' },
   { lower: 'rast',     upper: 'hijaz',    ghammazDegree: 5, name: 'Maqam Suznak' },
+  // hijaz and hijazkar share an interval vector, so identifyAjnas may resolve
+  // the upper jins to either; both name Suznak. Keeps the lookup independent of
+  // JINS declaration order / Array.sort stability.
+  { lower: 'rast',     upper: 'hijazkar', ghammazDegree: 5, name: 'Maqam Suznak' },
   { lower: 'nahawand', upper: 'kurd',     ghammazDegree: 5, name: 'Maqam Nahawand' },
   { lower: 'nahawand', upper: 'hijaz',    ghammazDegree: 5, name: 'Maqam Nahawand' },
   { lower: 'bayati',   upper: 'nahawand', ghammazDegree: 4, name: 'Maqam Bayati' },

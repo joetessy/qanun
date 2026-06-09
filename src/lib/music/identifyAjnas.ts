@@ -1,10 +1,12 @@
 import type { AjnasIdentity, Jins, MandalState } from './types'
-import { JINS, jinsById } from './ajnas/JINS'
+import { JINS } from './ajnas/JINS'
 import { offsetOf } from './ajnas/MANDALS'
 import { lookupMaqamName } from './MAQAM_NAMES'
 
-// Extended degree offsets relative to the tonic, degrees 1..9 (8 and 9 wrap
-// into the next octave) so a pentachord upper jins on the ghammāz can be read.
+// Field offsets relative to the tonic: degrees 1..7, plus degrees 1–2 of the
+// next octave (as 12 + offset). Those two extras are all that's needed — the
+// longest upper jins is 5 notes and roots no later than field degree 5, so a
+// pentachord upper on the ghammāz reads degrees 5..9.
 const extendedOffsets = (state: MandalState): number[] => {
   const base = [1, 2, 3, 4, 5, 6, 7].map((d) => offsetOf(state, d))
   return [...base, 12 + offsetOf(state, 1), 12 + offsetOf(state, 2)]
@@ -43,7 +45,7 @@ export const identifyAjnas = (state: MandalState): AjnasIdentity => {
   const upper = matchJins(offsets, lower.ghammazDegree, () => true)
 
   if (!upper) {
-    return { lower: lower.id, upper: null, maqamName: jinsById(lower.id).label }
+    return { lower: lower.id, upper: null, maqamName: lower.label }
   }
 
   const named = lookupMaqamName(lower.id, upper.id, lower.ghammazDegree)
