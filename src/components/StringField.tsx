@@ -12,6 +12,7 @@ interface StringFieldProps {
   courses: Course[]
   highlightIndex: number | null   // nearest course under a playing finger
   pluckedIndex: number | null     // course that just sounded (for feedback)
+  homeDegree: number              // field degree the maqam tonic is anchored on (1/2/3)
   // Pointer play
   onPluckCourse: (index: number) => void
   onGlideCourse: (index: number) => void
@@ -28,6 +29,7 @@ export const StringField = ({
   courses,
   highlightIndex,
   pluckedIndex,
+  homeDegree,
   onPluckCourse,
   onGlideCourse,
   onHoldCourse,
@@ -123,7 +125,7 @@ export const StringField = ({
         const classes = [
           'string',
           `degree-${c.degree}`,
-          c.degree === 1 ? 'is-tonic' : '',
+          c.degree === homeDegree ? 'is-home' : '',
           c.index === highlightIndex ? 'is-highlight' : '',
           c.index === pluckedIndex ? 'is-plucked' : ''
         ].filter(Boolean).join(' ')

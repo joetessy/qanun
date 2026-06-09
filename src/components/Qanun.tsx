@@ -93,6 +93,7 @@ export const Qanun = () => {
           courses={engine.courses}
           highlightIndex={engine.highlightIndex}
           pluckedIndex={engine.pluckedIndex}
+          homeDegree={engine.homeDegree}
           onPluckCourse={engine.pluckCourse}
           onGlideCourse={engine.glideCourse}
           onHoldCourse={engine.holdCourse}

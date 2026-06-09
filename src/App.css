@@ -303,20 +303,24 @@
 .string-field .string[data-degree='6'] { width: 1.5px; }
 .string-field .string[data-degree='7'] { width: 1.3px; }
 
-/* Tonic course (every degree-1 string): brighter, with a faint standing glow. */
-.string-field .string.is-tonic {
+/* Home course (the maqam tonic, degree = homeDegree): warmer and thicker than a
+   plain brass string with a faint standing halo — the "you are here" anchor.
+   Works on the dark walnut surface; no light theme exists so no media query needed. */
+.string-field .string.is-home {
   background: linear-gradient(
     90deg,
-    rgba(90, 60, 18, 0.9) 0%,
-    var(--brass-lit) 36%,
-    #fff8d8 50%,
-    var(--brass-lit) 64%,
-    rgba(90, 60, 18, 0.9) 100%
+    rgba(110, 72, 18, 0.92) 0%,
+    var(--brass-lit) 32%,
+    #fffae0 50%,
+    var(--brass-lit) 68%,
+    rgba(110, 72, 18, 0.92) 100%
   );
   box-shadow:
-    0 0 4px 0.5px rgba(255, 221, 128, 0.4),
+    0 0 6px 1px rgba(255, 226, 130, 0.45),
+    0 0 14px 2px rgba(231, 194, 91, 0.18),
     0 1px 5px rgba(0, 0, 0, 0.4);
   opacity: 1;
+  width: calc(var(--string-w, 1px) + 0.5px); /* fractionally thicker than base */
 }
 
 /* Nearest string under a finger: lit and haloed. */
