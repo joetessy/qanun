@@ -32,6 +32,7 @@ const makeMockTone = () => {
       gain: { value: v, rampTo: voiceGainRampTo },
       connect: vi.fn().mockReturnThis(),
       toDestination: vi.fn().mockReturnThis(),
+      output: {},
       dispose: vi.fn()
     })),
     Reverb: vi.fn().mockImplementation(() => ({
@@ -109,6 +110,7 @@ describe('createQanunEngine — surface', () => {
       'start', 'dispose', 'pluck',
       'holdStart', 'holdStop',
       'setReverbEnabled', 'setReverbWet', 'setReverbSize', 'getSampleRate',
+      'getRecorderTap',
       'setSoundSource'
     ]) {
       expect(typeof (e as unknown as Record<string, unknown>)[fn]).toBe('function')

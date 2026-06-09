@@ -42,6 +42,7 @@ export interface QanunEngine {
   setReverbWet: (wet: number) => void
   setReverbSize: (size: ReverbSize) => void
   getSampleRate: () => number
+  getRecorderTap: () => AudioNode
   readonly sumBus: Gain
   readonly isStarted: boolean
   // P2: sampler voice switching
@@ -337,6 +338,12 @@ export const createQanunEngine = ({
 
   const getSampleRate = (): number => Tone.getContext().sampleRate
 
+  /**
+   * Returns the post-fx bus output node for recording tap.
+   * Captures exactly what the user hears (after reverb + chorus).
+   */
+  const getRecorderTap = (): AudioNode => sumBus.output as unknown as AudioNode
+
   return {
     start,
     dispose,
@@ -348,6 +355,7 @@ export const createQanunEngine = ({
     setReverbWet,
     setReverbSize,
     getSampleRate,
+    getRecorderTap,
     setSoundSource,
     get sumBus() {
       return sumBus as unknown as Gain
