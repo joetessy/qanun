@@ -11,14 +11,11 @@ import { degreeNoteLabel } from '../lib/music/degreeLabel'
 import { applyJinsPair, type JinsPair } from '../lib/music/sayr/jinsPairs'
 import { applyLowerJins, lowerJinsById, lowerJinsList, maqamNameFor } from '../lib/music/sayr/lowerJins'
 import { applyUpperJins, upperOptions, ghammazFieldDegree, type UpperJinsOption } from '../lib/music/sayr/upperJins'
-import { suggestModulations } from '../lib/music/sayr/suggestModulations'
-import { emphasisNotes, type EmphasisNotes } from '../lib/music/sayr/emphasisNotes'
-import type { SayrMove } from '../lib/music/sayr/SAYR_NETWORKS'
 import { nearestCourse, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
 import { upperNeighborCourse } from '../lib/gesture/pointerPlay'
 import { createPinchPlay } from '../lib/gesture/pinchPlay'
 import { createVibrato } from '../lib/gesture/vibrato'
-import { createQanunEngine, type QanunEngine, type SoundSource } from '../lib/audio/createQanunEngine'
+import { createQanunEngine, type QanunEngine } from '../lib/audio/createQanunEngine'
 import { createRecorder, type Recorder, type RecorderState } from '../lib/audio/createRecorder'
 import { formatElapsed } from '../lib/audio/formatElapsed'
 import { createDrone, type DroneEngine } from '../lib/practice/createDrone'
@@ -38,6 +35,8 @@ import { deriveHandRoles } from './deriveHandRoles'
 const READING_PUSH_EVERY_N_FRAMES = 4
 // Frames a freshly plucked string stays lit before the highlight clears.
 const PLUCK_GLOW_FRAMES = 6
+// Velocity for a sustained (rashsh) note when the per-frame reconcile (re)starts it.
+const SUSTAIN_VELOCITY = 0.6
 
 // Overlay palette — warm bone-white rings with a soft dark halo so they read
 // over the bright wood soundboard. The playing hand reads brighter than the
@@ -83,17 +82,6 @@ export interface UseQanunEngine {
   holdCourse: (index: number) => void
   releaseHold: () => void
   onVibrato: (cents: number, rateHz: number) => void
-  // P2: sampler voice switching
-  soundSource: SoundSource
-  setSoundSource: (s: SoundSource) => void
-  isSampleLoaded: boolean
-  // P3: sayr guide + emphasis overlay
-  suggestions: SayrMove[]
-  emphasis: EmphasisNotes
-  showEmphasis: boolean
-  setShowEmphasis: (b: boolean) => void
-  showSayrGuide: boolean
-  setShowSayrGuide: (b: boolean) => void
   // P4a: recording
   recordingState: RecorderState
   recordingElapsedDisplay: string
@@ -148,12 +136,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     buildField({ tonicMidi: DEFAULT_TONIC_MIDI, mandalState: DEFAULT_RAST_STATE })
   )
   const [trillEnabled, setTrillEnabled] = useState(false)
-  // P2: sampler sound-source state — defaults before the engine is created.
-  const [soundSource, setSoundSourceState] = useState<SoundSource>('sample')
-  const [isSampleLoaded, setIsSampleLoaded] = useState(false)
-  // P3: sayr + emphasis toggles (both off by default).
-  const [showEmphasis, setShowEmphasis] = useState(false)
-  const [showSayrGuide, setShowSayrGuide] = useState(false)
 
   // P4a: recording state (idle by default — recorder is lazily created).
   const [recordingState, setRecordingState] = useState<RecorderState>('idle')
@@ -212,10 +194,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     createPinchPlay({ glideDebounceSec: 0.07 })
   ])
   const fingerFiltersRef = useRef([createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 }), createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 })])
-  // Vibrato detector driven by the sustaining hand's vertical wobble; the slot
-  // index that is currently sustaining (null = none).
-  const vibratoRef = useRef(createVibrato())
-  const sustainingSlotRef = useRef<number | null>(null)
+  // Per-hand vibrato detectors — a deliberate vertical wave on either hand bends
+  // the ringing note(s). Each slot's held course (null = none) is reconciled each
+  // frame into a single or alternating rashsh; the key detects set changes.
+  const vibratoRefs = useRef([createVibrato(), createVibrato()])
+  const sustainCourseRef = useRef<(number | null)[]>([null, null])
+  const lastHoldKeyRef = useRef('')
 
   const recompute = useCallback((next: MandalState, nextTonic: number): void => {
     const field = buildField({ tonicMidi: nextTonic, mandalState: next })
@@ -316,26 +300,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     }
     if (!audioRef.current.isStarted) await audioRef.current.start()
   }, [])
-
-  // ── P2: sound-source helpers ─────────────────────────────────────────────────
-
-  const setSoundSource = useCallback((s: SoundSource): void => {
-    setSoundSourceState(s)
-    audioRef.current?.setSoundSource(s)
-  }, [])
-
-  // Poll the engine for isSampleLoaded until it becomes true (then stop).
-  // The interval is short (~200 ms) so the UI update is snappy.
-  useEffect(() => {
-    if (isSampleLoaded) return // already done
-    const id = setInterval(() => {
-      if (audioRef.current?.isSampleLoaded) {
-        setIsSampleLoaded(true)
-        clearInterval(id)
-      }
-    }, 200)
-    return () => clearInterval(id)
-  }, [isSampleLoaded])
 
   // ── P4a: recorder helpers ───────────────────────────────────────────────────
 
@@ -643,15 +607,14 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       })
       for (const ev of pinchEvts) {
         if (ev.type === 'release') {
-          audio.holdStop()
-          if (sustainingSlotRef.current === slot) sustainingSlotRef.current = null
+          // Sustain ended for this slot — the per-frame reconcile updates audio.
+          sustainCourseRef.current[slot] = null
         } else if (ev.type === 'sustain') {
           const c = ev.courseIndex
           if (field[c]) {
-            audio.holdStart({ freqHz: field[c].freqHz, velocity: ev.velocity })
-            sustainingSlotRef.current = slot
-            emitMidi(field[c].freqHz, ev.velocity)
-            lastPluckMidi = field[c].midi
+            // Record the held course; the reconcile (after the loop) starts the
+            // rashsh — alternating between the two when both hands hold at once.
+            sustainCourseRef.current[slot] = c
             pluckedCourse = c
           }
         } else if (ev.type === 'pluck') {
@@ -674,6 +637,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         } else if (ev.type === 'glide') {
           const c = ev.courseIndex
           if (field[c]) {
+            sustainCourseRef.current[slot] = null // gliding ends the old sustain
             audio.pluck({ freqHz: field[c].freqHz, velocity: ev.velocity })
             emitMidi(field[c].freqHz, ev.velocity)
             lastPluckMidi = field[c].midi
@@ -683,20 +647,39 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       }
     })
 
-    // --- Vibrato from the sustaining hand's vertical wobble ---
-    // The sustaining slot (if any) drives the detector with its raw index-tip y;
-    // otherwise we feed an inactive sample so the detector clears and the engine
-    // returns to no vibrato. Vertical motion never changes the course (course is
-    // by x), so vibrato can't switch strings.
-    const vibSlot = sustainingSlotRef.current
-    const vibY = vibSlot !== null ? slotTipY[vibSlot] : -1
-    if (vibSlot !== null && vibY >= 0) {
-      const { cents, rateHz } = vibratoRef.current.update({ y: vibY, tNow, active: true })
-      audio.setVibrato({ cents, rateHz })
-    } else {
-      vibratoRef.current.update({ y: 0, tNow, active: false })
-      audio.setVibrato({ cents: 0 })
+    // --- Reconcile the sustained hold to the set of held courses ---
+    // 0 held → stop; 1 → single rashsh; 2 → alternate (higher note first). Only
+    // re-issued when the set changes, so the loop isn't restarted every frame.
+    const held = sustainCourseRef.current.filter((c): c is number => c !== null && !!field[c])
+    const holdKey = [...held].sort((a, b) => a - b).join(',')
+    if (holdKey !== lastHoldKeyRef.current) {
+      lastHoldKeyRef.current = holdKey
+      if (held.length === 0) {
+        audio.holdStop()
+      } else if (held.length === 1) {
+        audio.holdStart({ freqHz: field[held[0]].freqHz, velocity: SUSTAIN_VELOCITY, immediate: false })
+      } else {
+        const freqs = held.map((c) => field[c].freqHz).sort((a, b) => b - a) // higher first
+        audio.holdAlternate({ freqs, velocity: SUSTAIN_VELOCITY })
+      }
     }
+
+    // --- Vibrato from a deliberate vertical wave on EITHER hand ---
+    // createVibrato gates to intentional waves (slow drift = nothing), and the
+    // Tone.Vibrato node only colours notes that are actually ringing, so feeding
+    // every present hand is safe. Vertical motion never changes the course.
+    let vibCents = 0
+    let vibRate = 5.5
+    for (let slot = 0; slot < 2; slot++) {
+      const y = slotTipY[slot]
+      const present = y >= 0
+      const r = vibratoRefs.current[slot].update({ y: present ? y : 0, tNow, active: present })
+      if (r.cents > vibCents) {
+        vibCents = r.cents
+        vibRate = r.rateHz || vibRate
+      }
+    }
+    audio.setVibrato({ cents: vibCents, rateHz: vibRate })
 
     frameCounterRef.current += 1
     if (lastPluckMidi !== null || frameCounterRef.current % READING_PUSH_EVERY_N_FRAMES === 0) {
@@ -764,8 +747,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       canvas.height = height
       pinchPlayRef.current.forEach((d) => d.reset())
       fingerFiltersRef.current.forEach((f) => f.reset())
-      vibratoRef.current.reset()
-      sustainingSlotRef.current = null
+      vibratoRefs.current.forEach((v) => v.reset())
+      sustainCourseRef.current = [null, null]
+      lastHoldKeyRef.current = ''
       frameCounterRef.current = 0
       pluckClearRef.current = 0
       setHighlightIndex(null)
@@ -789,9 +773,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     // misfire on the first frame back).
     pinchPlayRef.current.forEach((d) => d.reset())
     fingerFiltersRef.current.forEach((f) => f.reset())
-    vibratoRef.current.reset()
-    sustainingSlotRef.current = null
-    // Also clear engine vibrato so a Stop→Start doesn't inherit a stale depth.
+    vibratoRefs.current.forEach((v) => v.reset())
+    sustainCourseRef.current = [null, null]
+    lastHoldKeyRef.current = ''
+    // Stop any ringing rashsh + clear engine vibrato so Stop→Start is clean.
+    audioRef.current?.holdStop()
     audioRef.current?.setVibrato({ cents: 0 })
     // Clear any lingering overlay ring and the string highlight/pluck glow.
     const canvas = canvasRef.current
@@ -819,21 +805,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     []
   )
 
-  // P3: derive sayr suggestions + emphasis notes from current mandal/courses state.
-  // These are cheap pure-function calls — no memoisation needed at 60fps.
-  const suggestions = suggestModulations(mandalState)
-  const emphasis = emphasisNotes({ mandalState, courses })
 
   // Ghammāz upper-jins options — contextual to the active lower jins + home.
   const upperJinsOptions = upperOptions(lowerJins, mandalState, homeDegree)
 
-  // The field-degree note the upper jins sits on (e.g. "G" / "F") — shown in the
-  // switcher header. null when the ghammāz would fall outside the 7-degree field.
-  const ghammazLabel = ((): string | null => {
-    const g = ghammazFieldDegree(lowerJins, homeDegree)
-    if (g < 1 || g > 7) return null
-    return degreeNoteLabel({ tonicMidi, degree: g, offset: offsetOf(mandalState, g) })
-  })()
+  // The scale degree the upper jins pivots on, relative to the maqam tonic
+  // (5 for Rast, 4 for Bayati, 3 for Sikah) — shown in the switcher header.
+  const ghammazLabel = String(ghammazFieldDegree(lowerJins, homeDegree) - homeDegree + 1)
 
   // P4a: derive display string for recording elapsed time from stored frame count.
   const recordingElapsedDisplay = formatElapsed(recordingElapsedFrames, sampleRate)
@@ -867,15 +845,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     holdCourse,
     releaseHold,
     onVibrato,
-    soundSource,
-    setSoundSource,
-    isSampleLoaded,
-    suggestions,
-    emphasis,
-    showEmphasis,
-    setShowEmphasis,
-    showSayrGuide,
-    setShowSayrGuide,
     // P4a: recording
     recordingState,
     recordingElapsedDisplay,

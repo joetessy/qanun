@@ -20,11 +20,12 @@ describe('nearestCourse', () => {
 
   it('clamps below the field to course 0 and above to the last course', () => {
     expect(nearestCourse({ x: -1, ...ARGS })).toBe(0)
-    expect(nearestCourse({ x: 0.05, ...ARGS })).toBe(0)  // left of the play field
+    expect(nearestCourse({ x: 0.05, ...ARGS })).toBe(0)  // near the left edge → first course
     expect(nearestCourse({ x: 2, ...ARGS })).toBe(27)
   })
 
-  it('the play field starts to the right of the mandal zone', () => {
-    expect(PLAY_FIELD_LEFT).toBeGreaterThanOrEqual(0.18)
+  it('spans nearly the full width — small left margin, no mandal zone', () => {
+    expect(PLAY_FIELD_LEFT).toBeLessThan(0.1)
+    expect(PLAY_FIELD_RIGHT).toBe(1.0)
   })
 })

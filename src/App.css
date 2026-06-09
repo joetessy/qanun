@@ -301,21 +301,12 @@
   transition: filter 0.12s ease-out, box-shadow 0.12s ease-out, opacity 0.12s;
 }
 
-/* Middle wire is very slightly bolder — the "main" string of a real qanun course. */
-.string-field .course .str-m {
-  width: 1.3px;
-  opacity: 0.95;
-}
-
-/* Register-graded wire thickness: degree 1 (low) → fatter wires; 7 (high) → thinner. */
-.string-field .course[data-degree='1'] .str   { width: 1.6px; }
-.string-field .course[data-degree='1'] .str-m { width: 2px; }
-.string-field .course[data-degree='2'] .str   { width: 1.4px; }
-.string-field .course[data-degree='2'] .str-m { width: 1.8px; }
-.string-field .course[data-degree='3'] .str   { width: 1.2px; }
-.string-field .course[data-degree='3'] .str-m { width: 1.6px; }
-.string-field .course[data-degree='4'] .str   { width: 1.1px; }
-.string-field .course[data-degree='4'] .str-m { width: 1.4px; }
+/* Register-graded wire thickness: degree 1 (low) → fatter wires; 7 (high) → thinner.
+   All three wires within a course are identical (a real qanun course is 3 unison strings). */
+.string-field .course[data-degree='1'] .str { width: 1.6px; }
+.string-field .course[data-degree='2'] .str { width: 1.4px; }
+.string-field .course[data-degree='3'] .str { width: 1.2px; }
+.string-field .course[data-degree='4'] .str { width: 1.1px; }
 
 /* Home course (the maqam tonic): warmer, brighter — the "you are here" anchor. */
 .string-field .course.is-home .str {
@@ -333,13 +324,6 @@
     0 1px 4px rgba(0, 0, 0, 0.35);
   opacity: 1;
 }
-.string-field .course.is-home .str-m {
-  /* Centre wire of the home course: the primary luminous anchor wire. */
-  box-shadow:
-    0 0 6px 2px rgba(255, 226, 130, 0.65),
-    0 0 16px 4px rgba(231, 194, 91, 0.28);
-}
-
 /* Nearest course under a finger: lit and haloed across all three wires. */
 .string-field .course.is-highlight .str {
   filter: brightness(1.5) saturate(1.2);
@@ -653,6 +637,7 @@
   z-index: 4;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   padding: clamp(5px, 1vmin, 9px) clamp(10px, 1.8vw, 18px);
   background:
@@ -667,12 +652,16 @@
 
 /* "jins" label — mirrors .maqam-presets .presets-label. */
 .jins-selector-label {
+  position: absolute;
+  left: clamp(10px, 1.8vw, 18px);
+  top: 50%;
+  transform: translateY(-50%);
   font-family: var(--font-body);
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.28em;
   text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--ink-dim);
   flex-shrink: 0;
   user-select: none;
 }
@@ -752,12 +741,13 @@
    sayr guide so the two rows stack naturally when both are visible. */
 .upper-jins-switcher {
   position: absolute;
-  bottom: clamp(32px, 5vmin, 46px); /* sits on top of .maqam-presets */
+  bottom: clamp(32px, 5vmin, 46px); /* sits on top of the jins selector */
   left: 0;
   right: 0;
   z-index: 4;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   padding: clamp(4px, 0.8vmin, 8px) clamp(10px, 1.8vw, 18px);
   background:
@@ -771,12 +761,16 @@
 }
 
 .upper-jins-label {
+  position: absolute;
+  left: clamp(10px, 1.8vw, 18px);
+  top: 50%;
+  transform: translateY(-50%);
   font-family: var(--font-body);
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.28em;
   text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--ink-dim);
   flex-shrink: 0;
   user-select: none;
   white-space: nowrap;
@@ -845,93 +839,6 @@
     0 0 14px rgba(200, 120, 30, 0.4),
     0 0 26px rgba(180, 100, 20, 0.18);
   font-weight: 600;
-}
-
-/* ═══ MAQAM READOUT — always-on compact strip above the jins rails ═══════════
-   Sits between the upper-jins switcher and the string field. Shows the current
-   maqam name + home note, plus up to 4 sayr suggestion chips. */
-.maqam-readout {
-  position: absolute;
-  left: 0;
-  right: 0;
-  /* Sits just above the two bottom rails: upper-jins-switcher + jins-selector. */
-  bottom: calc(clamp(32px, 5vmin, 46px) + clamp(28px, 4.5vmin, 40px));
-  z-index: 4;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: clamp(6px, 1vw, 12px);
-  padding: clamp(3px, 0.6vmin, 6px) clamp(12px, 2vw, 24px);
-  background:
-    repeating-linear-gradient(2deg, rgba(0, 0, 0, 0.10) 0 2px, rgba(0, 0, 0, 0) 2px 6px),
-    linear-gradient(180deg, rgba(18, 11, 5, 0.92) 0%, rgba(12, 7, 3, 0.92) 100%);
-  border-top: 1px solid rgba(0, 0, 0, 0.5);
-  border-bottom: 1px solid rgba(255, 222, 150, 0.05);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 222, 150, 0.06),
-    0 -1px 8px -3px rgba(0, 0, 0, 0.5);
-}
-
-/* Current maqam name — brass-glow, display font. */
-.maqam-readout .mr-maqam {
-  font-family: var(--font-display);
-  font-size: clamp(11px, 1.4vmin, 14px);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  color: var(--brass-glow);
-  text-shadow: 0 0 8px rgba(255, 221, 128, 0.18);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-/* Home note — muted annotation. */
-.maqam-readout .mr-home {
-  font-family: var(--font-body);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-/* Sayr chip container. */
-.maqam-readout .mr-sayr {
-  display: flex;
-  align-items: center;
-  gap: clamp(4px, 0.6vw, 8px);
-  flex-wrap: nowrap;
-  overflow: hidden;
-  margin-left: auto;
-}
-
-/* Individual sayr move chip — subtle pill, activates on hover/click. */
-.maqam-readout .mr-move {
-  font-family: var(--font-body);
-  font-size: clamp(9px, 1.1vmin, 11px);
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-  flex-shrink: 0;
-  color: var(--ink-faint);
-  background: linear-gradient(180deg, rgba(44, 29, 16, 0.7) 0%, rgba(27, 17, 7, 0.7) 100%);
-  border: 1px solid rgba(110, 79, 28, 0.28);
-  border-radius: 999px;
-  padding: clamp(2px, 0.4vmin, 4px) clamp(8px, 1.2vw, 12px);
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
-  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.05);
-}
-.maqam-readout .mr-move:hover {
-  color: var(--brass-lit);
-  border-color: rgba(184, 138, 46, 0.5);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 222, 150, 0.1),
-    0 0 7px rgba(184, 138, 46, 0.18);
-}
-.maqam-readout .mr-move:active {
-  transform: translateY(1px);
 }
 
 /* ═══ EMPHASIS OVERLAY — sayr emphasis-note glows ════════════════════════════

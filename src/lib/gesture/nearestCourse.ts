@@ -1,7 +1,7 @@
-// The play field occupies the screen to the right of the mandal zone
-// (left ~18%). x is a normalized screen coordinate (0 = screen-left), already
-// mirrored by the caller. Courses are uniform, cell-centred cells.
-export const PLAY_FIELD_LEFT = 0.2
+// The play field spans nearly the full width now that the mandal is gone — a
+// small left margin keeps the lowest course off the cabinet edge. x is a
+// normalized screen coordinate (0 = screen-left), already mirrored by the caller.
+export const PLAY_FIELD_LEFT = 0.04
 export const PLAY_FIELD_RIGHT = 1.0
 
 export interface NearestCourseArgs {

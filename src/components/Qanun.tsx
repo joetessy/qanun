@@ -7,11 +7,7 @@ import { UpperJinsSwitcher } from './UpperJinsSwitcher'
 import { QanunHud } from './QanunHud'
 import { Controls } from './Controls'
 import { Rosette } from './Rosette'
-import { SayrGuide } from './SayrGuide'
-import { MaqamReadout } from './MaqamReadout'
-import { EmphasisOverlay } from './EmphasisOverlay'
 import { Onboarding } from './Onboarding'
-import { JINS_PAIRS } from '../lib/music/sayr/jinsPairs'
 import { useQanunEngine } from '../hooks/useQanunEngine'
 import { hasOnboarded, setOnboarded } from '../lib/ui/onboardingStorage'
 
@@ -81,15 +77,6 @@ export const Qanun = () => {
           ghammazLabel={engine.ghammazLabel}
           onSelect={engine.setUpperJins}
         />
-        {/* Always-on maqam/sayr readout — compact strip just above the switchers. */}
-        <MaqamReadout
-          maqamName={engine.reading.maqamName}
-          homeNote={engine.reading.homeNote}
-          suggestions={engine.suggestions}
-          jinsPairs={JINS_PAIRS}
-          onApplyPreset={engine.setMaqamPreset}
-          onApplyPair={engine.applyPair}
-        />
         <StringField
           courses={engine.courses}
           highlightIndex={engine.highlightIndex}
@@ -101,20 +88,6 @@ export const Qanun = () => {
           onReleaseHold={engine.releaseHold}
           onVibrato={engine.onVibrato}
         />
-        {/* Emphasis overlay — off by default, layered above strings. */}
-        {engine.showEmphasis && (
-          <EmphasisOverlay courses={engine.courses} emphasis={engine.emphasis} />
-        )}
-        {/* Sayr guide — off by default, positioned above the preset rail. */}
-        {engine.showSayrGuide && (
-          <SayrGuide
-            maqamName={engine.reading.maqamName}
-            suggestions={engine.suggestions}
-            onApplyPreset={engine.setMaqamPreset}
-            onApplyPair={engine.applyPair}
-            jinsPairs={JINS_PAIRS}
-          />
-        )}
         {/* First-run onboarding guide — overlaid above everything, dismissible. */}
         {showOnboarding && <Onboarding onDismiss={dismissOnboarding} />}
       </div>
@@ -124,16 +97,9 @@ export const Qanun = () => {
           tonicMidi={engine.tonicMidi}
           mandalState={engine.mandalState}
           trillEnabled={engine.trillEnabled}
-          soundSource={engine.soundSource}
-          isSampleLoaded={engine.isSampleLoaded}
-          showEmphasis={engine.showEmphasis}
-          showSayrGuide={engine.showSayrGuide}
           onTonic={engine.setTonic}
           onApplyPair={engine.applyPair}
           onTrillEnabled={engine.setTrillEnabled}
-          onSoundSource={engine.setSoundSource}
-          onShowEmphasis={engine.setShowEmphasis}
-          onShowSayrGuide={engine.setShowSayrGuide}
           recordingState={engine.recordingState}
           recordingElapsedDisplay={engine.recordingElapsedDisplay}
           onStartRecording={engine.startRecording}

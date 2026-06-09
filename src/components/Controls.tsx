@@ -1,5 +1,4 @@
 import type { MandalState } from '../lib/music/types'
-import type { SoundSource } from '../lib/audio/createQanunEngine'
 import type { RecorderState } from '../lib/audio/createRecorder'
 import type { MidiSupportState, MidiOutputInfo } from '../lib/midi/createMidiOut'
 import { TypedSelect } from './TypedSelect'
@@ -10,16 +9,9 @@ interface ControlsProps {
   tonicMidi: number
   mandalState: MandalState
   trillEnabled: boolean
-  soundSource: SoundSource
-  isSampleLoaded: boolean
-  showEmphasis: boolean
-  showSayrGuide: boolean
   onTonic: (midi: number) => void
   onApplyPair: (pair: JinsPair) => void
   onTrillEnabled: (b: boolean) => void
-  onSoundSource: (s: SoundSource) => void
-  onShowEmphasis: (b: boolean) => void
-  onShowSayrGuide: (b: boolean) => void
   // P4a: recording
   recordingState: RecorderState
   recordingElapsedDisplay: string
@@ -69,16 +61,9 @@ export const Controls = ({
   tonicMidi,
   mandalState,
   trillEnabled,
-  soundSource,
-  isSampleLoaded,
-  showEmphasis,
-  showSayrGuide,
   onTonic,
   onApplyPair,
   onTrillEnabled,
-  onSoundSource,
-  onShowEmphasis,
-  onShowSayrGuide,
   recordingState,
   recordingElapsedDisplay,
   onStartRecording,
@@ -120,44 +105,6 @@ export const Controls = ({
         aria-pressed={trillEnabled}
       >
         {trillEnabled ? 'on' : 'off'}
-      </button>
-    </label>
-    <label className="ctrl">
-      <span>sound</span>
-      <button
-        type="button"
-        className={`toggle ${soundSource === 'sample' ? 'is-on' : ''}`}
-        onClick={() => onSoundSource(soundSource === 'sample' ? 'synth' : 'sample')}
-        aria-pressed={soundSource === 'sample'}
-        title={soundSource === 'sample' && !isSampleLoaded ? 'loading samples…' : undefined}
-      >
-        {soundSource === 'sample'
-          ? (isSampleLoaded ? 'sample' : 'sample…')
-          : 'synth'}
-      </button>
-    </label>
-    <label className="ctrl">
-      <span>emphasis</span>
-      <button
-        type="button"
-        className={`toggle ${showEmphasis ? 'is-on' : ''}`}
-        onClick={() => onShowEmphasis(!showEmphasis)}
-        aria-pressed={showEmphasis}
-        title="Highlight tonic, ghammaz, octave, and leading-tone strings"
-      >
-        {showEmphasis ? 'on' : 'off'}
-      </button>
-    </label>
-    <label className="ctrl">
-      <span>sayr</span>
-      <button
-        type="button"
-        className={`toggle ${showSayrGuide ? 'is-on' : ''}`}
-        onClick={() => onShowSayrGuide(!showSayrGuide)}
-        aria-pressed={showSayrGuide}
-        title="Show idiomatic next-move suggestions"
-      >
-        {showSayrGuide ? 'on' : 'off'}
       </button>
     </label>
     <div className="quick-swaps">
