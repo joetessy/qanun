@@ -3,7 +3,10 @@
 **Date:** 2026-06-08
 **Status:** Approved design → ready for implementation plan
 **Reference instrument:** `../theremin` (reuse its vision/audio/React foundation)
-**Companion reference:** [`docs/research/ajnas-reference.md`](../../research/ajnas-reference.md) — verified ajnas data from maqamworld.com & maqamlessons.com
+**Companion references:**
+- [`docs/research/ajnas-reference.md`](../../research/ajnas-reference.md) — verified jins intervals (maqamworld.com & maqamlessons.com)
+- [`docs/research/sayr-reference.md`](../../research/sayr-reference.md) — the sayr/modulation engine model (*Inside Arabic Music*, chs 13–20)
+- [`docs/research/maqam-sayr-catalog.md`](../../research/maqam-sayr-catalog.md) — per-maqam sayr pathways (*Inside Arabic Music*, ch 24)
 
 ---
 
@@ -15,6 +18,7 @@ A browser-based qanun you play with your hands over a webcam. It should **sound 
 - Play melodies and fast runs with both hands, touchlessly, with low latency.
 - Authentic Arabic tuning: scale-locked strings, quarter-tones, a glide runs the *maqam*.
 - Free, intuitive modulation between ajnas via a physical mandal rack.
+- Guidance from each maqam's *sayr* — emphasis notes highlighted, idiomatic modulations surfaced in the order real players use them.
 - A real qanun timbre (sampled), including the trichord shimmer.
 - Photoreal, instrument-like presentation.
 
@@ -55,8 +59,16 @@ The qanun is **not chromatic**. It has **7 courses per octave** (one per scale d
 ### 2.3 Naming what you play
 `identifyAjnas(mandalState) → { lower, upper, maqamName }`: match degrees `1..ghammāz` against jins interval patterns for the **lower jins**, and degrees from the ghammāz upward for the **upper jins**; look up the pair in a maqam table for a friendly name ("Maqam Rast"), else report the ajnas ("Rast ▸ Hijaz") or "custom". Drives the live HUD readout.
 
-### 2.4 Idiomatic jumps (optional assist)
-From the current lower/upper jins, `suggestModulations()` returns the idiomatic moves from the modulation map (e.g. Rast → Nahawand@5, → Hijaz@5, → Sikah@3). Selecting one sets the relevant mandal positions in a single action. Optional convenience layer, not the primary modulation path.
+### 2.4 Sayr & modulation model
+Modulation is driven by each maqam's **sayr** — its idiomatic melodic pathway — not a flat reachability list. (Full model in `docs/research/sayr-reference.md`; per-maqam data in `maqam-sayr-catalog.md`.)
+
+- **Two techniques, two surfaces.** *Inside Arabic Music* distinguishes (1) **altering intervals** on the same tonic and (2) **changing/tonicizing the tonic**. Technique 1 **is what a mandal flip does** — the mandal rack is literally interval-alteration. Technique 2 is a *playing* behavior (resolve to a new degree); the instrument **guides** it (emphasis overlay + sayr guide) rather than exposing a control. v1 detects modulation from mandal state (technique 1); auto-detecting technique-2 tonicization (dwell + resolution) is deferred.
+- **Sayr network.** Each maqam carries a small **weighted directed graph**: nodes = `jins@degree` (with an emphasis weight and start/cadence flags), edges = idiomatic modulations weighted by how heavily trafficked they are. Seeded from the catalog. `lib/music/sayr/` holds this data and the traversal/suggestion logic.
+- **`suggestModulations(mandalState, tonic)`** returns the idiomatic next moves **ordered by edge weight**, each tagged by technique (interval-alteration / mid-jins-switch / tonic-change) and family relationship. Selecting one sets the relevant mandal positions.
+- **Jins-pair quick-swaps (first-class).** The five single-accidental pairs — Bayati↔Saba, Nahawand↔Nahawand Murassaʿ, Sikah↔Mukhalif Sharqi, Rast↔Sazkar, Hijaz↔Hijazkar — are one-mandal flips surfaced as headline swaps. Nahawand↔Nikriz is **excluded** as a fluid swap (idiomatically a dramatic contrast, not a swap).
+
+### 2.5 Notes of melodic emphasis
+For the current maqam, `emphasisNotes(maqam)` returns the **tonic (qarar)**, **ghammāz** (primary modulation hub), **octave**, **leading tone** (per-jins interval below the tonic), and the **ʿatabāt** (ordered rest-steps of the ascent). These are highlighted on the string field to guide the sayr, and weight an optional tonic drone/tremolo (the qanun *rashsh*). Data and weights per `sayr-reference.md §3`.
 
 ---
 
@@ -78,6 +90,10 @@ From the current lower/upper jins, `suggestModulations()` returns the idiomatic 
 ### 3.4 Smoothing
 One-Euro filter on every tracked point (low cutoff at rest = zero shake; high cutoff in motion = no lag), reused from theremin `lib/oneEuro`.
 
+### 3.5 Sayr guidance (emphasis overlay + sayr guide)
+- **Emphasis overlay** — the current maqam's emphasis notes (§2.5) glow on the string field: tonic and ghammāz most strongly, then octave, leading tone, and the ʿatabāt staircase. Passive, always-on guidance toward idiomatic melody.
+- **Sayr guide** — in the mandal zone, an optional panel shows `suggestModulations()` for the current jins: the idiomatic next moves ordered by traffic, jins-pair swaps flagged, and the cadence (qafla) hinted. This is the upgraded "idiomatic jumps." Pinch a suggestion to apply it.
+
 ---
 
 ## 4. Audio engine
@@ -98,10 +114,11 @@ All of the following are **in v1**. Phasing orders the work; it is not a scope c
 
 | Phase | Contents |
 |---|---|
-| **P1 — Core instrument** | Vision loop, string field + builder, nearest/snap, pinch-pluck, rake, mandal rack + flick, ajnas identifier + HUD readout, **synth** sound, photoreal shell (frontend-design), start/permission flow. |
+| **P1 — Core instrument** | Vision loop, string field + builder, nearest/snap, pinch-pluck, rake, mandal rack + flick, ajnas identifier + HUD readout, **emphasis-note overlay** + **jins-pair quick-swaps**, **synth** sound, photoreal shell (frontend-design), start/permission flow. |
 | **P2 — Real sound** | Source + wire qanun multisample into `Tone.Sampler`; trichord layer; reverb tuning. |
-| **P3 — Studio extras** | WAV **recording/export** (reuse `lib/audio/createRecorder` + worklet), **drone** + **metronome** practice tools (reuse `lib/practice`), **MIDI out** (reuse `lib/midi`) with **microtonal pitch-bend** (per-note channel / MPE-style; expose bend-range; quarter-tone = bend offset). |
-| **P4 — Polish** | Idiomatic-jumps assist, tonic/maqam presets, onboarding, light/dark + responsive, performance pass. |
+| **P3 — Sayr & guided modulation** | Per-maqam **sayr networks** (data from `maqam-sayr-catalog.md`) + the **sayr guide** panel (weighted, technique-tagged `suggestModulations`); tonic/maqam presets. |
+| **P4 — Studio extras** | WAV **recording/export** (reuse `lib/audio/createRecorder` + worklet), **drone** + **metronome** practice tools (reuse `lib/practice`), **MIDI out** (reuse `lib/midi`) with **microtonal pitch-bend** (per-note channel / MPE-style; expose bend-range; quarter-tone = bend offset). |
+| **P5 — Polish** | Optional technique-2 tonicization detection (dwell + resolution), onboarding, light/dark + responsive, performance pass. |
 
 ---
 
@@ -119,7 +136,10 @@ Build on theremin's structure (React 19 + TS strict + Vite, Tone.js, `@mediapipe
 | `lib/music/ajnas/MANDALS.ts` | Per-degree position sets + offset resolver. |
 | `lib/music/buildField.ts` | `(tonic, mandalState) → Course[]` (~26 courses). |
 | `lib/music/identifyAjnas.ts` | Read mandal state → `{lower, upper, maqamName}`. |
-| `lib/music/modulationMap.ts` | Idiomatic-jump suggestions. |
+| `lib/music/sayr/SAYR_NETWORKS.ts` | Per-maqam weighted node/edge graphs (from the catalog). |
+| `lib/music/sayr/jinsPairs.ts` | The 5 jins-pair swaps (+ Nahawand↔Nikriz exclusion). |
+| `lib/music/sayr/emphasisNotes.ts` | Tonic/ghammāz/octave/leading-tone/ʿatabāt for a maqam. |
+| `lib/music/sayr/suggestModulations.ts` | Weighted, technique-tagged modulation suggestions. |
 | `lib/gesture/nearestCourse.ts` | x → nearest course + snap + highlight. |
 | `lib/gesture/detectPluck.ts` | Pinch-onset + rake (cross-velocity) detection. |
 | `lib/gesture/detectMandal.ts` | Zone test + lever select + flick/cycle. |
@@ -128,13 +148,15 @@ Build on theremin's structure (React 19 + TS strict + Vite, Tone.js, `@mediapipe
 | `components/MandalRack.tsx` | 7 levers, positions, flip animation. |
 | `components/QanunHud.tsx` | Live tonic / ajnas / maqam readout. |
 | `components/CameraInset.tsx` | Small PIP of the user's hands. |
+| `components/EmphasisOverlay.tsx` | Glow the maqam's emphasis notes on the field. |
+| `components/SayrGuide.tsx` | The sayr-aware modulation suggestion panel. |
 | `hooks/useQanunEngine.ts` | Frame loop: detect → per-hand role → gesture → audio + state. |
 
 ### Data flow (per video frame)
 ```
 detect(2 hands) → smooth fingertips (One-Euro)
   ├─ left hand in mandal zone?  → detectMandal → update mandalState
-  │                                → buildField + identifyAjnas (recompute)
+  │                                → buildField + identifyAjnas + emphasisNotes + suggestModulations (recompute)
   └─ else (each playing hand)   → nearestCourse(+snap)
                                   → detectPluck → engine.pluck(course, vel)
 state: { tonicMidi, mandalState[7], ajnas/maqam name, rakeSensitivity,
@@ -145,7 +167,7 @@ state: { tonicMidi, mandalState[7], ajnas/maqam name, rakeSensitivity,
 
 ## 7. Visual / UX
 
-- **Composition:** a photoreal qanun **soundboard** is the playing surface — warm wood, brass strings, the **mandal rack** at the left, decorative rosettes. Hands appear as **overlays** (fingertip rings; optional faint skeleton) positioned over the strings. A small **camera inset** (PIP) lets you see your hands for feedback. Top bar: wordmark, status, live tonic + maqam/ajnas readout. Minimal controls: tonic, rake sensitivity, sound source, FX, record, practice, MIDI, idiomatic-jumps.
+- **Composition:** a photoreal qanun **soundboard** is the playing surface — warm wood, brass strings, the **mandal rack** at the left, decorative rosettes. Hands appear as **overlays** (fingertip rings; optional faint skeleton) positioned over the strings. A small **camera inset** (PIP) lets you see your hands for feedback. Top bar: wordmark, status, live tonic + maqam/ajnas readout. Minimal controls: tonic, rake sensitivity, sound source, FX, record, practice, MIDI, sayr guide. The current maqam's **emphasis notes glow on the strings** as you play (the sayr overlay).
 - **Orientation:** strings are vertical (pitch = horizontal, low→high left→right) for comfortable horizontal rakes and an intuitive pitch axis; realism comes from materials, not literal qanun orientation. (Documented trade-off.)
 - **Built with the frontend-design skill** at implementation for a distinctive, non-generic, instrument-grade look.
 - **Theme:** warm, wood/brass instrument aesthetic; readable HUD typography; light/dark in P4.
@@ -158,12 +180,14 @@ state: { tonicMidi, mandalState[7], ajnas/maqam name, rakeSensitivity,
 3. **Microtonal MIDI** — quarter-tones need per-note pitch-bend (MPE-style channel rotation). *Mitigation:* reuse theremin bend handling; expose bend range; test against a soft-synth.
 4. **Mandal-flick reliability** — vertical flick can misfire. *Mitigation:* pinch-to-cycle fallback; generous lever hit-boxes; dwell confirmation.
 5. **Left-hand role switching** — accidental zone entry while playing. *Mitigation:* far-left zone, hysteresis on the boundary, visible mode indicator.
-6. **Performance** — MediaPipe GPU + Tone polyphony. Expected fine on desktop; budget a perf pass in P4.
+6. **Performance** — MediaPipe GPU + Tone polyphony. Expected fine on desktop; budget a perf pass in P5.
+7. **Sayr data fidelity** — the network model simplifies a living oral tradition. *Mitigation:* seed from the catalog for the common maqamat, mark the rest "custom," and treat the guide as suggestions, never constraints.
 
 ---
 
 ## 9. Testing strategy (vitest, reuse theremin patterns)
-- **Music model (heaviest):** every jins's intervals; `buildField` pitches & range; **`identifyAjnas` round-trips** (each maqam's mandal state names correctly); reachability (every jins in `JINS.ts` is producible from the mandal positions); modulation-map suggestions.
+- **Music model (heaviest):** every jins's intervals; `buildField` pitches & range; **`identifyAjnas` round-trips** (each maqam's mandal state names correctly); reachability (every jins in `JINS.ts` is producible from the mandal positions).
+- **Sayr model:** jins-pair swaps are single-accidental and bidirectional (and Nahawand↔Nikriz is *not* a pair); `emphasisNotes` returns the right tonic/ghammāz per maqam; `suggestModulations` returns catalog-ordered, technique-tagged moves for Rast/Bayati/Hijaz.
 - **Gesture math:** `nearestCourse` + snap; pinch onset edge; rake cross-velocity thresholds — driven by synthetic landmark sequences (no camera).
 - **Audio mapping:** course → frequency; velocity curve; sample/synth interface parity.
 - **Reused modules** keep their existing tests (recorder, metronome, drone, MIDI).
