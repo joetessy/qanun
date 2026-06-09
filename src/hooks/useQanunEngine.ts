@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import * as Tone from 'tone'
 import type { HandLandmarker } from '@mediapipe/tasks-vision'
 import type { MandalState, Course } from '../lib/music/types'
 import type { NormPoint, QanunReading, QanunStatus, RakeSensitivity } from '../types'
@@ -16,6 +17,10 @@ import { createPluckDetector } from '../lib/gesture/detectPluck'
 import { createRakeDetector } from '../lib/gesture/detectRake'
 import { createMandalGesture } from '../lib/gesture/detectMandal'
 import { createQanunEngine, type QanunEngine, type SoundSource } from '../lib/audio/createQanunEngine'
+import { createRecorder, type Recorder, type RecorderState } from '../lib/audio/createRecorder'
+import { formatElapsed } from '../lib/audio/formatElapsed'
+import { createDrone, type DroneEngine } from '../lib/practice/createDrone'
+import { createMetronome, type MetronomeEngine } from '../lib/practice/createMetronome'
 import { velocityCurve } from '../lib/audio/velocityCurve'
 import { createOneEuroFilter } from '../lib/oneEuro/createOneEuroFilter'
 import { findHandedness } from '../lib/vision/findHandedness'
@@ -81,6 +86,23 @@ export interface UseQanunEngine {
   setShowEmphasis: (b: boolean) => void
   showSayrGuide: boolean
   setShowSayrGuide: (b: boolean) => void
+  // P4a: recording
+  recordingState: RecorderState
+  recordingElapsedDisplay: string
+  startRecording: () => Promise<void>
+  stopRecording: () => void
+  cancelRecording: () => void
+  // P4a: drone
+  droneEnabled: boolean
+  setDroneEnabled: (b: boolean) => void
+  droneGain: number
+  setDroneGain: (v: number) => void
+  // P4a: metronome
+  metronomeEnabled: boolean
+  setMetronomeEnabled: (b: boolean) => void
+  metronomeBpm: number
+  setMetronomeBpm: (bpm: number) => void
+  tapMetronome: () => void
 }
 
 const EMPTY_READING: QanunReading = {
@@ -111,12 +133,32 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const [showEmphasis, setShowEmphasis] = useState(false)
   const [showSayrGuide, setShowSayrGuide] = useState(false)
 
+  // P4a: recording state (idle by default — recorder is lazily created).
+  const [recordingState, setRecordingState] = useState<RecorderState>('idle')
+  const [recordingElapsedFrames, setRecordingElapsedFrames] = useState(0)
+
+  // P4a: drone state (off by default).
+  const [droneEnabled, setDroneEnabledState] = useState(false)
+  const [droneGain, setDroneGainState] = useState(0.25)
+
+  // P4a: metronome state (off by default, 120 BPM default).
+  const [metronomeEnabled, setMetronomeEnabledState] = useState(false)
+  const [metronomeBpm, setMetronomeBpmState] = useState(120)
+
   // Hot refs (read inside the frame loop without re-subscribing).
   const tonicRef = useRef(DEFAULT_TONIC_MIDI)
   const mandalRef = useRef<MandalState>(DEFAULT_RAST_STATE)
   const coursesRef = useRef<Course[]>(courses)
   const landmarkerRef = useRef<HandLandmarker | null>(null)
   const audioRef = useRef<QanunEngine | null>(null)
+  // Sample rate is exposed as state (not a ref) so the elapsed display can read it
+  // during render. It is set once when the engine is first started and never changes.
+  const [sampleRate, setSampleRate] = useState(48000)
+  const recorderRef = useRef<Recorder | null>(null)
+  const droneRef = useRef<DroneEngine | null>(null)
+  const metronomeRef = useRef<MetronomeEngine | null>(null)
+  // Timer for polling elapsed frames while recording.
+  const elapsedTimerRef = useRef<number | null>(null)
   const frameHandleRef = useRef<FrameHandle | null>(null)
   const runningRef = useRef(false)
   const frameCounterRef = useRef(0)
@@ -169,6 +211,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     tonicRef.current = midi
     setTonicMidi(midi)
     recompute(mandalRef.current, midi)
+    // Keep the drone in tune if it has been lazily created.
+    droneRef.current?.setTonic(midi)
   }, [recompute])
 
   const setRakeSensitivity = useCallback((s: RakeSensitivity): void => {
@@ -178,7 +222,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
   /** Lazily creates + starts the audio engine on first user interaction. */
   const ensureAudioEngine = useCallback(async (): Promise<void> => {
-    if (!audioRef.current) audioRef.current = createQanunEngine({ polyphony: 16 })
+    if (!audioRef.current) {
+      audioRef.current = createQanunEngine({ polyphony: 16 })
+      setSampleRate(audioRef.current.getSampleRate())
+    }
     if (!audioRef.current.isStarted) await audioRef.current.start()
   }, [])
 
@@ -201,6 +248,131 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     }, 200)
     return () => clearInterval(id)
   }, [isSampleLoaded])
+
+  // ── P4a: recorder helpers ───────────────────────────────────────────────────
+
+  /** Lazy-create the recorder, wired to the post-fx bus. */
+  const ensureRecorder = useCallback((): Recorder => {
+    if (recorderRef.current) return recorderRef.current
+    const engine = audioRef.current
+    if (!engine) throw new Error('Audio engine not initialised before recorder')
+    const audioContext = Tone.getContext().rawContext as AudioContext
+    const rec = createRecorder({
+      audioContext,
+      sourceNode: engine.getRecorderTap(),
+      onStateChange: (state) => {
+        setRecordingState(state)
+        if (state !== 'recording') {
+          // Stop the elapsed polling timer when no longer recording.
+          if (elapsedTimerRef.current !== null) {
+            window.clearInterval(elapsedTimerRef.current)
+            elapsedTimerRef.current = null
+          }
+          setRecordingElapsedFrames(0)
+        }
+      },
+      onMaxDurationReached: () => {
+        // No toast in this phase; the UI will see state→encoding automatically.
+      },
+      onEncoderError: () => {
+        // Silently ignored — the recorder resolves with a partial WAV on error anyway.
+      }
+    })
+    recorderRef.current = rec
+    return rec
+  }, [])
+
+  const startRecording = useCallback(async (): Promise<void> => {
+    // Ensure the audio engine is up before we try to tap it.
+    await ensureAudioEngine()
+    const rec = ensureRecorder()
+    if (rec.getState() !== 'idle') return
+    await rec.start()
+    // Poll elapsed frames every 500 ms while recording.
+    elapsedTimerRef.current = window.setInterval(() => {
+      const frames = rec.getElapsedFrames()
+      setRecordingElapsedFrames(frames)
+    }, 500)
+  }, [ensureAudioEngine, ensureRecorder])
+
+  const stopRecording = useCallback((): void => {
+    const rec = recorderRef.current
+    if (!rec || rec.getState() !== 'recording') return
+    void rec.stop().then(({ wav }) => {
+      // Browser-only download (qanun is web-only, no Electron bridge).
+      const blob = new Blob([wav], { type: 'audio/wav' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `qanun-${new Date().toISOString().replace(/[:.]/g, '-')}.wav`
+      a.click()
+      URL.revokeObjectURL(url)
+    }).catch(() => {
+      // Encoding errors are surfaced via onEncoderError; nothing to do here.
+    })
+  }, [])
+
+  const cancelRecording = useCallback((): void => {
+    recorderRef.current?.cancel()
+  }, [])
+
+  // ── P4a: drone helpers ──────────────────────────────────────────────────────
+
+  /** Lazy-create the drone engine, connected to the sumBus. */
+  const ensureDrone = useCallback((): DroneEngine => {
+    if (droneRef.current) return droneRef.current
+    const engine = audioRef.current
+    if (!engine) throw new Error('Audio engine not initialised before drone')
+    const d = createDrone({ output: engine.sumBus, initialTonicMidi: tonicRef.current })
+    droneRef.current = d
+    return d
+  }, [])
+
+  const setDroneEnabled = useCallback((b: boolean): void => {
+    void ensureAudioEngine().then(() => {
+      const d = ensureDrone()
+      void d.setEnabled(b).then(() => setDroneEnabledState(d.enabled))
+    })
+  }, [ensureAudioEngine, ensureDrone])
+
+  const setDroneGain = useCallback((v: number): void => {
+    setDroneGainState(v)
+    droneRef.current?.setGain(v)
+  }, [])
+
+  // ── P4a: metronome helpers ──────────────────────────────────────────────────
+
+  /** Lazy-create the metronome engine, connected to the sumBus. */
+  const ensureMetronome = useCallback((): MetronomeEngine => {
+    if (metronomeRef.current) return metronomeRef.current
+    const engine = audioRef.current
+    if (!engine) throw new Error('Audio engine not initialised before metronome')
+    const m = createMetronome({ output: engine.sumBus, initialBpm: metronomeBpm })
+    metronomeRef.current = m
+    return m
+  }, [metronomeBpm])
+
+  const setMetronomeEnabled = useCallback((b: boolean): void => {
+    void ensureAudioEngine().then(() => {
+      const m = ensureMetronome()
+      void m.setEnabled(b).then(() => setMetronomeEnabledState(m.enabled))
+    })
+  }, [ensureAudioEngine, ensureMetronome])
+
+  const setMetronomeBpm = useCallback((bpm: number): void => {
+    setMetronomeBpmState(bpm)
+    metronomeRef.current?.setBpm(bpm)
+  }, [])
+
+  const tapMetronome = useCallback((): void => {
+    // Ensure engine is ready; metronome tap is fire-and-forget.
+    void ensureAudioEngine().then(() => {
+      const m = ensureMetronome()
+      m.tap()
+      // Sync displayed BPM after tap (tap may have updated it).
+      setMetronomeBpmState(m.bpm)
+    })
+  }, [ensureAudioEngine, ensureMetronome])
 
   // ── Pointer play primitives ─────────────────────────────────────────────────
   // These work without the webcam — ensureAudioEngine() handles lazy audio init.
@@ -459,6 +631,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // MediaPipe landmarker's WASM. Both are lazily rebuilt on the next start().
   useEffect(
     () => () => {
+      if (elapsedTimerRef.current !== null) {
+        window.clearInterval(elapsedTimerRef.current)
+      }
+      recorderRef.current?.dispose()
+      droneRef.current?.dispose()
+      metronomeRef.current?.dispose()
       audioRef.current?.dispose()
       landmarkerRef.current?.close()
     },
@@ -469,6 +647,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // These are cheap pure-function calls — no memoisation needed at 60fps.
   const suggestions = suggestModulations(mandalState)
   const emphasis = emphasisNotes({ mandalState, courses })
+
+  // P4a: derive display string for recording elapsed time from stored frame count.
+  const recordingElapsedDisplay = formatElapsed(recordingElapsedFrames, sampleRate)
 
   return {
     status,
@@ -503,5 +684,22 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setShowEmphasis,
     showSayrGuide,
     setShowSayrGuide,
+    // P4a: recording
+    recordingState,
+    recordingElapsedDisplay,
+    startRecording,
+    stopRecording,
+    cancelRecording,
+    // P4a: drone
+    droneEnabled,
+    setDroneEnabled,
+    droneGain,
+    setDroneGain,
+    // P4a: metronome
+    metronomeEnabled,
+    setMetronomeEnabled,
+    metronomeBpm,
+    setMetronomeBpm,
+    tapMetronome,
   }
 }

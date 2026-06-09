@@ -110,6 +110,20 @@ export const Qanun = () => {
           onSoundSource={engine.setSoundSource}
           onShowEmphasis={engine.setShowEmphasis}
           onShowSayrGuide={engine.setShowSayrGuide}
+          recordingState={engine.recordingState}
+          recordingElapsedDisplay={engine.recordingElapsedDisplay}
+          onStartRecording={engine.startRecording}
+          onStopRecording={engine.stopRecording}
+          onCancelRecording={engine.cancelRecording}
+          droneEnabled={engine.droneEnabled}
+          droneGain={engine.droneGain}
+          onDroneEnabled={engine.setDroneEnabled}
+          onDroneGain={engine.setDroneGain}
+          metronomeEnabled={engine.metronomeEnabled}
+          metronomeBpm={engine.metronomeBpm}
+          onMetronomeEnabled={engine.setMetronomeEnabled}
+          onMetronomeBpm={engine.setMetronomeBpm}
+          onTapMetronome={engine.tapMetronome}
         />
       </div>
     </div>
