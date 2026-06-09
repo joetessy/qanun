@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { HandLandmarker } from '@mediapipe/tasks-vision'
 import type { MandalState, Course } from '../lib/music/types'
-import type { QanunReading, QanunStatus, RakeSensitivity } from '../types'
+import type { NormPoint, QanunReading, QanunStatus, RakeSensitivity } from '../types'
 import { DEFAULT_RAST_STATE, cycleMandal } from '../lib/music/ajnas/MANDALS'
 import { buildField, DEFAULT_TONIC_MIDI } from '../lib/music/buildField'
 import { identifyAjnas } from '../lib/music/identifyAjnas'
@@ -20,9 +20,21 @@ import { scheduleVideoFrame, type FrameHandle } from '../lib/vision/scheduleVide
 import { startCamera } from '../lib/vision/startCamera'
 import { stopCamera } from '../lib/vision/stopCamera'
 import { INDEX_TIP, THUMB_TIP } from '../lib/vision/constants'
+import { drawFingerRing } from '../lib/draw/drawFingerRing'
 import { deriveHandRoles } from './deriveHandRoles'
 
 const READING_PUSH_EVERY_N_FRAMES = 4
+// Frames a freshly plucked string stays lit before the highlight clears.
+const PLUCK_GLOW_FRAMES = 6
+
+// Overlay palette — warm bone-white rings with a soft dark halo so they read
+// over the bright wood soundboard. The playing hand reads brighter than the
+// modulating hand (mirrors the theremin overlay idiom).
+const PLAY_RING_COLOR = 'rgba(255, 244, 214, 0.92)'
+const PLUCK_RING_COLOR = 'rgba(255, 255, 255, 1)'
+const MANDAL_RING_COLOR = 'rgba(226, 184, 110, 0.85)'
+const OVERLAY_SHADOW = 'rgba(0, 0, 0, 0.55)'
+const OVERLAY_SHADOW_BLUR = 6
 
 export interface UseQanunEngineArgs {
   videoRef: React.RefObject<HTMLVideoElement | null>
@@ -37,6 +49,8 @@ export interface UseQanunEngine {
   mandalState: MandalState
   tonicMidi: number
   rakeSensitivity: RakeSensitivity
+  highlightIndex: number | null
+  pluckedIndex: number | null
   start: () => Promise<void>
   stop: () => void
   setTonic: (midi: number) => void
@@ -60,6 +74,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const [tonicMidi, setTonicMidi] = useState(DEFAULT_TONIC_MIDI)
   const [mandalState, setMandalState] = useState<MandalState>(DEFAULT_RAST_STATE)
   const [rakeSensitivity, setRakeSensitivityState] = useState<RakeSensitivity>('subtle')
+  const [highlightIndex, setHighlightIndex] = useState<number | null>(null)
+  const [pluckedIndex, setPluckedIndex] = useState<number | null>(null)
   const [courses, setCourses] = useState<Course[]>(() =>
     buildField({ tonicMidi: DEFAULT_TONIC_MIDI, mandalState: DEFAULT_RAST_STATE })
   )
@@ -73,6 +89,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const frameHandleRef = useRef<FrameHandle | null>(null)
   const runningRef = useRef(false)
   const frameCounterRef = useRef(0)
+  // Frame index at which the current pluck glow expires (cleared in tick).
+  const pluckClearRef = useRef(0)
 
   // One detector set per role. Two playing hands → two pluck/rake detectors.
   const pluckDetectorsRef = useRef([createPluckDetector(), createPluckDetector()])
@@ -150,10 +168,16 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     const { playHands, mandalHandIdx } = deriveHandRoles({ rightHandIdx, leftHandIdx, leftHandX })
     const field = coursesRef.current
 
+    // Fingertips to draw this frame, collected during detection and rendered
+    // AFTER the audio path so canvas work never delays a pluck.
+    let mandalTip: NormPoint | null = null
+    const playTips: NormPoint[] = []
+
     // --- Mandal hand ---
     if (mandalHandIdx !== null) {
       const lm = result.landmarks[mandalHandIdx]
       const tip = lm[INDEX_TIP]
+      mandalTip = tip
       const ev = mandalGestureRef.current.update({
         x: 1 - tip.x,
         y: tip.y,
@@ -167,10 +191,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
     // --- Playing hands ---
     let lastPluckMidi: number | null = null
+    let primaryCourse: number | null = null
+    let pluckedCourse: number | null = null
     playHands.forEach((handIdx, slot) => {
       if (slot > 1) return // two-slot pool
       const lm = result.landmarks[handIdx]
       const tip = lm[INDEX_TIP]
+      playTips.push(tip)
       const screenX = fingerFiltersRef.current[slot].filter({ x: 1 - tip.x, tNow })
       const course = nearestCourse({
         x: screenX,
@@ -178,6 +205,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         fieldLeft: PLAY_FIELD_LEFT,
         fieldRight: PLAY_FIELD_RIGHT
       })
+      // Slot 0 is the primary playing hand — the string it hovers is highlighted.
+      if (slot === 0) primaryCourse = course
       // Pinch pluck (precise).
       const pluck = pluckDetectorsRef.current[slot].update({
         pinchDist: pinchDistance({ a: tip, b: lm[THUMB_TIP] }),
@@ -187,6 +216,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       if (pluck && field[pluck.courseIndex]) {
         audio.pluck({ freqHz: field[pluck.courseIndex].freqHz, velocity: pluck.velocity })
         lastPluckMidi = field[pluck.courseIndex].midi
+        pluckedCourse = pluck.courseIndex
       }
       // Rake (glissando).
       const raked = rakeDetectorsRef.current[slot].update({ courseIndex: course, tNow })
@@ -194,6 +224,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         if (field[c]) {
           audio.pluck({ freqHz: field[c].freqHz, velocity: velocityCurve(0.7) })
           lastPluckMidi = field[c].midi
+          pluckedCourse = c
         }
       }
     })
@@ -203,8 +234,50 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       setReading((r) => ({ ...r, lastPluckMidi: lastPluckMidi ?? r.lastPluckMidi }))
     }
 
-    // Overlay drawing (finger rings) is added in Task 21's integration pass,
-    // reusing lib/draw — kept out of the audio path so it never blocks a pluck.
+    // --- String highlight / pluck feedback (state for StringField) ---
+    setHighlightIndex(primaryCourse)
+    if (pluckedCourse !== null) {
+      setPluckedIndex(pluckedCourse)
+      pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
+    } else if (frameCounterRef.current > pluckClearRef.current) {
+      setPluckedIndex(null)
+    }
+
+    // --- Overlay drawing (finger rings) ---
+    // Reuses lib/draw exactly like useThereminEngine.tick: clear, draw a halo'd
+    // ring per tracked fingertip, mirror=true. Strictly after the audio path so
+    // it never blocks a pluck.
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      const w = canvas.width
+      const h = canvas.height
+      ctx.clearRect(0, 0, w, h)
+      ctx.shadowColor = OVERLAY_SHADOW
+      ctx.shadowBlur = OVERLAY_SHADOW_BLUR
+      // Modulating (mandal) hand: a calmer brass ring.
+      if (mandalTip) {
+        drawFingerRing({ ctx, tip: mandalTip, width: w, height: h, mirror: true, color: MANDAL_RING_COLOR, radius: 13, lineWidth: 2 })
+      }
+      // Playing hands: bright rings; a thicker, white ring on the frame a string sounds.
+      const pluckedThisFrame = pluckedCourse !== null
+      playTips.forEach((tip, slot) => {
+        const isPrimary = slot === 0
+        drawFingerRing({
+          ctx,
+          tip,
+          width: w,
+          height: h,
+          mirror: true,
+          color: isPrimary && pluckedThisFrame ? PLUCK_RING_COLOR : PLAY_RING_COLOR,
+          radius: isPrimary && pluckedThisFrame ? 17 : 14,
+          lineWidth: isPrimary && pluckedThisFrame ? 3 : 2.25
+        })
+      })
+      // Reset shadow so the next frame's clearRect / draws aren't haloed twice.
+      ctx.shadowColor = 'rgba(0, 0, 0, 0)'
+      ctx.shadowBlur = 0
+    }
+
     scheduleNext()
   }, [videoRef, canvasRef, setMandalAll])
 
@@ -227,6 +300,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       mandalGestureRef.current.reset()
       fingerFiltersRef.current.forEach((f) => f.reset())
       frameCounterRef.current = 0
+      pluckClearRef.current = 0
+      setHighlightIndex(null)
+      setPluckedIndex(null)
       runningRef.current = true
       setStatus('running')
       frameHandleRef.current = scheduleVideoFrame({ video, callback: tick })
@@ -248,8 +324,14 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     rakeDetectorsRef.current.forEach((d) => d.reset())
     mandalGestureRef.current.reset()
     fingerFiltersRef.current.forEach((f) => f.reset())
+    // Clear any lingering overlay ring and the string highlight/pluck glow.
+    const canvas = canvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
+    setHighlightIndex(null)
+    setPluckedIndex(null)
     setStatus('idle')
-  }, [videoRef])
+  }, [videoRef, canvasRef])
 
   // Release renderer-side resources on unmount: the audio graph and the
   // MediaPipe landmarker's WASM. Both are lazily rebuilt on the next start().
@@ -269,6 +351,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     mandalState,
     tonicMidi,
     rakeSensitivity,
+    highlightIndex,
+    pluckedIndex,
     start,
     stop,
     setTonic,
