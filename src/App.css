@@ -42,3 +42,69 @@
   from { box-shadow: 0 0 14px 6px #fff4c0cc; }
   to   { box-shadow: 0 0 4px 1px #fff4c022; }
 }
+
+/* ── MandalRack ─────────────────────────────────────────────────────────────── */
+.mandal-rack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: #1a1510;
+  border-right: 1px solid #3a3020;
+}
+
+.mandal-rack .lever {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  background: #221c14;
+}
+
+.mandal-rack .lever.is-active {
+  background: #3a2e1a;
+  outline: 1px solid #c0a040;
+}
+
+.mandal-rack .lever.is-fixed {
+  opacity: 0.5;
+}
+
+.mandal-rack .lever button {
+  background: none;
+  border: none;
+  color: #a08040;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.mandal-rack .lever button:disabled {
+  opacity: 0.2;
+  cursor: default;
+}
+
+.mandal-rack .lever button:not(:disabled):hover {
+  color: #e0c080;
+}
+
+.mandal-rack .lever .pos {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+}
+
+.mandal-rack .lever .tick {
+  display: block;
+  width: 8px;
+  height: 3px;
+  background: #4a3c24;
+  border-radius: 1px;
+}
+
+.mandal-rack .lever .tick.on {
+  background: #d4a030;
+}
