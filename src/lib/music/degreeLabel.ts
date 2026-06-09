@@ -2,7 +2,7 @@ import { NOTE_NAMES } from './NOTE_NAMES'
 
 // The semitone offset of each scale degree in a major (natural) scale.
 // Index 0 = degree 1, index 6 = degree 7.
-const NATURAL_OFFSETS = [0, 2, 4, 5, 7, 9, 11] as const
+export const NATURAL_OFFSETS = [0, 2, 4, 5, 7, 9, 11] as const
 
 // Map a delta (offset − natural offset) to its accidental glyph.
 const glyphFor = (delta: number): string => {

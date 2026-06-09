@@ -80,11 +80,14 @@ export interface MidiOutOptions {
   navigatorObj?: NavigatorWithMidi
   /** Injectable setTimeout (for tests — lets you control note-off timing). */
   scheduleNoteOff?: (fn: () => void, ms: number) => void
+  /** Called whenever the available MIDI outputs list changes (device connect/disconnect). */
+  onOutputsChange?: (outputs: readonly MidiOutputInfo[]) => void
 }
 
 export const createMidiOut = (opts: MidiOutOptions = {}): MidiOutEngine => {
   const nav: NavigatorWithMidi = opts.navigatorObj ?? (navigator as unknown as NavigatorWithMidi)
   const scheduleNoteOff = opts.scheduleNoteOff ?? ((fn, ms) => { setTimeout(fn, ms) })
+  const onOutputsChange = opts.onOutputsChange
 
   let support: MidiSupportState = typeof nav.requestMIDIAccess === 'function' ? 'unknown' : 'unsupported'
   let access: MidiAccessLike | null = null
@@ -106,6 +109,8 @@ export const createMidiOut = (opts: MidiOutOptions = {}): MidiOutEngine => {
       outputId = null
       output = null
     }
+    // Notify the caller so the UI can update on hotplug events.
+    onOutputsChange?.(outputsCache)
   }
 
   const send = (bytes: number[]): void => {

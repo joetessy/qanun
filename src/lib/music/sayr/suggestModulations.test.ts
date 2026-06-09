@@ -59,12 +59,15 @@ describe('suggestModulations — all 8 core maqamat return non-empty', () => {
 })
 
 describe('suggestModulations — custom/unknown state', () => {
-  it('falls back to jins-pair suggestions for unknown states', () => {
+  it('falls back to applicable jins-pair suggestions for unknown states', () => {
+    // CUSTOM = [0, 1.5, 4, 6, 7, 8.5, 11]
+    // degree 7 = 11 → matches hijaz-hijazkar offsetB (11); degree 4 = 6 → matches neither pole.
+    // So exactly 1 pair is applicable: hijaz-hijazkar.
     const suggestions = suggestModulations(CUSTOM)
-    // Should still return the applicable jins pairs
-    const pairMoves = suggestions.filter((m) => m.apply.kind === 'pair')
-    expect(pairMoves.length).toBeGreaterThanOrEqual(0)
-    // Should have some suggestions
-    expect(suggestions.length).toBeGreaterThanOrEqual(0)
+    // All results should be pair moves (no network = no preset moves).
+    expect(suggestions.every((m) => m.apply.kind === 'pair')).toBe(true)
+    // Exactly the hijaz-hijazkar pair is applicable for this state.
+    expect(suggestions).toHaveLength(1)
+    expect((suggestions[0].apply as { kind: 'pair'; id: string }).id).toBe('hijaz-hijazkar')
   })
 })

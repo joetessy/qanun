@@ -286,6 +286,12 @@ export const Controls = ({
         </div>
       )}
 
+      {midiSupport === 'denied' && (
+        <div className="studio-row">
+          <span className="studio-hint">MIDI access denied — check browser permissions</span>
+        </div>
+      )}
+
       {midiEnabled && midiSupport === 'ready' && (
         <>
           <div className="studio-row">

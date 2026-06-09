@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useEffect } from 'react'
 import type { Course } from '../lib/music/types'
 import {
   PLAY_FIELD_LEFT,
@@ -36,7 +36,6 @@ export const StringField = ({
   const isPointerDownRef = useRef(false)
   const activeCourseRef = useRef<number | null>(null)
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const surfaceRef = useRef<HTMLDivElement | null>(null)
 
   const courseFromPointer = useCallback(
     (e: React.PointerEvent<HTMLDivElement>): number => {
@@ -58,6 +57,9 @@ export const StringField = ({
       holdTimerRef.current = null
     }
   }
+
+  // Cancel any pending hold timer when the component unmounts.
+  useEffect(() => () => { if (holdTimerRef.current !== null) clearTimeout(holdTimerRef.current) }, [])
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -107,7 +109,6 @@ export const StringField = ({
 
   return (
     <div
-      ref={surfaceRef}
       className="string-field"
       style={{ touchAction: 'none' }}
       aria-hidden

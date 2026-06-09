@@ -35,7 +35,7 @@ export interface QanunEngine {
   start: () => Promise<void>
   dispose: () => void
   pluck: (args: { freqHz: number; velocity: number; time?: number }) => void
-  holdStart: (args: { freqHz: number; velocity: number }) => void
+  holdStart: (args: { freqHz: number; velocity: number; immediate?: boolean }) => void
   holdStop: () => void
   trill: (args: { freqHz: number; neighborHz: number; velocity: number; cycles?: number }) => void
   setReverbEnabled: (enabled: boolean) => void
@@ -168,8 +168,8 @@ export const createQanunEngine = ({
   let started = false
 
   // ── rashsh state ────────────────────────────────────────────────────────────
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let activeLoop: any = null
+  interface LoopHandle { start(t: number): void; stop(): void; dispose(): void }
+  let activeLoop: LoopHandle | null = null
 
   // ── internal helpers ────────────────────────────────────────────────────────
 
@@ -240,13 +240,17 @@ export const createQanunEngine = ({
    * Start rashsh sustain: repeatedly re-trigger the note at RASHSH_HZ (~7 Hz)
    * with slight velocity jitter, until holdStop() is called.
    * Only one hold is active at a time (calling again replaces the previous).
+   *
+   * `immediate` (default true): whether to fire an initial pluck attack.
+   * Pass `false` when the note was already attacked (e.g. pointer-down already
+   * called pluck()) to avoid a double-attack.
    */
-  const holdStart = ({ freqHz, velocity }: { freqHz: number; velocity: number }): void => {
+  const holdStart = ({ freqHz, velocity, immediate = true }: { freqHz: number; velocity: number; immediate?: boolean }): void => {
     holdStop() // cancel any previous hold
     if (!Number.isFinite(freqHz) || freqHz <= 0) return
 
-    // Immediate first attack.
-    pluck({ freqHz, velocity })
+    // Immediate first attack (skip when caller already plucked the note).
+    if (immediate) pluck({ freqHz, velocity })
 
     // Tone.Transport must be running for Tone.Loop to fire.
     Tone.Transport.start()

@@ -227,6 +227,26 @@ describe('createMidiOut', () => {
     })
   })
 
+  describe('onOutputsChange hotplug', () => {
+    it('fires onOutputsChange when onstatechange fires', async () => {
+      const out = makeOutput('o1', 'Synth')
+      const access = makeAccess([out])
+      const nav = { requestMIDIAccess: vi.fn(async () => access) }
+      const onChange = vi.fn()
+      const engine = createMidiOut({ navigatorObj: nav, onOutputsChange: onChange })
+      await engine.start()
+      // Called once during start() → initial refreshOutputs
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(onChange.mock.calls[0][0]).toHaveLength(1)
+      // Simulate a device connect/disconnect hotplug event
+      onChange.mockClear()
+      access.onstatechange?.()
+      expect(onChange).toHaveBeenCalledTimes(1)
+      // The outputs list is passed to the callback
+      expect(onChange.mock.calls[0][0][0].id).toBe('o1')
+    })
+  })
+
   describe('stop / dispose', () => {
     it('stop() clears output; subsequent playNote is a no-op', async () => {
       const out = makeOutput()

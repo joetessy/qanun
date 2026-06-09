@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createQanunEngine } from './createQanunEngine'
-import { QANUN_SAMPLE_URLS } from './qanunSamples'
+import { QANUN_SAMPLE_URLS, QANUN_SAMPLE_BASE_URL } from './qanunSamples'
 
 // ─── mock factory ────────────────────────────────────────────────────────────
 
@@ -109,6 +109,7 @@ describe('createQanunEngine — surface', () => {
     for (const fn of [
       'start', 'dispose', 'pluck',
       'holdStart', 'holdStop',
+      'trill',
       'setReverbEnabled', 'setReverbWet', 'setReverbSize', 'getSampleRate',
       'getRecorderTap',
       'setSoundSource'
@@ -323,6 +324,18 @@ describe('createQanunEngine — rashsh hold', () => {
     expect(triggerAttack).toHaveBeenCalledTimes(3)
   })
 
+  it('holdStart({ immediate: false }) does NOT fire the initial 3-voice attack but still starts the loop', () => {
+    const { ToneMock, triggerAttack, loopStart, transportStart } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.holdStart({ freqHz: 440, velocity: 0.7, immediate: false })
+    // No initial attack.
+    expect(triggerAttack).not.toHaveBeenCalled()
+    // But the rashsh loop should still be created and started.
+    expect(ToneMock.Loop).toHaveBeenCalledTimes(1)
+    expect(loopStart).toHaveBeenCalledWith(0)
+    expect(transportStart).toHaveBeenCalledTimes(1)
+  })
+
   it('holdStop() stops and disposes the active loop', () => {
     const { ToneMock, loopStop, loopDispose } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
@@ -485,6 +498,7 @@ describe('createQanunEngine — sampler construction', () => {
     const opts = ToneMock.Sampler.mock.calls[0][0] as { urls: Record<string, string>; baseUrl: string }
     // The urls object should match the exported sample map exactly.
     expect(opts.urls).toEqual(QANUN_SAMPLE_URLS)
+    expect(opts.baseUrl).toBe(QANUN_SAMPLE_BASE_URL)
     expect(Object.keys(opts.urls)).toHaveLength(17)
   })
 

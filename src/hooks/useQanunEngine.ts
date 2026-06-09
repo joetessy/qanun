@@ -154,6 +154,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // P4a: metronome state (off by default, 120 BPM default).
   const [metronomeEnabled, setMetronomeEnabledState] = useState(false)
   const [metronomeBpm, setMetronomeBpmState] = useState(120)
+  // Ref that mirrors metronomeBpm so ensureMetronome can read the initial BPM
+  // without taking it as a dep (which would cause callback-identity churn on
+  // every BPM change before the metronome is even created).
+  const metronomeBpmRef = useRef(120)
 
   // P4b: MIDI out state (off by default).
   const [midiEnabled, setMidiEnabledState] = useState(false)
@@ -369,10 +373,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     if (metronomeRef.current) return metronomeRef.current
     const engine = audioRef.current
     if (!engine) throw new Error('Audio engine not initialised before metronome')
-    const m = createMetronome({ output: engine.sumBus, initialBpm: metronomeBpm })
+    // Read BPM from the ref so this callback doesn't need metronomeBpm in its
+    // dep array — that would cause identity churn on every BPM keystroke.
+    const m = createMetronome({ output: engine.sumBus, initialBpm: metronomeBpmRef.current })
     metronomeRef.current = m
     return m
-  }, [metronomeBpm])
+  }, [])
 
   const setMetronomeEnabled = useCallback((b: boolean): void => {
     void ensureAudioEngine().then(() => {
@@ -382,6 +388,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   }, [ensureAudioEngine, ensureMetronome])
 
   const setMetronomeBpm = useCallback((bpm: number): void => {
+    metronomeBpmRef.current = bpm
     setMetronomeBpmState(bpm)
     metronomeRef.current?.setBpm(bpm)
   }, [])
@@ -401,7 +408,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   /** Lazily create the MIDI engine (constructed once). */
   const ensureMidi = useCallback((): MidiOutEngine => {
     if (!midiRef.current) {
-      midiRef.current = createMidiOut()
+      midiRef.current = createMidiOut({
+        onOutputsChange: (outputs) => setMidiOutputsState(outputs)
+      })
     }
     return midiRef.current
   }, [])
@@ -481,7 +490,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       if (!audio || !field[index]) return
       setHighlightIndex(index)
       holdingRef.current = true
-      audio.holdStart({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY })
+      // Pass immediate:false because pluckCourse() already attacked ~150 ms
+      // earlier on pointer-down; we only want to start the rashsh loop.
+      audio.holdStart({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY, immediate: false })
       emitMidi(field[index].freqHz, POINTER_VELOCITY)
     })
   }, [ensureAudioEngine, emitMidi])

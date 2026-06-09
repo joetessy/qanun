@@ -1,6 +1,6 @@
 import type { MandalState } from '../lib/music/types'
 import { MANDAL_DEGREES, offsetOf } from '../lib/music/ajnas/MANDALS'
-import { degreeNoteLabel } from '../lib/music/degreeLabel'
+import { degreeNoteLabel, NATURAL_OFFSETS } from '../lib/music/degreeLabel'
 
 interface MandalRackProps {
   mandalState: MandalState
@@ -8,10 +8,6 @@ interface MandalRackProps {
   activeDegree: number | null                      // lever under the left hand
   onCycle: (degree: number, direction: 1 | -1) => void
 }
-
-// NATURAL_OFFSETS mirrors the constant in degreeLabel — the major-scale
-// reference point per degree. A lever is "altered" when its offset differs.
-const NATURAL_OFFSETS = [0, 2, 4, 5, 7, 9, 11]
 
 // Degrees that are the "workhorses" of maqam modulation — subtly emphasised.
 const WORKHORSE_DEGREES = new Set([3, 7])
