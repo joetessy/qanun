@@ -95,11 +95,20 @@ describe('upperOptions', () => {
     expect(opts.find((o) => o.id === 'hijaz')?.active).toBe(false)
   })
 
-  it('labels well-known maqamat without the "Maqam " prefix', () => {
+  it('labels chips by the upper jins name, prefixing "Upper" only for the root jins', () => {
     const RAST: MandalState = [0, 2, 3.5, 5, 7, 9, 10.5]
     const opts = upperOptions(RAST)
-    // hijaz upper on rast = Suznak
-    expect(opts.find((o) => o.id === 'hijaz')?.label).toBe('Suznak')
+    // rast upper on rast = "Upper Rast" (same jins as root)
+    expect(opts.find((o) => o.id === 'rast')?.label).toBe('Upper Rast')
+    // other uppers show only their own jins name
+    expect(opts.find((o) => o.id === 'nahawand')?.label).toBe('Nahawand')
+    expect(opts.find((o) => o.id === 'hijaz')?.label).toBe('Hijaz')
+    expect(opts.find((o) => o.id === 'bayati')?.label).toBe('Bayati')
+    // the maqamName field carries the full maqam name for tooltips
+    expect(opts.find((o) => o.id === 'hijaz')?.maqamName).toBe('Maqam Suznak')
+    // all labels are distinct for Rast family
+    const labels = opts.map((o) => o.label)
+    expect(new Set(labels).size).toBe(labels.length)
   })
 
   it('returns [] for an unidentifiable state', () => {
@@ -119,5 +128,23 @@ describe('upperOptions', () => {
     const BAYATI: MandalState = [0, 1.5, 3, 5, 7, 8, 10]
     const opts = upperOptions(BAYATI)
     expect(opts.map((o) => o.id)).toEqual(['nahawand', 'rast', 'hijaz'])
+    // Bayati root → none of the uppers match the root id (bayati), so no "Upper " prefix
+    expect(opts.map((o) => o.label)).toEqual(['Nahawand', 'Rast', 'Hijaz'])
+  })
+
+  it('all chip labels are distinct within every root family', () => {
+    // States for each root family (one canonical state per root jins)
+    const families: [string, MandalState][] = [
+      ['rast',     [0, 2, 3.5, 5, 7, 9, 10.5]],
+      ['bayati',   [0, 1.5, 3, 5, 7, 8, 10]],
+      ['hijaz',    [0, 1, 4, 5, 7, 8, 10]],
+      ['nahawand', [0, 2, 3, 5, 7, 9, 10]],
+    ]
+    for (const [family, state] of families) {
+      const opts = upperOptions(state)
+      const labels = opts.map((o) => o.label)
+      const unique = new Set(labels)
+      expect(unique.size, `duplicate labels in ${family} family: ${labels.join(', ')}`).toBe(labels.length)
+    }
   })
 })

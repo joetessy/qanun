@@ -43,7 +43,7 @@ export const UpperJinsSwitcher = ({ mandalState, tonicMidi, onApplyUpper }: Uppe
             className={`upper-chip ${opt.active ? 'is-active' : ''}`}
             onClick={() => onApplyUpper(opt.id)}
             aria-pressed={opt.active}
-            title={opt.id}
+            title={opt.maqamName}
           >
             {opt.label}
           </button>

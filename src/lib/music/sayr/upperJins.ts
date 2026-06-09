@@ -53,7 +53,11 @@ export const currentUpperJins = (state: MandalState): string | null =>
 
 export interface UpperJinsOption {
   id: string
+  /** Display label: the upper jins's own name, prefixed "Upper " when the
+   *  upper jins id matches the root jins id (e.g. "Upper Rast" vs "Nahawand"). */
   label: string
+  /** Full maqam name (e.g. "Maqam Rast") — suitable for use as a tooltip. */
+  maqamName: string
   active: boolean
 }
 
@@ -71,12 +75,10 @@ export const upperOptions = (state: MandalState): UpperJinsOption[] => {
 
   const active = currentUpperJins(state)
   return options.map((id) => {
+    const jinsLabel = jinsById(id).label
+    const label = id === lower ? `Upper ${jinsLabel}` : jinsLabel
     const applied = applyUpperJins(state, id)
-    const identified = identifyAjnas(applied)
-    const maqamName = identified.maqamName
-    const label = maqamName.startsWith('Maqam ')
-      ? maqamName.slice(6)                  // strip "Maqam "
-      : maqamName                           // fallback: "Lower ▸ Upper"
-    return { id, label, active: id === active }
+    const maqamName = identifyAjnas(applied).maqamName
+    return { id, label, maqamName, active: id === active }
   })
 }
