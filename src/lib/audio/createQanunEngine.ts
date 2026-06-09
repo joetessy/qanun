@@ -22,7 +22,8 @@ import { QANUN_SAMPLE_URLS, QANUN_SAMPLE_BASE_URL } from './qanunSamples'
 //   • Triple-course bloom: each pluck fires 3 detuned voices (±4 cents).
 //   • Longer ring: resonance ↑ to 0.97, dampening 3500 Hz for warmer tone.
 //   • Body reverb on by default (wet ≈ 0.28).
-//   • Rashsh hold: holdStart() re-triggers at ~7 Hz; holdStop() cancels.
+//   • Rashsh hold: holdStart() re-triggers at ~13 Hz; holdStop() cancels.
+//   • Vibrato: each re-pluck samples an LFO (setVibrato) and detunes the course.
 export type SoundSource = 'sample' | 'synth'
 
 export interface QanunEngineOptions {
@@ -37,6 +38,7 @@ export interface QanunEngine {
   pluck: (args: { freqHz: number; velocity: number; time?: number }) => void
   holdStart: (args: { freqHz: number; velocity: number; immediate?: boolean }) => void
   holdStop: () => void
+  setVibrato: (a: { cents: number; rateHz?: number }) => void
   trill: (args: { freqHz: number; neighborHz: number; velocity: number; cycles?: number }) => void
   setReverbEnabled: (enabled: boolean) => void
   setReverbWet: (wet: number) => void
@@ -59,8 +61,8 @@ const COURSE_CENTS = [-4, 0, 4] as const
 /** Voices per note (= COURSE_CENTS.length). */
 const VOICES_PER_NOTE = COURSE_CENTS.length
 
-/** Rashsh tremolo rate in Hz (~7 picks/s, standard Arabic ornament). */
-const RASHSH_HZ = 7
+/** Rashsh tremolo rate in Hz (~13 picks/s — a brisk Arabic tremolo). */
+const RASHSH_HZ = 13
 
 /**
  * Pluck interval for Tone.Loop (in seconds).
@@ -99,6 +101,9 @@ const CHORUS_WET = 0.35        // blend: mostly dry, gentle shimmer
 const FX_WET_RAMP = 0.08
 const VOICE_GAIN_RAMP = 0.01
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n))
+
+/** Maximum vibrato depth in cents (peak detune at the LFO extremes). */
+const MAX_VIBRATO_CENTS = 70
 
 // ─── factory ──────────────────────────────────────────────────────────────────
 
@@ -171,6 +176,11 @@ export const createQanunEngine = ({
   interface LoopHandle { start(t: number): void; stop(): void; dispose(): void }
   let activeLoop: LoopHandle | null = null
 
+  // ── vibrato state (driven by the gesture layer) ───────────────────────────────
+  let vibratoCents = 0      // peak detune in cents (0 = off)
+  let vibratoRateHz = 5.5   // LFO rate
+  let holdStartTime = 0     // Tone time when the current hold began
+
   // ── internal helpers ────────────────────────────────────────────────────────
 
   /** Allocate the next voice from the pool (round-robin). */
@@ -237,7 +247,7 @@ export const createQanunEngine = ({
   }
 
   /**
-   * Start rashsh sustain: repeatedly re-trigger the note at RASHSH_HZ (~7 Hz)
+   * Start rashsh sustain: repeatedly re-trigger the note at RASHSH_HZ (~13 Hz)
    * with slight velocity jitter, until holdStop() is called.
    * Only one hold is active at a time (calling again replaces the previous).
    *
@@ -255,10 +265,20 @@ export const createQanunEngine = ({
     // Tone.Transport must be running for Tone.Loop to fire.
     Tone.Transport.start()
 
+    // Anchor the vibrato LFO to the moment this hold began. (Guarded for the
+    // injectable Tone mock, where Transport.seconds may be undefined.)
+    holdStartTime = Tone.Transport?.seconds ?? 0
+
     activeLoop = new Tone.Loop((time: number) => {
+      // Sample the vibrato LFO at this re-pluck and detune the whole course by
+      // the resulting ratio. A ~13 Hz tremolo stepping the LFO reads as an
+      // expressive vibrato on the plucked sustain.
+      const elapsed = time - holdStartTime
+      const detuneCents = vibratoCents * Math.sin(2 * Math.PI * vibratoRateHz * elapsed)
+      const ratio = Math.pow(2, detuneCents / 1200)
       const jitter = (Math.random() * 2 - 1) * RASHSH_VELOCITY_JITTER
       const v = clamp01(velocity + jitter)
-      for (const freq of detunedFreqs(freqHz, [...COURSE_CENTS])) {
+      for (const freq of detunedFreqs(freqHz * ratio, [...COURSE_CENTS])) {
         fireVoice(freq, velocityCurve(v), time)
       }
     }, RASHSH_INTERVAL)
@@ -275,6 +295,17 @@ export const createQanunEngine = ({
       activeLoop.dispose()
       activeLoop = null
     }
+    vibratoCents = 0 // a new hold starts with vibrato off
+  }
+
+  /**
+   * Set the sustain-voice vibrato. `cents` is the peak detune (clamped to
+   * [0, MAX_VIBRATO_CENTS]); `rateHz` (optional) the LFO rate in Hz.
+   * Driven each frame by the gesture/mouse layer.
+   */
+  const setVibrato = ({ cents, rateHz }: { cents: number; rateHz?: number }): void => {
+    vibratoCents = Math.max(0, Math.min(MAX_VIBRATO_CENTS, cents))
+    if (rateHz && rateHz > 0) vibratoRateHz = rateHz
   }
 
   /**
@@ -354,6 +385,7 @@ export const createQanunEngine = ({
     pluck,
     holdStart,
     holdStop,
+    setVibrato,
     trill,
     setReverbEnabled,
     setReverbWet,

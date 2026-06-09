@@ -309,8 +309,8 @@ describe('createQanunEngine — rashsh hold', () => {
     // Loop constructor receives (callback, interval).
     const [callback, interval] = ToneMock.Loop.mock.calls[0]
     expect(typeof callback).toBe('function')
-    // Interval should be close to 1/7 s (rashsh ~7 Hz).
-    expect(interval).toBeCloseTo(1 / 7, 3)
+    // Interval should be close to 1/13 s (rashsh ~13 Hz).
+    expect(interval).toBeCloseTo(1 / 13, 3)
 
     expect(loopStart).toHaveBeenCalledWith(0)
     expect(transportStart).toHaveBeenCalledTimes(1)
@@ -371,6 +371,15 @@ describe('createQanunEngine — rashsh hold', () => {
     e.dispose()
     expect(loopStop).toHaveBeenCalledTimes(1)
     expect(loopDispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('setVibrato clamps cents to [0, MAX] and is callable before any hold', () => {
+    const { ToneMock } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(typeof (e as unknown as Record<string, unknown>).setVibrato).toBe('function')
+    // Out-of-range cents (high/low) and an optional rate are all tolerated.
+    expect(() => e.setVibrato({ cents: 999 })).not.toThrow()
+    expect(() => e.setVibrato({ cents: -5, rateHz: 6 })).not.toThrow()
   })
 })
 
