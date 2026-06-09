@@ -305,7 +305,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       const a = document.createElement('a')
       a.href = url
       a.download = `qanun-${new Date().toISOString().replace(/[:.]/g, '-')}.wav`
+      // Append to the DOM before clicking — a detached anchor's download click
+      // is silently ignored in some browsers (e.g. older Firefox).
+      document.body.appendChild(a)
       a.click()
+      document.body.removeChild(a)
       URL.revokeObjectURL(url)
     }).catch(() => {
       // Encoding errors are surfaced via onEncoderError; nothing to do here.
