@@ -2,11 +2,9 @@ import { useRef, useState, useCallback } from 'react'
 import { Stage } from './Stage'
 import { StageCover } from './StageCover'
 import { StringField } from './StringField'
-import { MandalRack } from './MandalRack'
 import { LowerJinsSelector } from './LowerJinsSelector'
 import { UpperJinsSwitcher } from './UpperJinsSwitcher'
 import { QanunHud } from './QanunHud'
-import { CameraInset } from './CameraInset'
 import { Controls } from './Controls'
 import { Rosette } from './Rosette'
 import { SayrGuide } from './SayrGuide'
@@ -75,13 +73,6 @@ export const Qanun = () => {
           <Rosette className="rosette-minor" />
         </div>
 
-        {/* Modulation panel — always visible (spec §1 keyboard-style switches). */}
-        <MandalRack
-          mandalState={engine.mandalState}
-          tonicMidi={engine.tonicMidi}
-          activeDegree={null}
-          onCycle={engine.cycleMandalDegree}
-        />
         <LowerJinsSelector lowerJins={engine.lowerJins} onSelect={engine.setLowerJins} />
         {/* Upper-jins switcher — primary modulation control, always visible. */}
         <UpperJinsSwitcher
@@ -113,8 +104,6 @@ export const Qanun = () => {
             jinsPairs={JINS_PAIRS}
           />
         )}
-        <CameraInset stream={engine.cameraStream} />
-
         {/* First-run onboarding guide — overlaid above everything, dismissible. */}
         {showOnboarding && <Onboarding onDismiss={dismissOnboarding} />}
       </div>

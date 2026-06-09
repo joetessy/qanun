@@ -3,7 +3,7 @@ import * as Tone from 'tone'
 import type { HandLandmarker } from '@mediapipe/tasks-vision'
 import type { MandalState, Course } from '../lib/music/types'
 import type { NormPoint, QanunReading, QanunStatus } from '../types'
-import { DEFAULT_RAST_STATE, cycleMandal, offsetOf } from '../lib/music/ajnas/MANDALS'
+import { DEFAULT_RAST_STATE, offsetOf } from '../lib/music/ajnas/MANDALS'
 import { MAQAM_PRESETS } from '../lib/music/MAQAM_PRESETS'
 import { buildField, DEFAULT_TONIC_MIDI } from '../lib/music/buildField'
 import { identifyAjnas } from '../lib/music/identifyAjnas'
@@ -62,11 +62,9 @@ export interface UseQanunEngine {
   tonicMidi: number
   highlightIndex: number | null
   pluckedIndex: number | null
-  cameraStream: MediaStream | null
   start: () => Promise<void>
   stop: () => void
   setTonic: (midi: number) => void
-  cycleMandalDegree: (degree: number, direction: 1 | -1) => void
   setMandalState: (state: MandalState) => void
   setMaqamPreset: (id: string) => void
   applyPair: (pair: JinsPair) => void
@@ -134,7 +132,6 @@ const EMPTY_READING: QanunReading = {
 export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): UseQanunEngine => {
   const [status, setStatus] = useState<QanunStatus>('idle')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
   const [reading, setReading] = useState<QanunReading>(EMPTY_READING)
   const [tonicMidi, setTonicMidi] = useState(DEFAULT_TONIC_MIDI)
   const [mandalState, setMandalStateRaw] = useState<MandalState>(DEFAULT_RAST_STATE)
@@ -224,10 +221,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setMandalStateRaw(next)
     recompute(next, tonicRef.current)
   }, [recompute])
-
-  const cycleMandalDegree = useCallback((degree: number, direction: 1 | -1): void => {
-    setMandalAll(cycleMandal(mandalRef.current, degree, direction))
-  }, [setMandalAll])
 
   const setMandalState = useCallback((state: MandalState): void => {
     setMandalAll(state)
@@ -727,8 +720,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       const video = videoRef.current
       const canvas = canvasRef.current
       if (!video || !canvas) throw new Error('Video/canvas element missing')
-      const { stream, width, height } = await startCamera({ video })
-      setCameraStream(stream)
+      const { width, height } = await startCamera({ video })
       canvas.width = width
       canvas.height = height
       pinchPlayRef.current.forEach((d) => d.reset())
@@ -751,7 +743,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     frameHandleRef.current?.cancel()
     frameHandleRef.current = null
     stopCamera({ video: videoRef.current })
-    setCameraStream(null)
     // Reset gesture state, symmetric with start(), so a Stop→Start cycle doesn't
     // inherit a stale One-Euro timestamp (which would spike the derivative and
     // misfire on the first frame back).
@@ -804,7 +795,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
   return {
     status,
-    cameraStream,
     errorMsg,
     reading,
     courses,
@@ -815,7 +805,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     start,
     stop,
     setTonic,
-    cycleMandalDegree,
     setMandalState,
     setMaqamPreset,
     applyPair,
