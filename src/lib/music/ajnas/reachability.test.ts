@@ -21,4 +21,11 @@ describe('jins reachability against the mandal positions', () => {
     // legal positions); identifyAjnas uses homeDegree to keep it off degree 1.
     expect(reachableStartDegrees(jinsById('sikah'))).toContain(3)
   })
+
+  it('returns false for a jins no mandal positions can produce', () => {
+    // Non-half-integer steps can never match the (half-integer) position grid —
+    // guards the gate that future ajnas additions must pass.
+    const unreachable = { id: 'x', label: 'X', intervals: [0, 1.3, 2.7], ghammazDegree: 3, homeDegree: 1 }
+    expect(isJinsReachable(unreachable)).toBe(false)
+  })
 })

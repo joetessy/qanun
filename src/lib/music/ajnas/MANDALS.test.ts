@@ -76,4 +76,12 @@ describe('cycleMandal', () => {
     expect(cycleMandal(DEFAULT_RAST_STATE, 1, 1)).toEqual(DEFAULT_RAST_STATE)
     expect(cycleMandal(DEFAULT_RAST_STATE, 5, -1)).toEqual(DEFAULT_RAST_STATE)
   })
+  it('snaps to the lowest position when cycling up from an off-grid offset', () => {
+    const offGrid = setMandal(DEFAULT_RAST_STATE, 2, 0.7) // 0.7 ∉ [1, 1.5, 2]
+    expect(offsetOf(cycleMandal(offGrid, 2, 1), 2)).toBe(1)
+  })
+  it('snaps to the highest position when cycling down from an off-grid offset', () => {
+    const offGrid = setMandal(DEFAULT_RAST_STATE, 2, 0.7)
+    expect(offsetOf(cycleMandal(offGrid, 2, -1), 2)).toBe(2)
+  })
 })

@@ -53,7 +53,9 @@ export const cycleMandal = (
   if (md.fixed) return state
   const current = offsetOf(state, degree)
   const i = md.positions.indexOf(current)
-  // If the current offset isn't a known position, snap to the nearest end.
+  // If the current offset isn't a known position, treat it as below the floor
+  // (when cycling up) or above the ceiling (when cycling down), so one flick
+  // always lands on a valid position and subsequent flicks proceed normally.
   const fromIndex = i === -1 ? (direction === 1 ? -1 : md.positions.length) : i
   const nextIndex = Math.min(md.positions.length - 1, Math.max(0, fromIndex + direction))
   return setMandal(state, degree, md.positions[nextIndex])
