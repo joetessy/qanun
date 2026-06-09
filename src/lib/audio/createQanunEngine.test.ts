@@ -14,6 +14,7 @@ const makeMockTone = () => {
 
   const ToneMock = {
     start: vi.fn().mockResolvedValue(undefined),
+    now: vi.fn(() => 0.0),
     getContext: vi.fn(() => ({ sampleRate: 48000 })),
     PluckSynth: vi.fn().mockImplementation(() => ({
       triggerAttack,
@@ -317,5 +318,119 @@ describe('createQanunEngine — rashsh hold', () => {
     e.dispose()
     expect(loopStop).toHaveBeenCalledTimes(1)
     expect(loopDispose).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ─── trill (finite upper-neighbor burst) ─────────────────────────────────────
+
+describe('createQanunEngine — trill', () => {
+  it('trill is exposed on the engine surface', () => {
+    const { ToneMock } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(typeof (e as unknown as Record<string, unknown>).trill).toBe('function')
+  })
+
+  it('schedules alternating principal/neighbor freqs at strictly increasing times', () => {
+    const capturedCalls: Array<{ freq: number; time: number }> = []
+    const base = makeMockTone()
+    const ToneMockWithNow = {
+      ...base.ToneMock,
+      // Tone.now() returns 1.0 so we can assert on offsets
+      now: vi.fn(() => 1.0),
+      PluckSynth: vi.fn().mockImplementation(() => ({
+        triggerAttack: vi.fn().mockImplementation((freq: number, time?: number) => {
+          capturedCalls.push({ freq, time: time ?? 0 })
+        }),
+        connect: vi.fn().mockReturnThis(),
+        dispose: vi.fn()
+      }))
+    }
+    const e = createQanunEngine({
+      Tone: ToneMockWithNow as unknown as typeof import('tone'),
+      polyphony: 16
+    })
+    const principalHz = 440
+    const neighborHz = 495  // arbitrary neighbor
+    e.trill({ freqHz: principalHz, neighborHz, velocity: 0.7 })
+
+    // cycles=4 → 9 attacks; each attack = 3 voices → 27 triggerAttack calls
+    expect(capturedCalls).toHaveLength(4 * 2 * 3 + 3) // (4 pairs + 1 final principal) × 3 voices = 27
+
+    // Extract one representative call per scheduled step (every 3rd, one per voice cluster).
+    // Times should be strictly increasing.
+    const times = capturedCalls.map(c => c.time)
+    const uniqueTimes = [...new Set(times)].sort((a, b) => a - b)
+    expect(uniqueTimes.length).toBe(9) // 9 distinct time offsets
+    for (let i = 1; i < uniqueTimes.length; i++) {
+      expect(uniqueTimes[i]).toBeGreaterThan(uniqueTimes[i - 1])
+    }
+
+    // Times start at Tone.now() (1.0) and step by ~1/7 s
+    expect(uniqueTimes[0]).toBeCloseTo(1.0, 5)
+    expect(uniqueTimes[1]).toBeCloseTo(1.0 + 1 / 7, 3)
+
+    // The first and last scheduled freqs (ignoring detuning) should be principal
+    const firstClusterFreqs = capturedCalls.filter(c => Math.abs(c.time - uniqueTimes[0]) < 0.001).map(c => c.freq)
+    const lastClusterFreqs  = capturedCalls.filter(c => Math.abs(c.time - uniqueTimes[8]) < 0.001).map(c => c.freq)
+    // At least one of the 3 detuned voices should be within 5 Hz of the principal.
+    expect(firstClusterFreqs.some(f => Math.abs(f - principalHz) < 5)).toBe(true)
+    expect(lastClusterFreqs.some(f => Math.abs(f - principalHz) < 5)).toBe(true)
+
+    // Intermediate step (index 1) should be near neighborHz
+    const secondClusterFreqs = capturedCalls.filter(c => Math.abs(c.time - uniqueTimes[1]) < 0.001).map(c => c.freq)
+    expect(secondClusterFreqs.some(f => Math.abs(f - neighborHz) < 5)).toBe(true)
+  })
+
+  it('resolves on the principal (last attack cluster is the principal)', () => {
+    const capturedCalls: Array<{ freq: number; time: number }> = []
+    const base = makeMockTone()
+    const ToneMockWithNow = {
+      ...base.ToneMock,
+      now: vi.fn(() => 0.0),
+      PluckSynth: vi.fn().mockImplementation(() => ({
+        triggerAttack: vi.fn().mockImplementation((freq: number, time?: number) => {
+          capturedCalls.push({ freq, time: time ?? 0 })
+        }),
+        connect: vi.fn().mockReturnThis(),
+        dispose: vi.fn()
+      }))
+    }
+    const e = createQanunEngine({
+      Tone: ToneMockWithNow as unknown as typeof import('tone'),
+      polyphony: 16
+    })
+    e.trill({ freqHz: 261.63, neighborHz: 293.66, velocity: 0.7 })
+
+    const times = [...new Set(capturedCalls.map(c => c.time))].sort((a, b) => a - b)
+    const lastTime = times[times.length - 1]
+    const lastCluster = capturedCalls.filter(c => Math.abs(c.time - lastTime) < 0.001)
+    // Last cluster should be near 261.63 (principal), not 293.66 (neighbor)
+    expect(lastCluster.some(f => Math.abs(f.freq - 261.63) < 5)).toBe(true)
+    expect(lastCluster.every(f => Math.abs(f.freq - 293.66) >= 5)).toBe(true)
+  })
+
+  it('respects custom cycles count', () => {
+    const capturedCalls: Array<{ freq: number; time: number }> = []
+    const base = makeMockTone()
+    const ToneMockWithNow = {
+      ...base.ToneMock,
+      now: vi.fn(() => 0.0),
+      PluckSynth: vi.fn().mockImplementation(() => ({
+        triggerAttack: vi.fn().mockImplementation((freq: number, time?: number) => {
+          capturedCalls.push({ freq, time: time ?? 0 })
+        }),
+        connect: vi.fn().mockReturnThis(),
+        dispose: vi.fn()
+      }))
+    }
+    const e = createQanunEngine({
+      Tone: ToneMockWithNow as unknown as typeof import('tone'),
+      polyphony: 16
+    })
+    // cycles=2 → p n p n p = 5 attacks × 3 voices = 15
+    e.trill({ freqHz: 440, neighborHz: 495, velocity: 0.7, cycles: 2 })
+    expect(capturedCalls).toHaveLength(5 * 3)
+    const uniqueTimes = [...new Set(capturedCalls.map(c => c.time))].sort((a, b) => a - b)
+    expect(uniqueTimes.length).toBe(5)
   })
 })

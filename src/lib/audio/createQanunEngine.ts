@@ -27,6 +27,7 @@ export interface QanunEngine {
   pluck: (args: { freqHz: number; velocity: number; time?: number }) => void
   holdStart: (args: { freqHz: number; velocity: number }) => void
   holdStop: () => void
+  trill: (args: { freqHz: number; neighborHz: number; velocity: number; cycles?: number }) => void
   setReverbEnabled: (enabled: boolean) => void
   setReverbWet: (wet: number) => void
   setReverbSize: (size: ReverbSize) => void
@@ -51,6 +52,12 @@ const RASHSH_HZ = 7
  * A small constant offset staggers the repeated attack slightly for realism.
  */
 const RASHSH_INTERVAL = 1 / RASHSH_HZ
+
+/** Trill attack spacing — same 7 Hz rhythm as rashsh, but finite. */
+const TRILL_HZ = 7
+const TRILL_INTERVAL = 1 / TRILL_HZ
+/** Default trill cycles: principal–neighbor pairs + final principal = 2*4+1 = 9 attacks. */
+const TRILL_DEFAULT_CYCLES = 4
 
 /**
  * Velocity variation range for rashsh re-triggers (± this fraction of base).
@@ -201,6 +208,35 @@ export const createQanunEngine = ({
     }
   }
 
+  /**
+   * Trill: finite upper-neighbor burst.
+   * Pattern: principal, neighbor, principal, neighbor, … (cycles pairs), then principal.
+   * Each attack = triple-course pluck at a scheduled time.
+   * cycles defaults to 4 → 9 attacks over ~1.14 s (9 × 1/7 s).
+   */
+  const trill = ({
+    freqHz,
+    neighborHz,
+    velocity,
+    cycles = TRILL_DEFAULT_CYCLES
+  }: {
+    freqHz: number
+    neighborHz: number
+    velocity: number
+    cycles?: number
+  }): void => {
+    if (!Number.isFinite(freqHz) || freqHz <= 0) return
+    if (!Number.isFinite(neighborHz) || neighborHz <= 0) return
+    const t0 = Tone.now()
+    const totalAttacks = cycles * 2 + 1  // p n p n … p
+    for (let k = 0; k < totalAttacks; k++) {
+      const isPrincipal = k % 2 === 0
+      const hz = isPrincipal ? freqHz : neighborHz
+      const time = t0 + k * TRILL_INTERVAL
+      pluck({ freqHz: hz, velocity, time })
+    }
+  }
+
   const applyReverbWet = (): void => {
     reverb.wet.rampTo(reverbEnabled ? clamp01(reverbWet) : 0, FX_WET_RAMP)
   }
@@ -237,6 +273,7 @@ export const createQanunEngine = ({
     pluck,
     holdStart,
     holdStop,
+    trill,
     setReverbEnabled,
     setReverbWet,
     setReverbSize,
