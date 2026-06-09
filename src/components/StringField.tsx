@@ -151,13 +151,18 @@ export const StringField = ({
       {courses.map((c) => {
         const xPct = courseScreenX(c.index, courses.length, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT) * 100
         const classes = [
-          'string',
-          `degree-${c.degree}`,
+          'course',
           c.degree === homeDegree ? 'is-home' : '',
           c.index === highlightIndex ? 'is-highlight' : '',
           c.index === pluckedIndex ? 'is-plucked' : ''
         ].filter(Boolean).join(' ')
-        return <span key={c.index} className={classes} style={{ left: `${xPct}%` }} data-degree={c.degree} />
+        return (
+          <span key={c.index} className={classes} style={{ left: `${xPct}%` }} data-degree={c.degree} aria-hidden>
+            <i className="str str-l" />
+            <i className="str str-m" />
+            <i className="str str-r" />
+          </span>
+        )
       })}
     </div>
   )

@@ -155,24 +155,11 @@
   min-height: 0;
   overflow: hidden;
   isolation: isolate;
-  /* Layered grain: two fine stripe gradients + a broad warm spotlight + base. */
+  /* Warm wood base: spotlight + directional gradient. The repeating-linear-gradient
+     stripe layers were removed — they produced evenly-spaced phantom vertical lines
+     independent of actual courses. Real strings appear only where a course exists. */
   background:
     radial-gradient(140% 120% at 62% 18%, rgba(255, 214, 140, 0.20) 0%, rgba(120, 74, 36, 0) 46%),
-    repeating-linear-gradient(
-      88deg,
-      rgba(20, 12, 6, 0.42) 0px,
-      rgba(20, 12, 6, 0) 2px,
-      rgba(255, 220, 150, 0.05) 5px,
-      rgba(20, 12, 6, 0) 9px,
-      rgba(20, 12, 6, 0.30) 13px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      rgba(0, 0, 0, 0.10) 0px,
-      rgba(0, 0, 0, 0) 28px,
-      rgba(120, 80, 40, 0.10) 60px,
-      rgba(0, 0, 0, 0) 96px
-    ),
     linear-gradient(165deg, var(--wood-glow) 0%, var(--wood-warm) 34%, var(--wood-base) 68%, var(--wood-deep) 100%);
 }
 
@@ -270,88 +257,115 @@
   overflow: hidden;
 }
 
-.string-field .string {
+/* ── Triple-course wrapper: positions at exact course screen-x, holds 3 strings ─ */
+.string-field .course {
   position: absolute;
   top: 3%;
   bottom: 3%;
-  width: 1px;
+  /* Wide enough for 3 strings + gap, centred on the course x. */
+  width: 9px;
   transform: translateX(-50%);
+  display: flex;
+  justify-content: center;
+  gap: 1.5px;
+  pointer-events: none;
+}
+
+/* Per-degree spread: lower courses (thicker pitch) get a touch more separation. */
+.string-field .course[data-degree='1'] { gap: 2.5px; }
+.string-field .course[data-degree='2'] { gap: 2.2px; }
+.string-field .course[data-degree='3'] { gap: 2px; }
+.string-field .course[data-degree='4'] { gap: 1.8px; }
+.string-field .course[data-degree='5'] { gap: 1.5px; }
+.string-field .course[data-degree='6'] { gap: 1.3px; }
+.string-field .course[data-degree='7'] { gap: 1px; }
+
+/* Each of the three wires — fine brass gradient, slight rounding at each end. */
+.string-field .course .str {
+  flex-shrink: 0;
+  width: 1px;
+  height: 100%;
   border-radius: 1px;
-  /* Brass wire: dark cores at the rim, bright specular sheen down the centre. */
+  /* Brass wire: shadowed rim, bright specular centre. */
   background: linear-gradient(
-    90deg,
-    rgba(60, 42, 14, 0.85) 0%,
-    var(--brass-base) 38%,
-    var(--brass-spec) 50%,
-    var(--brass-base) 62%,
-    rgba(60, 42, 14, 0.85) 100%
+    180deg,
+    var(--brass-spec) 0%,
+    var(--brass-base) 30%,
+    var(--brass-base) 70%,
+    var(--brass-shadow) 100%
   );
   box-shadow:
-    0 0 1px rgba(0, 0, 0, 0.6),
-    0 1px 4px rgba(0, 0, 0, 0.35);
-  opacity: 0.9;
+    0 0 1px rgba(0, 0, 0, 0.55),
+    0 1px 3px rgba(0, 0, 0, 0.3);
+  opacity: 0.88;
   transition: filter 0.12s ease-out, box-shadow 0.12s ease-out, opacity 0.12s;
 }
 
-/* Register-graded thickness: low strings (degree 1) are fattest, high thinnest.
-   data-degree 1..7 (1 = octave root, lowest within an octave). */
-.string-field .string[data-degree='1'] { width: 3px; }
-.string-field .string[data-degree='2'] { width: 2.6px; }
-.string-field .string[data-degree='3'] { width: 2.3px; }
-.string-field .string[data-degree='4'] { width: 2px; }
-.string-field .string[data-degree='5'] { width: 1.8px; }
-.string-field .string[data-degree='6'] { width: 1.5px; }
-.string-field .string[data-degree='7'] { width: 1.3px; }
+/* Middle wire is very slightly bolder — the "main" string of a real qanun course. */
+.string-field .course .str-m {
+  width: 1.3px;
+  opacity: 0.95;
+}
 
-/* Home course (the maqam tonic, degree = homeDegree): warmer and thicker than a
-   plain brass string with a faint standing halo — the "you are here" anchor.
-   Works on the dark walnut surface; no light theme exists so no media query needed. */
-.string-field .string.is-home {
+/* Register-graded wire thickness: degree 1 (low) → fatter wires; 7 (high) → thinner. */
+.string-field .course[data-degree='1'] .str   { width: 1.6px; }
+.string-field .course[data-degree='1'] .str-m { width: 2px; }
+.string-field .course[data-degree='2'] .str   { width: 1.4px; }
+.string-field .course[data-degree='2'] .str-m { width: 1.8px; }
+.string-field .course[data-degree='3'] .str   { width: 1.2px; }
+.string-field .course[data-degree='3'] .str-m { width: 1.6px; }
+.string-field .course[data-degree='4'] .str   { width: 1.1px; }
+.string-field .course[data-degree='4'] .str-m { width: 1.4px; }
+
+/* Home course (the maqam tonic): warmer, brighter — the "you are here" anchor. */
+.string-field .course.is-home .str {
   background: linear-gradient(
-    90deg,
-    rgba(110, 72, 18, 0.92) 0%,
-    var(--brass-lit) 32%,
+    180deg,
+    var(--brass-spec) 0%,
+    var(--brass-lit) 25%,
     #fffae0 50%,
-    var(--brass-lit) 68%,
-    rgba(110, 72, 18, 0.92) 100%
+    var(--brass-lit) 75%,
+    var(--brass-shadow) 100%
   );
   box-shadow:
-    0 0 6px 1px rgba(255, 226, 130, 0.45),
-    0 0 14px 2px rgba(231, 194, 91, 0.18),
-    0 1px 5px rgba(0, 0, 0, 0.4);
+    0 0 4px 1px rgba(255, 226, 130, 0.5),
+    0 0 10px 2px rgba(231, 194, 91, 0.2),
+    0 1px 4px rgba(0, 0, 0, 0.35);
   opacity: 1;
-  width: 3.2px; /* the boldest string on the field — the anchor, regardless of degree */
+}
+.string-field .course.is-home .str-m {
+  /* Centre wire of the home course: the primary luminous anchor wire. */
+  box-shadow:
+    0 0 6px 2px rgba(255, 226, 130, 0.65),
+    0 0 16px 4px rgba(231, 194, 91, 0.28);
 }
 
-/* Nearest string under a finger: lit and haloed. */
-.string-field .string.is-highlight {
+/* Nearest course under a finger: lit and haloed across all three wires. */
+.string-field .course.is-highlight .str {
   filter: brightness(1.5) saturate(1.2);
   box-shadow:
-    0 0 7px 2px rgba(255, 221, 128, 0.55),
-    0 0 16px 4px rgba(255, 200, 90, 0.28);
+    0 0 5px 2px rgba(255, 221, 128, 0.5),
+    0 0 12px 3px rgba(255, 200, 90, 0.25);
   opacity: 1;
 }
 
-/* A struck string: bright flash that decays via the pulse animation. The
-   .is-plucked class lives ~6 frames (PLUCK_GLOW_FRAMES); the pulse is tuned to
-   read fully within that window, after which the string falls back to its
-   resting look (or .is-highlight glow if a finger is still over it). */
-.string-field .string.is-plucked {
-  filter: brightness(1.9) saturate(1.15);
+/* A struck course: bright flash across all three wires. The .is-plucked class
+   lives ~6 frames; the pulse is tuned to read fully within that window. */
+.string-field .course.is-plucked .str {
   animation: pluck-pulse 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 @keyframes pluck-pulse {
   0% {
     box-shadow:
-      0 0 20px 7px rgba(255, 244, 200, 0.9),
-      0 0 40px 14px rgba(255, 210, 110, 0.5);
+      0 0 14px 5px rgba(255, 244, 200, 0.9),
+      0 0 28px 10px rgba(255, 210, 110, 0.5);
     filter: brightness(2.4) saturate(1.1);
   }
   100% {
     box-shadow:
-      0 0 6px 1px rgba(255, 221, 128, 0.25),
-      0 1px 5px rgba(0, 0, 0, 0.35);
+      0 0 4px 1px rgba(255, 221, 128, 0.22),
+      0 1px 4px rgba(0, 0, 0, 0.3);
     filter: brightness(1.1) saturate(1);
   }
 }
@@ -1302,7 +1316,7 @@
 @media (prefers-reduced-motion: reduce) {
   .stage-cover .primary,
   .stage-cover .spinner,
-  .string-field .string.is-plucked,
+  .string-field .course.is-plucked .str,
   .mandal-rack .lever .tick.on,
   .mandal-rack .lever.is-altered .lever-body {
     animation: none;
