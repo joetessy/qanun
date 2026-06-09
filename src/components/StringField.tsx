@@ -7,6 +7,7 @@ import {
   nearestCourse
 } from '../lib/gesture/nearestCourse'
 import { stageNormalizedX } from '../lib/gesture/pointerPlay'
+import { createVibrato } from '../lib/gesture/vibrato'
 
 interface StringFieldProps {
   courses: Course[]
@@ -18,6 +19,7 @@ interface StringFieldProps {
   onGlideCourse: (index: number) => void
   onHoldCourse: (index: number) => void
   onReleaseHold: () => void
+  onVibrato: (cents: number, rateHz: number) => void
 }
 
 const HOLD_DELAY_MS = 150
@@ -33,11 +35,16 @@ export const StringField = ({
   onPluckCourse,
   onGlideCourse,
   onHoldCourse,
-  onReleaseHold
+  onReleaseHold,
+  onVibrato
 }: StringFieldProps) => {
   const isPointerDownRef = useRef(false)
   const activeCourseRef = useRef<number | null>(null)
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Mouse vibrato: once the hold becomes a sustain, vertical drag drives the
+  // detector (parity with the camera path). Kept minimal — feeds clientY / vh.
+  const sustainingRef = useRef(false)
+  const vibratoRef = useRef(createVibrato())
 
   const courseFromPointer = useCallback(
     (e: React.PointerEvent<HTMLDivElement>): number => {
@@ -68,12 +75,16 @@ export const StringField = ({
       e.preventDefault()
       ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
       isPointerDownRef.current = true
+      sustainingRef.current = false
       const course = courseFromPointer(e)
       activeCourseRef.current = course
       onPluckCourse(course)
       holdTimerRef.current = setTimeout(() => {
         if (isPointerDownRef.current && activeCourseRef.current === course) {
           onHoldCourse(course)
+          // Sustain is now live — vertical drag starts driving vibrato.
+          sustainingRef.current = true
+          vibratoRef.current.reset()
         }
       }, HOLD_DELAY_MS)
     },
@@ -89,8 +100,19 @@ export const StringField = ({
         activeCourseRef.current = course
         onGlideCourse(course)
       }
+      // While sustaining, vertical drag drives vibrato (course is by x, so this
+      // never switches strings). Normalize clientY against the viewport height.
+      if (sustainingRef.current) {
+        const y = e.clientY / window.innerHeight
+        const { cents, rateHz } = vibratoRef.current.update({
+          y,
+          tNow: performance.now() / 1000,
+          active: true
+        })
+        onVibrato(cents, rateHz)
+      }
     },
-    [courseFromPointer, onGlideCourse]
+    [courseFromPointer, onGlideCourse, onVibrato]
   )
 
   const handlePointerUp = useCallback(
@@ -100,13 +122,19 @@ export const StringField = ({
       activeCourseRef.current = null
       clearHoldTimer()
       onReleaseHold()
+      // Drop any vibrato when the pointer lifts.
+      if (sustainingRef.current) {
+        sustainingRef.current = false
+        vibratoRef.current.reset()
+        onVibrato(0, 0)
+      }
       try {
         ;(e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId)
       } catch {
         // ignore — may already be released
       }
     },
-    [onReleaseHold]
+    [onReleaseHold, onVibrato]
   )
 
   return (

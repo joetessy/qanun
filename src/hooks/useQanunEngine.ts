@@ -17,6 +17,7 @@ import type { SayrMove } from '../lib/music/sayr/SAYR_NETWORKS'
 import { nearestCourse, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
 import { upperNeighborCourse } from '../lib/gesture/pointerPlay'
 import { createPinchPlay } from '../lib/gesture/pinchPlay'
+import { createVibrato } from '../lib/gesture/vibrato'
 import { createQanunEngine, type QanunEngine, type SoundSource } from '../lib/audio/createQanunEngine'
 import { createRecorder, type Recorder, type RecorderState } from '../lib/audio/createRecorder'
 import { formatElapsed } from '../lib/audio/formatElapsed'
@@ -81,6 +82,7 @@ export interface UseQanunEngine {
   glideCourse: (index: number) => void
   holdCourse: (index: number) => void
   releaseHold: () => void
+  onVibrato: (cents: number, rateHz: number) => void
   // P2: sampler voice switching
   soundSource: SoundSource
   setSoundSource: (s: SoundSource) => void
@@ -203,8 +205,17 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const holdingRef = useRef(false)
 
   // One pinchPlay per role slot — handles pluck / sustain / glide / release.
-  const pinchPlayRef = useRef([createPinchPlay(), createPinchPlay()])
+  // glideDebounceSec course-locks the sustain so a vertical vibrato wobble (or
+  // incidental lateral drift) doesn't switch strings.
+  const pinchPlayRef = useRef([
+    createPinchPlay({ glideDebounceSec: 0.07 }),
+    createPinchPlay({ glideDebounceSec: 0.07 })
+  ])
   const fingerFiltersRef = useRef([createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 }), createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 })])
+  // Vibrato detector driven by the sustaining hand's vertical wobble; the slot
+  // index that is currently sustaining (null = none).
+  const vibratoRef = useRef(createVibrato())
+  const sustainingSlotRef = useRef<number | null>(null)
 
   const recompute = useCallback((next: MandalState, nextTonic: number): void => {
     const field = buildField({ tonicMidi: nextTonic, mandalState: next })
@@ -558,6 +569,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     audioRef.current?.holdStop()
   }, [])
 
+  // Mouse-path vibrato: StringField computes depth/rate from the pointer's
+  // vertical drag and pushes it straight to the engine (null-guarded — audio may
+  // not exist yet).
+  const onVibrato = useCallback((cents: number, rateHz: number): void => {
+    audioRef.current?.setVibrato({ cents, rateHz })
+  }, [])
+
   const tick = useCallback((): void => {
     if (!runningRef.current) return
     const video = videoRef.current
@@ -598,11 +616,15 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     let lastPluckMidi: number | null = null
     let primaryCourse: number | null = null
     let pluckedCourse: number | null = null
+    // Raw (un-mirrored) index-tip y per slot — fed to the vibrato detector after
+    // the loop for whichever slot is sustaining. -1 = no tip this frame.
+    const slotTipY: number[] = [-1, -1]
     playHands.forEach((handIdx, slot) => {
       if (slot > 1) return // two-slot pool
       const lm = result.landmarks[handIdx]
       const tip = lm[INDEX_TIP]
       const pinchDist = pinchDistance({ a: tip, b: lm[THUMB_TIP] })
+      slotTipY[slot] = tip.y
       playTips.push({ tip, pinched: pinchDist < PINCH_VISUAL_THRESHOLD })
       const screenX = fingerFiltersRef.current[slot].filter({ x: 1 - tip.x, tNow })
       const course = nearestCourse({
@@ -622,10 +644,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       for (const ev of pinchEvts) {
         if (ev.type === 'release') {
           audio.holdStop()
+          if (sustainingSlotRef.current === slot) sustainingSlotRef.current = null
         } else if (ev.type === 'sustain') {
           const c = ev.courseIndex
           if (field[c]) {
             audio.holdStart({ freqHz: field[c].freqHz, velocity: ev.velocity })
+            sustainingSlotRef.current = slot
             emitMidi(field[c].freqHz, ev.velocity)
             lastPluckMidi = field[c].midi
             pluckedCourse = c
@@ -658,6 +682,21 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         }
       }
     })
+
+    // --- Vibrato from the sustaining hand's vertical wobble ---
+    // The sustaining slot (if any) drives the detector with its raw index-tip y;
+    // otherwise we feed an inactive sample so the detector clears and the engine
+    // returns to no vibrato. Vertical motion never changes the course (course is
+    // by x), so vibrato can't switch strings.
+    const vibSlot = sustainingSlotRef.current
+    const vibY = vibSlot !== null ? slotTipY[vibSlot] : -1
+    if (vibSlot !== null && vibY >= 0) {
+      const { cents, rateHz } = vibratoRef.current.update({ y: vibY, tNow, active: true })
+      audio.setVibrato({ cents, rateHz })
+    } else {
+      vibratoRef.current.update({ y: 0, tNow, active: false })
+      audio.setVibrato({ cents: 0 })
+    }
 
     frameCounterRef.current += 1
     if (lastPluckMidi !== null || frameCounterRef.current % READING_PUSH_EVERY_N_FRAMES === 0) {
@@ -725,6 +764,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       canvas.height = height
       pinchPlayRef.current.forEach((d) => d.reset())
       fingerFiltersRef.current.forEach((f) => f.reset())
+      vibratoRef.current.reset()
+      sustainingSlotRef.current = null
       frameCounterRef.current = 0
       pluckClearRef.current = 0
       setHighlightIndex(null)
@@ -748,6 +789,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     // misfire on the first frame back).
     pinchPlayRef.current.forEach((d) => d.reset())
     fingerFiltersRef.current.forEach((f) => f.reset())
+    vibratoRef.current.reset()
+    sustainingSlotRef.current = null
+    // Also clear engine vibrato so a Stop→Start doesn't inherit a stale depth.
+    audioRef.current?.setVibrato({ cents: 0 })
     // Clear any lingering overlay ring and the string highlight/pluck glow.
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
@@ -821,6 +866,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     glideCourse,
     holdCourse,
     releaseHold,
+    onVibrato,
     soundSource,
     setSoundSource,
     isSampleLoaded,

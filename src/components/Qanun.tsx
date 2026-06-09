@@ -89,6 +89,7 @@ export const Qanun = () => {
           onGlideCourse={engine.glideCourse}
           onHoldCourse={engine.holdCourse}
           onReleaseHold={engine.releaseHold}
+          onVibrato={engine.onVibrato}
         />
         {/* Emphasis overlay — off by default, layered above strings. */}
         {engine.showEmphasis && (
