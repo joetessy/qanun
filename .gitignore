@@ -19,3 +19,7 @@ build/
 # logs
 *.log
 npm-debug.log*
+
+# Claude workflow docs (skill specs/plans + handoff) — kept local, untracked
+docs/superpowers/
+docs/HANDOFF.md
