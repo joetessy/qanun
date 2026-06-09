@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useCallback } from 'react'
 import { Stage } from './Stage'
 import { StageCover } from './StageCover'
 import { StringField } from './StringField'
@@ -10,8 +10,10 @@ import { Controls } from './Controls'
 import { Rosette } from './Rosette'
 import { SayrGuide } from './SayrGuide'
 import { EmphasisOverlay } from './EmphasisOverlay'
+import { Onboarding } from './Onboarding'
 import { JINS_PAIRS } from '../lib/music/sayr/jinsPairs'
 import { useQanunEngine } from '../hooks/useQanunEngine'
+import { hasOnboarded, setOnboarded } from '../lib/ui/onboardingStorage'
 
 // The instrument. Composes the camera stage, the painted soundboard overlays
 // (string field, mandal rack, camera PIP), the one-line HUD, and the opt-in
@@ -25,11 +27,28 @@ export const Qanun = () => {
   // your hands, and the readout until you open the drawer.
   const [controlsOpen, setControlsOpen] = useState(false)
 
+  // Onboarding: show on first visit; persist dismissal in localStorage.
+  const [showOnboarding, setShowOnboarding] = useState(() => !hasOnboarded())
+  const dismissOnboarding = useCallback(() => {
+    setOnboarded()
+    setShowOnboarding(false)
+  }, [])
+  const reopenOnboarding = useCallback(() => setShowOnboarding(true), [])
+
   return (
     <div className="qanun">
       <header className="qanun-header">
         <span className="wordmark">qanun</span>
         <QanunHud reading={engine.reading} />
+        <button
+          type="button"
+          className="help-btn"
+          aria-label="How to play"
+          title="How to play"
+          onClick={reopenOnboarding}
+        >
+          ?
+        </button>
         <button
           type="button"
           className={`controls-toggle ${controlsOpen ? 'is-open' : ''}`}
@@ -91,6 +110,9 @@ export const Qanun = () => {
           />
         )}
         <CameraInset enabled={engine.status === 'running'} />
+
+        {/* First-run onboarding guide — overlaid above everything, dismissible. */}
+        {showOnboarding && <Onboarding onDismiss={dismissOnboarding} />}
       </div>
 
       <div id="qanun-controls" className={`controls-drawer ${controlsOpen ? 'is-open' : ''}`} hidden={!controlsOpen}>
