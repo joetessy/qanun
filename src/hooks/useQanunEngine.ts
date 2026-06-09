@@ -239,7 +239,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     if (pluckedCourse !== null) {
       setPluckedIndex(pluckedCourse)
       pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
-    } else if (frameCounterRef.current > pluckClearRef.current) {
+    } else if (frameCounterRef.current >= pluckClearRef.current) {
       setPluckedIndex(null)
     }
 

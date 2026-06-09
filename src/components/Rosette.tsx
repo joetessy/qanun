@@ -1,11 +1,18 @@
 // Decorative sound-hole rosette — a geometric Islamic-style star lattice, the
 // kind inlaid on a real qanun soundboard. Purely ornamental (aria-hidden); the
 // strings pass over it. Rendered as crisp SVG so it scales with the board.
+import { useId } from 'react'
+
 interface RosetteProps {
   className?: string
 }
 
-export const Rosette = ({ className }: RosetteProps) => (
+export const Rosette = ({ className }: RosetteProps) => {
+  // Unique gradient id per instance — two rosettes render at once, and a
+  // shared id would be a duplicate-id violation. Strip useId's colons so the
+  // value is a valid url(#…) fragment reference.
+  const gradId = `rosette-fade-${useId().replace(/:/g, '')}`
+  return (
   <svg
     className={`rosette ${className ?? ''}`}
     viewBox="0 0 200 200"
@@ -13,14 +20,14 @@ export const Rosette = ({ className }: RosetteProps) => (
     focusable="false"
   >
     <defs>
-      <radialGradient id="rosette-fade" cx="50%" cy="50%" r="50%">
+      <radialGradient id={gradId} cx="50%" cy="50%" r="50%">
         <stop offset="0%" stopColor="rgba(20, 12, 6, 0.85)" />
         <stop offset="62%" stopColor="rgba(26, 16, 8, 0.55)" />
         <stop offset="100%" stopColor="rgba(40, 26, 14, 0)" />
       </radialGradient>
     </defs>
     {/* Recessed dark well behind the lattice */}
-    <circle cx="100" cy="100" r="92" fill="url(#rosette-fade)" />
+    <circle cx="100" cy="100" r="92" fill={`url(#${gradId})`} />
     <g
       fill="none"
       stroke="rgba(196, 150, 86, 0.5)"
@@ -55,7 +62,8 @@ export const Rosette = ({ className }: RosetteProps) => (
       })}
     </g>
   </svg>
-)
+  )
+}
 
 // One 12-pointed star drawn as a closed polygon (alternating long/short radii).
 const StarPoly = () => {
