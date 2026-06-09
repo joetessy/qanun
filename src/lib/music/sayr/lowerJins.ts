@@ -14,7 +14,7 @@ export interface LowerJins {
 // docs/superpowers/specs/2026-06-09-jins-driven-modulation-design.md.
 export const LOWER_JINS: readonly LowerJins[] = [
   { id: 'rast',     label: 'Rast',     homeDegree: 1, defaultScale: [0, 2, 3.5, 5, 7, 9, 10.5], upperOptions: ['rast', 'nahawand', 'hijaz', 'bayati'] },
-  { id: 'bayati',   label: 'Bayati',   homeDegree: 2, defaultScale: [0, 2, 3.5, 5, 7, 9, 10.5], upperOptions: ['rast', 'nahawand', 'hijaz'] },
+  { id: 'bayati',   label: 'Bayati',   homeDegree: 2, defaultScale: [0, 2, 3.5, 5, 7, 9, 10],   upperOptions: ['nahawand', 'rast', 'hijaz'] },
   { id: 'hijaz',    label: 'Hijaz',    homeDegree: 2, defaultScale: [0, 2, 3, 6, 7, 9, 10.5],   upperOptions: ['rast', 'nahawand', 'bayati'] },
   { id: 'nahawand', label: 'Nahawand', homeDegree: 1, defaultScale: [0, 2, 3, 5, 7, 8, 11],     upperOptions: ['hijaz', 'kurd', 'bayati', 'ajam'] },
   { id: 'kurd',     label: 'Kurd',     homeDegree: 2, defaultScale: [0, 2, 3, 5, 7, 9, 10],      upperOptions: ['nahawand', 'rast'] },

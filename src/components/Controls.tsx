@@ -8,10 +8,8 @@ import { midiName } from '../lib/music/midiName'
 interface ControlsProps {
   tonicMidi: number
   mandalState: MandalState
-  trillEnabled: boolean
   onTonic: (midi: number) => void
   onApplyPair: (pair: JinsPair) => void
-  onTrillEnabled: (b: boolean) => void
   // P4a: recording
   recordingState: RecorderState
   recordingElapsedDisplay: string
@@ -60,10 +58,8 @@ const BEND_RANGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
 export const Controls = ({
   tonicMidi,
   mandalState,
-  trillEnabled,
   onTonic,
   onApplyPair,
-  onTrillEnabled,
   recordingState,
   recordingElapsedDisplay,
   onStartRecording,
@@ -95,17 +91,6 @@ export const Controls = ({
         options={TONICS}
         onChange={(v) => onTonic(Number(v))}
       />
-    </label>
-    <label className="ctrl">
-      <span>trill</span>
-      <button
-        type="button"
-        className={`toggle ${trillEnabled ? 'is-on' : ''}`}
-        onClick={() => onTrillEnabled(!trillEnabled)}
-        aria-pressed={trillEnabled}
-      >
-        {trillEnabled ? 'on' : 'off'}
-      </button>
     </label>
     <div className="quick-swaps">
       {JINS_PAIRS.map((pair) => (

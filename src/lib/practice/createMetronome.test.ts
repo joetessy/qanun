@@ -99,7 +99,7 @@ describe('createMetronome', () => {
     expect(transport.start).toHaveBeenCalledTimes(1)
   })
 
-  it('on disable, clears the scheduled event and stops Transport', async () => {
+  it('on disable, clears the scheduled event but leaves the shared Transport running', async () => {
     const { ToneMock, transport } = makeMockTone()
     const metro = createMetronome({
       Tone: ToneMock as never,
@@ -110,7 +110,9 @@ describe('createMetronome', () => {
     await metro.setEnabled(true)
     await metro.setEnabled(false)
     expect(transport.clear).toHaveBeenCalledWith(42)
-    expect(transport.stop).toHaveBeenCalledTimes(1)
+    // The rashsh sustain loop shares the global transport, so disabling the
+    // metronome must NOT stop it.
+    expect(transport.stop).not.toHaveBeenCalled()
   })
 
   it('does not schedule the metronome if disable races past an in-flight enable', async () => {

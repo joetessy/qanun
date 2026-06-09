@@ -124,7 +124,8 @@ export const createMetronome = ({
         transport.clear(scheduledId)
         scheduledId = null
       }
-      transport.stop()
+      // Do NOT stop the global transport — the rashsh sustain loop runs on it too,
+      // so stopping here would cut off a held note. Just unschedule + fade out.
       gain.gain.rampTo(0, gainRamp)
     }
   }

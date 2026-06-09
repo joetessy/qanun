@@ -12,7 +12,6 @@ import { applyJinsPair, type JinsPair } from '../lib/music/sayr/jinsPairs'
 import { applyLowerJins, lowerJinsById, lowerJinsList, maqamNameFor } from '../lib/music/sayr/lowerJins'
 import { applyUpperJins, upperOptions, ghammazFieldDegree, type UpperJinsOption } from '../lib/music/sayr/upperJins'
 import { nearestCourse, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
-import { upperNeighborCourse } from '../lib/gesture/pointerPlay'
 import { createPinchPlay } from '../lib/gesture/pinchPlay'
 import { createVibrato } from '../lib/gesture/vibrato'
 import { createQanunEngine, type QanunEngine } from '../lib/audio/createQanunEngine'
@@ -44,7 +43,7 @@ const SUSTAIN_VELOCITY = 0.6
 const PLAY_RING_COLOR = 'rgba(255, 244, 214, 0.92)'
 const PLUCK_RING_COLOR = 'rgba(255, 255, 255, 1)'
 // Pinch distance below which a fingertip shows "pressed" feedback (tighter ring + filled dot).
-const PINCH_VISUAL_THRESHOLD = 0.06
+const PINCH_VISUAL_THRESHOLD = 0.05
 const OVERLAY_SHADOW = 'rgba(0, 0, 0, 0.55)'
 const OVERLAY_SHADOW_BLUR = 6
 
@@ -75,8 +74,6 @@ export interface UseQanunEngine {
   setLowerJins: (id: string) => void
   setUpperJins: (id: string) => void
   upperJinsOptions: UpperJinsOption[]
-  trillEnabled: boolean
-  setTrillEnabled: (b: boolean) => void
   pluckCourse: (index: number) => void
   glideCourse: (index: number) => void
   holdCourse: (index: number) => void
@@ -135,7 +132,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const [courses, setCourses] = useState<Course[]>(() =>
     buildField({ tonicMidi: DEFAULT_TONIC_MIDI, mandalState: DEFAULT_RAST_STATE })
   )
-  const [trillEnabled, setTrillEnabled] = useState(false)
 
   // P4a: recording state (idle by default — recorder is lazily created).
   const [recordingState, setRecordingState] = useState<RecorderState>('idle')
@@ -189,9 +185,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // One pinchPlay per role slot — handles pluck / sustain / glide / release.
   // glideDebounceSec course-locks the sustain so a vertical vibrato wobble (or
   // incidental lateral drift) doesn't switch strings.
+  // Tighter close/open thresholds than the defaults so a pluck fires only on a
+  // real (near-complete) pinch, not as the fingers approach.
   const pinchPlayRef = useRef([
-    createPinchPlay({ glideDebounceSec: 0.07 }),
-    createPinchPlay({ glideDebounceSec: 0.07 })
+    createPinchPlay({ glideDebounceSec: 0.07, closeThreshold: 0.038, openThreshold: 0.055 }),
+    createPinchPlay({ glideDebounceSec: 0.07, closeThreshold: 0.038, openThreshold: 0.055 })
   ])
   const fingerFiltersRef = useRef([createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 }), createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 })])
   // Per-hand vibrato detectors — a deliberate vertical wave on either hand bends
@@ -209,6 +207,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     const home = homeDegreeRef.current
     const homeNote = degreeNoteLabel({ tonicMidi: nextTonic, degree: home, offset: offsetOf(next, home) })
     setReading((r) => ({ ...r, maqamName: id.maqamName, lowerJins: id.lower, upperJins: id.upper, tonicMidi: nextTonic, homeNote }))
+    // The drone follows the maqam's home note (not the fixed key).
+    droneRef.current?.setTonic(nextTonic + offsetOf(next, home))
   }, [])
 
   const setMandalAll = useCallback((next: MandalState): void => {
@@ -265,8 +265,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     tonicRef.current = midi
     setTonicMidi(midi)
     recompute(mandalRef.current, midi)
-    // Keep the drone in tune if it has been lazily created.
-    droneRef.current?.setTonic(midi)
+    // (recompute re-tunes the drone — it follows the home note.)
   }, [recompute])
 
   // Keyboard modulation: Q W E R T Y U I O pick the lower jins (in list order);
@@ -379,7 +378,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     if (droneRef.current) return droneRef.current
     const engine = audioRef.current
     if (!engine) throw new Error('Audio engine not initialised before drone')
-    const d = createDrone({ output: engine.sumBus, initialTonicMidi: tonicRef.current })
+    const d = createDrone({ output: engine.sumBus, initialTonicMidi: tonicRef.current + offsetOf(mandalRef.current, homeDegreeRef.current) })
     droneRef.current = d
     return d
   }, [])
@@ -486,19 +485,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       setHighlightIndex(index)
       setPluckedIndex(index)
       pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
-      if (trillEnabled) {
-        const neighborIdx = upperNeighborCourse(index, field.length)
-        audio.trill({
-          freqHz: field[index].freqHz,
-          neighborHz: field[neighborIdx].freqHz,
-          velocity: POINTER_VELOCITY
-        })
-      } else {
-        audio.pluck({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY })
-      }
+      audio.pluck({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY })
       emitMidi(field[index].freqHz, POINTER_VELOCITY)
     })
-  }, [ensureAudioEngine, trillEnabled, emitMidi])
+  }, [ensureAudioEngine, emitMidi])
 
   const glideCourse = useCallback((index: number): void => {
     void ensureAudioEngine().then(() => {
@@ -620,16 +610,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         } else if (ev.type === 'pluck') {
           const c = ev.courseIndex
           if (field[c]) {
-            if (trillEnabled) {
-              const neighborIdx = upperNeighborCourse(c, field.length)
-              audio.trill({
-                freqHz: field[c].freqHz,
-                neighborHz: field[neighborIdx].freqHz,
-                velocity: ev.velocity
-              })
-            } else {
-              audio.pluck({ freqHz: field[c].freqHz, velocity: ev.velocity })
-            }
+            audio.pluck({ freqHz: field[c].freqHz, velocity: ev.velocity })
             emitMidi(field[c].freqHz, ev.velocity)
             lastPluckMidi = field[c].midi
             pluckedCourse = c
@@ -730,7 +711,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     }
 
     scheduleNext()
-  }, [videoRef, canvasRef, setMandalAll, emitMidi, trillEnabled])
+  }, [videoRef, canvasRef, setMandalAll, emitMidi])
 
   const start = useCallback(async (): Promise<void> => {
     if (status === 'running' || status === 'loading') return
@@ -838,8 +819,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setLowerJins,
     setUpperJins,
     upperJinsOptions,
-    trillEnabled,
-    setTrillEnabled,
     pluckCourse,
     glideCourse,
     holdCourse,

@@ -15,14 +15,13 @@ describe('LOWER_JINS table', () => {
       for (const u of j.upperOptions) expect(() => jinsById(u)).not.toThrow()
     }
   })
-  it('Bayati and Sikah keep the Rast collection (no note change), only the home moves', () => {
+  it('Sikah keeps the Rast collection (no note change), only the home moves', () => {
     const rast = LOWER_JINS.find((j) => j.id === 'rast')!
-    const bayati = LOWER_JINS.find((j) => j.id === 'bayati')!
     const sikah = LOWER_JINS.find((j) => j.id === 'sikah')!
-    expect(bayati.defaultScale).toEqual(rast.defaultScale)
     expect(sikah.defaultScale).toEqual(rast.defaultScale)
-    expect(bayati.homeDegree).toBe(2)
     expect(sikah.homeDegree).toBe(3)
+    // Bayati moves home to D (degree 2); its default upper is Nahawand (B♭).
+    expect(LOWER_JINS.find((j) => j.id === 'bayati')!.homeDegree).toBe(2)
   })
   it('Hijaz roots on D (degree 2); Nahawand on C (degree 1, harmonic minor)', () => {
     expect(LOWER_JINS.find((j) => j.id === 'hijaz')!.homeDegree).toBe(2)
@@ -39,7 +38,7 @@ describe('LOWER_JINS table', () => {
   it('every family loads its exact default scale', () => {
     const expected: Record<string, number[]> = {
       rast:     [0, 2, 3.5, 5, 7, 9, 10.5],
-      bayati:   [0, 2, 3.5, 5, 7, 9, 10.5],
+      bayati:   [0, 2, 3.5, 5, 7, 9, 10],
       hijaz:    [0, 2, 3, 6, 7, 9, 10.5],
       nahawand: [0, 2, 3, 5, 7, 8, 11],
       kurd:     [0, 2, 3, 5, 7, 9, 10],
@@ -55,7 +54,7 @@ describe('LOWER_JINS table', () => {
 describe('applyLowerJins', () => {
   it('loads the jins default scale + home degree', () => {
     const r = applyLowerJins('bayati')
-    expect(r.mandalState).toEqual([0, 2, 3.5, 5, 7, 9, 10.5])
+    expect(r.mandalState).toEqual([0, 2, 3.5, 5, 7, 9, 10])
     expect(r.homeDegree).toBe(2)
   })
   it('returns a fresh array (not the table reference)', () => {

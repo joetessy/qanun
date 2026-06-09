@@ -27,9 +27,9 @@ describe('applyUpperJins (home-aware)', () => {
 
 describe('upperOptions', () => {
   it('returns the lower jins upper list with the active one flagged', () => {
-    const opts = upperOptions('bayati', [0, 2, 3.5, 5, 7, 9, 10.5], 2)
-    expect(opts.map((o) => o.id)).toEqual(['rast', 'nahawand', 'hijaz'])
-    expect(opts[0].label).toBe('Upper Rast')
-    expect(opts.find((o) => o.id === 'rast')!.active).toBe(true) // A/B½ on G = Upper Rast
+    const opts = upperOptions('bayati', [0, 2, 3.5, 5, 7, 9, 10], 2)
+    expect(opts.map((o) => o.id)).toEqual(['nahawand', 'rast', 'hijaz'])
+    expect(opts[0].label).toBe('Nahawand')
+    expect(opts.find((o) => o.id === 'nahawand')!.active).toBe(true) // A/B♭ on G = Nahawand
   })
 })

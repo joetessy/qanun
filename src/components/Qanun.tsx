@@ -96,10 +96,8 @@ export const Qanun = () => {
         <Controls
           tonicMidi={engine.tonicMidi}
           mandalState={engine.mandalState}
-          trillEnabled={engine.trillEnabled}
           onTonic={engine.setTonic}
           onApplyPair={engine.applyPair}
-          onTrillEnabled={engine.setTrillEnabled}
           recordingState={engine.recordingState}
           recordingElapsedDisplay={engine.recordingElapsedDisplay}
           onStartRecording={engine.startRecording}
