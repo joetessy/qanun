@@ -43,4 +43,18 @@ University of Iowa MIS, Philharmonia, VSCO 2 CE / VCSL (CC0), Sonatina, `nbrosow
 
 ## Open task for P2
 
-Pick Candidate 1 (CC0) to de-risk, OR confirm Candidate 2's license by email. Then: prepare the per-note files, host under `public/samples/qanun/`, and wire a `Tone.Sampler` behind the existing `createQanunEngine.pluck()` interface (the engine is already sound-source agnostic). Optionally add a subtle detuned layer to reinforce the trichord shimmer.
+~~Pick Candidate 1 (CC0) to de-risk, OR confirm Candidate 2's license by email.~~ **Resolved — see below.**
+
+---
+
+## Chosen: VCSL Dan Tranh + Psaltery (CC0) — wired in Phase 2
+
+**Decision (2026-06-09):** The research doc listed VCSL as "Western-only, no qanun." On re-examination, the VCSL Dan Tranh (Vietnamese zither) and Psaltery/Pluck are the closest plucked-zither timbres available under CC0 that Tone.Sampler can pitch-shift into the qanun range. License re-verified: `CC0 1.0 Universal` (the Affirmer's Waiver permanently relinquishes all Copyright and Related Rights — full text at https://github.com/sgossner/VCSL/blob/master/LICENSE).
+
+**What was wired:**
+- 17 WAV files (24-bit PCM, 44.1 kHz, 290 KB–954 KB each) downloaded to `public/samples/qanun/`, covering B1–D5 (one every ~2–3 semitones). The D5 file is from the Psaltery/Pluck set (fills the upper register gap).
+- Attribution in `public/samples/qanun/NOTICE.md`.
+- `src/lib/audio/qanunSamples.ts`: exports `QANUN_SAMPLE_URLS` (17-entry map, note name → filename) and `QANUN_SAMPLE_BASE_URL`.
+- `createQanunEngine.ts` extended: `Tone.Sampler` → subtle `Tone.Chorus` (triple-course shimmer) → reverb → sumBus. Added `soundSource: 'sample'|'synth'`, `setSoundSource()`, and `isSampleLoaded` to the engine interface. `pluck`/`holdStart`/`trill` route through the sampler when loaded; fall back to the PluckSynth pool while loading or when `soundSource='synth'`.
+- `Controls.tsx`: "sound" toggle (Sample / Synth), shows "sample…" hint until `isSampleLoaded`.
+- Tone.Sampler pitch-shifts from the nearest sample, so all chromatic and microtonal (quarter-tone) notes work automatically — no per-frequency samples needed.
