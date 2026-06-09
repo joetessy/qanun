@@ -22,33 +22,32 @@ Modulation currently means "set the whole maqam, always rooted at the tonic C." 
 | Lower jins | Home | Default scale | From Rast: |
 |---|---|---|---|
 | rast | C (1) | `0 2 3.5 5 7 9 10.5` | — |
-| nahawand | C (1) | `0 2 3 5 7 8 10` | retune (minor) |
+| nahawand | C (1) | `0 2 3 5 7 8 11` | retune (harmonic minor — Hijaz on 5) |
 | nikriz | C (1) | `0 2 3 6 7 9 10` | retune (E♭, F♯) |
-| hijaz | C (1) | `0 1 4 5 7 8 10` | retune *(C per prior decision; convention often D)* |
+| hijaz | **D (2)** | `0 2 3 6 7 9 10.5` | retune (Hijaz on D; = Nikriz-on-C collection, home on D) |
 | ajam | C (1) | `0 2 4 5 7 9 11` | retune (major) |
 | **bayati** | **D (2)** | `0 2 3.5 5 7 9 10.5` | **no note change** (Rast collection, home→D) |
 | kurd | D (2) | `0 2 3 5 7 9 10.5` | only E½→E♭ |
 | saba | D (2) | `0 2 3.5 5 6 8 10` | retune (lowered 4th) |
 | **sikah** | **E½ (3)** | `0 2 3.5 5 7 9 10.5` | **no note change** (Rast collection, home→E½) |
 
-The highlighted upper option after a load = the upper jins read off the default scale (e.g. Bayati's default upper is Upper-Rast, preserving A/B½). **Upper options per lower jins** (key 1–4, first = default):
+The highlighted upper option after a load = the first (default) entry below. **Upper options per lower jins** (keys 1–5, first = default; all modulate on the lower's ghammāz, which lands on **G** for every family except Saba, whose ghammāz is the 3rd → **F**):
 
-- rast → Upper Rast, Nahawand, Hijaz, Bayati
-- nahawand → Kurd, Hijaz, Bayati
-- hijaz → Rast, Nahawand, Bayati
-- bayati → Upper Rast, Nahawand, Hijaz
-- kurd → Nahawand, Rast
-- nikriz → Nahawand
-- saba → Hijaz, ʿAjam
-- sikah → Hijaz (→ Huzam), Rast
-- ajam → Upper ʿAjam, Nahawand
+- rast → **Upper Rast**, Nahawand, Hijaz, Bayati  *(no ʿAjam upper in Rast)*
+- nahawand → **Hijaz** (harmonic minor), Kurd, Bayati, Upper ʿAjam
+- hijaz → **Rast**, Nahawand, Bayati
+- bayati → **Upper Rast** (no-change default), Nahawand, Hijaz
+- kurd → **Nahawand**, Rast
+- nikriz → **Nahawand**
+- saba → **Hijaz**, ʿAjam
+- sikah → **Upper Rast** (plain Sikah), Hijaz (→ Huzam)
+- ajam → **Upper ʿAjam**, Hijaz, Nahawand
 
 ## Interaction
 
 - **Lower-jins selector** (replaces the maqam rail): family chips; **letter-row keys** Q W E R T Y U I O in the listed order; each chip shows its key.
-- **Upper-jins selector** (the existing `UpperJinsSwitcher`, now home-aware): chips; **keys 1–4**.
-- **Keep**: the per-degree mandal panel (manual quarter-tone tweaks) and the tonic control (now the **key**).
-- **Remove**: the Bayati↔Saba / Hijaz↔Hijazkar jins-pair quick-swaps (superseded).
+- **Upper-jins selector** (the existing `UpperJinsSwitcher`, now home-aware): chips; **keys 1–5**.
+- **Keep**: the per-degree mandal panel (manual quarter-tone tweaks); the tonic control (now the **key**); and the **jins-pair quick-swaps** (Bayati↔Saba, Hijaz↔Hijazkar) as fast single-flip alternatives.
 - **HUD**: inferred maqam + home note.
 - **README**: a "How it works" section explaining the lower/upper-jins model, tonic anchoring, and the keys.
 
