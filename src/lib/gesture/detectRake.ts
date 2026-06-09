@@ -1,8 +1,12 @@
+import type { RakeSensitivity } from '../../types'
+
 // Rake (glissando) detector. When the playing fingertip crosses course
 // boundaries fast enough, each newly crossed course is plucked in turn. Speed
 // is measured in courses/second; the threshold is set by sensitivity so
 // beginners avoid accidental glissandos ("subtle") and pros can rip ("full").
-export type RakeSensitivity = 'off' | 'subtle' | 'full'
+// RakeSensitivity is the app-canonical type (src/types.ts); re-exported here so
+// call-sites can import it alongside the detector.
+export type { RakeSensitivity }
 
 // Courses/second a crossing must exceed to register as a rake. "subtle" needs
 // a deliberately fast sweep; "full" triggers easily.
