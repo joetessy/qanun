@@ -49,7 +49,7 @@ export const createMandalGesture = ({
   let pinchClosed = false
 
   const update = ({
-    x: _x,
+    x: _x, // eslint-disable-line @typescript-eslint/no-unused-vars
     y,
     pinchDist,
     tNow
