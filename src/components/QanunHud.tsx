@@ -14,8 +14,8 @@ export const QanunHud = ({ reading }: QanunHudProps) => (
       <span className="v">{reading.maqamName}</span>
     </div>
     <div className="cell">
-      <span className="k">tonic</span>
-      <span className="v">{midiName(reading.tonicMidi).toLowerCase()}</span>
+      <span className="k">home</span>
+      <span className="v">{reading.homeNote.toLowerCase()}</span>
     </div>
     <div className="cell">
       <span className="k">last</span>

@@ -17,5 +17,6 @@ export interface QanunReading {
   lowerJins: string | null
   upperJins: string | null
   tonicMidi: number
+  homeNote: string
   lastPluckMidi: number | null
 }

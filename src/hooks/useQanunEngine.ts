@@ -3,12 +3,14 @@ import * as Tone from 'tone'
 import type { HandLandmarker } from '@mediapipe/tasks-vision'
 import type { MandalState, Course } from '../lib/music/types'
 import type { NormPoint, QanunReading, QanunStatus } from '../types'
-import { DEFAULT_RAST_STATE, cycleMandal } from '../lib/music/ajnas/MANDALS'
+import { DEFAULT_RAST_STATE, cycleMandal, offsetOf } from '../lib/music/ajnas/MANDALS'
 import { MAQAM_PRESETS } from '../lib/music/MAQAM_PRESETS'
 import { buildField, DEFAULT_TONIC_MIDI } from '../lib/music/buildField'
 import { identifyAjnas } from '../lib/music/identifyAjnas'
+import { degreeNoteLabel } from '../lib/music/degreeLabel'
 import { applyJinsPair, type JinsPair } from '../lib/music/sayr/jinsPairs'
-import { applyUpperJins, upperOptions, type UpperJinsOption } from '../lib/music/sayr/upperJins'
+import { applyLowerJins, lowerJinsById, lowerJinsList, maqamNameFor } from '../lib/music/sayr/lowerJins'
+import { applyUpperJins, upperOptions, ghammazFieldDegree, type UpperJinsOption } from '../lib/music/sayr/upperJins'
 import { suggestModulations } from '../lib/music/sayr/suggestModulations'
 import { emphasisNotes, type EmphasisNotes } from '../lib/music/sayr/emphasisNotes'
 import type { SayrMove } from '../lib/music/sayr/SAYR_NETWORKS'
@@ -70,7 +72,12 @@ export interface UseQanunEngine {
   setMandalState: (state: MandalState) => void
   setMaqamPreset: (id: string) => void
   applyPair: (pair: JinsPair) => void
-  applyUpper: (id: string) => void
+  lowerJins: string
+  upperJins: string
+  homeDegree: number
+  ghammazLabel: string | null
+  setLowerJins: (id: string) => void
+  setUpperJins: (id: string) => void
   upperJinsOptions: UpperJinsOption[]
   trillEnabled: boolean
   setTrillEnabled: (b: boolean) => void
@@ -122,6 +129,7 @@ const EMPTY_READING: QanunReading = {
   lowerJins: 'rast',
   upperJins: 'rast',
   tonicMidi: DEFAULT_TONIC_MIDI,
+  homeNote: 'C',
   lastPluckMidi: null
 }
 
@@ -132,6 +140,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const [reading, setReading] = useState<QanunReading>(EMPTY_READING)
   const [tonicMidi, setTonicMidi] = useState(DEFAULT_TONIC_MIDI)
   const [mandalState, setMandalStateRaw] = useState<MandalState>(DEFAULT_RAST_STATE)
+  // Jins-driven modulation: the active lower jins re-anchors the home tonic; the
+  // upper jins modulates on the ghammāz. Both default to Rast (home degree 1).
+  const [lowerJins, setLowerJinsState] = useState('rast')
+  const [upperJins, setUpperJinsState] = useState('rast')
+  const [homeDegree, setHomeDegreeState] = useState(1)
   const [highlightIndex, setHighlightIndex] = useState<number | null>(null)
   const [pluckedIndex, setPluckedIndex] = useState<number | null>(null)
   const [courses, setCourses] = useState<Course[]>(() =>
@@ -172,6 +185,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // Hot refs (read inside the frame loop without re-subscribing).
   const tonicRef = useRef(DEFAULT_TONIC_MIDI)
   const mandalRef = useRef<MandalState>(DEFAULT_RAST_STATE)
+  const lowerJinsRef = useRef('rast')
+  const upperJinsRef = useRef('rast')
+  const homeDegreeRef = useRef(1)
   const coursesRef = useRef<Course[]>(courses)
   const landmarkerRef = useRef<HandLandmarker | null>(null)
   const audioRef = useRef<QanunEngine | null>(null)
@@ -201,7 +217,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     coursesRef.current = field
     setCourses(field)
     const id = identifyAjnas(next)
-    setReading((r) => ({ ...r, maqamName: id.maqamName, lowerJins: id.lower, upperJins: id.upper, tonicMidi: nextTonic }))
+    const home = homeDegreeRef.current
+    const homeNote = degreeNoteLabel({ tonicMidi: nextTonic, degree: home, offset: offsetOf(next, home) })
+    setReading((r) => ({ ...r, maqamName: id.maqamName, lowerJins: id.lower, upperJins: id.upper, tonicMidi: nextTonic, homeNote }))
   }, [])
 
   const setMandalAll = useCallback((next: MandalState): void => {
@@ -227,9 +245,36 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setMandalAll(applyJinsPair(mandalRef.current, pair))
   }, [setMandalAll])
 
-  const applyUpper = useCallback((id: string): void => {
-    setMandalAll(applyUpperJins(mandalRef.current, id))
-  }, [setMandalAll])
+  // Pick a lower jins: load its scale, re-anchor the home tonic to that jins's
+  // conventional degree, reset to its default upper, then OVERRIDE the readout
+  // with the explicit maqam name. The override is what makes "Bayati · D" show
+  // correctly even though identify reads the raw (Rast-collection) scale.
+  const setLowerJins = useCallback((id: string): void => {
+    const { mandalState: scale, homeDegree: home } = applyLowerJins(id)
+    const up = lowerJinsById(id).upperOptions[0]
+    lowerJinsRef.current = id
+    upperJinsRef.current = up
+    homeDegreeRef.current = home
+    setLowerJinsState(id)
+    setUpperJinsState(up)
+    setHomeDegreeState(home)
+    mandalRef.current = scale
+    setMandalStateRaw(scale)
+    recompute(scale, tonicRef.current)
+    setReading((r) => ({ ...r, maqamName: maqamNameFor(id, up), lowerJins: id, upperJins: up }))
+  }, [recompute])
+
+  // Pick an upper jins: modulate on the ghammāz of the current lower jins, then
+  // override the readout name (identify can't name the modulated collection).
+  const setUpperJins = useCallback((id: string): void => {
+    const next = applyUpperJins(mandalRef.current, id, homeDegreeRef.current, lowerJinsRef.current)
+    upperJinsRef.current = id
+    setUpperJinsState(id)
+    mandalRef.current = next
+    setMandalStateRaw(next)
+    recompute(next, tonicRef.current)
+    setReading((r) => ({ ...r, maqamName: maqamNameFor(lowerJinsRef.current, id), upperJins: id }))
+  }, [recompute])
 
   const setTonic = useCallback((midi: number): void => {
     tonicRef.current = midi
@@ -238,6 +283,29 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     // Keep the drone in tune if it has been lazily created.
     droneRef.current?.setTonic(midi)
   }, [recompute])
+
+  // Keyboard modulation: Q W E R T Y U I O pick the lower jins (in list order);
+  // 1 2 3 4 5 pick the upper jins from the current lower jins's options. Ignored
+  // while typing in a form field or when a modifier is held.
+  useEffect(() => {
+    const LOWER_KEYS = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o']
+    const UPPER_KEYS = ['1', '2', '3', '4', '5']
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      const li = LOWER_KEYS.indexOf(e.key.toLowerCase())
+      const families = lowerJinsList()
+      if (li !== -1 && li < families.length) { setLowerJins(families[li].id); return }
+      const ui = UPPER_KEYS.indexOf(e.key)
+      if (ui !== -1) {
+        const opts = lowerJinsById(lowerJinsRef.current).upperOptions
+        if (ui < opts.length) setUpperJins(opts[ui])
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [setLowerJins, setUpperJins])
 
   /** Lazily creates + starts the audio engine on first user interaction. */
   const ensureAudioEngine = useCallback(async (): Promise<void> => {
@@ -749,8 +817,16 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const suggestions = suggestModulations(mandalState)
   const emphasis = emphasisNotes({ mandalState, courses })
 
-  // Ghammāz upper-jins options — computed from current mandal state.
-  const upperJinsOptions = upperOptions(mandalState)
+  // Ghammāz upper-jins options — contextual to the active lower jins + home.
+  const upperJinsOptions = upperOptions(lowerJins, mandalState, homeDegree)
+
+  // The field-degree note the upper jins sits on (e.g. "G" / "F") — shown in the
+  // switcher header. null when the ghammāz would fall outside the 7-degree field.
+  const ghammazLabel = ((): string | null => {
+    const g = ghammazFieldDegree(lowerJins, homeDegree)
+    if (g < 1 || g > 7) return null
+    return degreeNoteLabel({ tonicMidi, degree: g, offset: offsetOf(mandalState, g) })
+  })()
 
   // P4a: derive display string for recording elapsed time from stored frame count.
   const recordingElapsedDisplay = formatElapsed(recordingElapsedFrames, sampleRate)
@@ -772,7 +848,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setMandalState,
     setMaqamPreset,
     applyPair,
-    applyUpper,
+    lowerJins,
+    upperJins,
+    homeDegree,
+    ghammazLabel,
+    setLowerJins,
+    setUpperJins,
     upperJinsOptions,
     trillEnabled,
     setTrillEnabled,
