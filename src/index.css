@@ -1,4 +1,48 @@
-:root { color-scheme: dark; }
+/* Display: Cormorant Garamond (engraved-brass wordmark, instrument-catalogue
+   serif). Body/HUD: Fraunces — a characterful "old-style" with optical sizing,
+   warm and legible over wood. Both fall back to system serifs offline so a
+   no-network build still renders in keeping. */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap');
+
+:root {
+  color-scheme: dark;
+
+  /* ── Wood & brass palette ─────────────────────────────────────────────── */
+  --wood-deep: #2a1a0e;        /* darkest grain / shadow wells */
+  --wood-base: #5a3a1d;        /* mid walnut */
+  --wood-warm: #7a4f28;        /* lit walnut */
+  --wood-glow: #9c6a38;        /* spotlit highlight on the board */
+  --frame-dark: #1a1009;       /* the cabinet frame around the board */
+  --frame-edge: #0d0805;       /* outermost edge */
+
+  --brass-shadow: #6e4f1c;
+  --brass-base: #b88a2e;
+  --brass-lit: #e7c25b;
+  --brass-spec: #fff3c4;       /* specular highlight on a string */
+  --brass-glow: #ffdd80;
+
+  --ink: #f4ead2;              /* primary readable text on wood */
+  --ink-dim: #b89a6a;          /* secondary */
+  --ink-faint: #7a6038;        /* labels */
+  --ink-engrave: #1c1108;      /* engraved-into-brass dark text */
+
+  --accent: #e7c25b;
+  --danger: #d98a5a;
+
+  /* ── Type ──────────────────────────────────────────────────────────────── */
+  --font-display: 'Cormorant Garamond', 'Hoefler Text', 'Iowan Old Style', Georgia, serif;
+  --font-body: 'Fraunces', 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+}
+
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
-body { background: #0b0a08; color: #f4f2eb; font-family: system-ui, sans-serif; }
+
+body {
+  background: var(--frame-edge);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button { font-family: var(--font-body); }

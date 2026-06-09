@@ -6,6 +6,7 @@ import { MandalRack } from './MandalRack'
 import { QanunHud } from './QanunHud'
 import { CameraInset } from './CameraInset'
 import { Controls } from './Controls'
+import { Rosette } from './Rosette'
 import { useQanunEngine } from '../hooks/useQanunEngine'
 
 // The instrument. Composes the camera stage, the painted soundboard overlays
@@ -43,6 +44,12 @@ export const Qanun = () => {
           status={engine.status}
           cover={<StageCover status={engine.status} errorMsg={engine.errorMsg} onStart={engine.start} />}
         />
+
+        {/* Inlaid sound-hole rosettes — painted onto the wood beneath the strings. */}
+        <div className="rosettes" aria-hidden>
+          <Rosette className="rosette-major" />
+          <Rosette className="rosette-minor" />
+        </div>
 
         {/* Soundboard overlays — painted chrome layered over the camera/canvas. */}
         <MandalRack

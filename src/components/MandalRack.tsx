@@ -12,6 +12,7 @@ interface MandalRackProps {
 // Click affordances mirror the flick gesture so the rack is usable without a camera.
 export const MandalRack = ({ mandalState, activeDegree, onCycle }: MandalRackProps) => (
   <div className="mandal-rack">
+    <span className="rack-label">mandal</span>
     {[...MANDAL_DEGREES].reverse().map((md) => {
       const current = offsetOf(mandalState, md.degree)
       const posIndex = md.positions.indexOf(current)

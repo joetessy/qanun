@@ -1,219 +1,686 @@
-.app-root { display: flex; align-items: center; justify-content: center; height: 100%; }
+/* ═══════════════════════════════════════════════════════════════════════════
+   QANUN — photoreal wood-and-brass instrument shell (spec §7, §1).
+   Strings vertical; pitch low→high left→right. Mandal rack seated at the left.
+   The camera + overlay canvas live under the painted soundboard; hands read as
+   glowing fingertip rings drawn on the canvas (see useQanunEngine.tick).
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── StringField ────────────────────────────────────────────────────────────── */
-.string-field {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+.app-root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  /* The cabinet: a warm, vignetted darkness the instrument sits within. */
+  background:
+    radial-gradient(120% 90% at 50% -10%, #241710 0%, var(--frame-edge) 70%),
+    var(--frame-edge);
+  padding: clamp(10px, 2vmin, 28px);
+  gap: clamp(8px, 1.4vmin, 16px);
+}
+
+/* ── The instrument body (a trapezoidal qanun is suggested via the frame) ──── */
+.qanun {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
   overflow: hidden;
+  background: var(--frame-dark);
+  /* Cabinet bevel: bright top edge, deep drop below, inner well. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 222, 150, 0.18),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.6),
+    inset 0 0 60px 8px rgba(0, 0, 0, 0.55),
+    0 24px 70px -16px rgba(0, 0, 0, 0.85),
+    0 4px 14px rgba(0, 0, 0, 0.6);
 }
 
-.string-field .string {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: #b8a070;
-  transform: translateX(-50%);
-  opacity: 0.6;
-  transition: opacity 0.1s;
-}
-
-.string-field .string.is-tonic {
-  background: #e8c060;
-  width: 2px;
-  opacity: 0.85;
-}
-
-.string-field .string.is-highlight {
-  opacity: 1;
-  background: #ffe090;
-  box-shadow: 0 0 4px 1px #ffe09088;
-}
-
-.string-field .string.is-plucked {
-  background: #fff4c0;
-  opacity: 1;
-  box-shadow: 0 0 8px 3px #fff4c088;
-  animation: pluck-pulse 0.25s ease-out;
-}
-
-@keyframes pluck-pulse {
-  from { box-shadow: 0 0 14px 6px #fff4c0cc; }
-  to   { box-shadow: 0 0 4px 1px #fff4c022; }
-}
-
-/* ── MandalRack ─────────────────────────────────────────────────────────────── */
-.mandal-rack {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px;
-  background: #1a1510;
-  border-right: 1px solid #3a3020;
-}
-
-.mandal-rack .lever {
+/* ── Top bar: wordmark · HUD · tune toggle ─────────────────────────────────── */
+.qanun-header {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 4px;
-  border-radius: 3px;
-  background: #221c14;
+  gap: clamp(14px, 3vw, 40px);
+  padding: clamp(8px, 1.4vmin, 14px) clamp(14px, 2.4vw, 26px);
+  background:
+    linear-gradient(180deg, #20140b 0%, #160d07 100%);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 222, 150, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.5);
+  position: relative;
+  z-index: 5;
 }
 
-.mandal-rack .lever.is-active {
-  background: #3a2e1a;
-  outline: 1px solid #c0a040;
+.wordmark {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(26px, 3.4vw, 42px);
+  line-height: 0.9;
+  letter-spacing: 0.06em;
+  /* Engraved-brass: dark base text with a lit top bevel and a soft glow. */
+  color: var(--brass-lit);
+  background: linear-gradient(180deg, var(--brass-spec) 0%, var(--brass-base) 55%, var(--brass-shadow) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+  filter: drop-shadow(0 0 10px rgba(231, 194, 91, 0.22));
+  user-select: none;
+}
+.wordmark::first-letter { /* slightly grander cap */
+  font-size: 1.12em;
 }
 
-.mandal-rack .lever.is-fixed {
-  opacity: 0.5;
-}
-
-.mandal-rack .lever button {
-  background: none;
-  border: none;
-  color: #a08040;
-  cursor: pointer;
-  font-size: 10px;
-  padding: 0 2px;
-  line-height: 1;
-}
-
-.mandal-rack .lever button:disabled {
-  opacity: 0.2;
-  cursor: default;
-}
-
-.mandal-rack .lever button:not(:disabled):hover {
-  color: #e0c080;
-}
-
-.mandal-rack .lever .pos {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: center;
-}
-
-.mandal-rack .lever .tick {
-  display: block;
-  width: 8px;
-  height: 3px;
-  background: #4a3c24;
-  border-radius: 1px;
-}
-
-.mandal-rack .lever .tick.on {
-  background: #d4a030;
-}
-
-/* ── QanunHud ───────────────────────────────────────────────────────────────── */
+/* ── HUD readout (engraved plate over the bar) ─────────────────────────────── */
 .readout {
   display: flex;
-  gap: 16px;
-  align-items: baseline;
-  font-size: 13px;
-  color: #c8b87a;
-  letter-spacing: 0.02em;
+  align-items: stretch;
+  gap: clamp(10px, 1.8vw, 22px);
+  margin-right: auto;
+  padding: 5px 16px;
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(10, 6, 3, 0.6), rgba(28, 18, 9, 0.35));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 222, 150, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
 }
 
 .readout .cell {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  justify-content: center;
 }
-
-.readout .cell.maqam .v {
-  font-size: 15px;
-  font-weight: 500;
-  color: #f0e0a0;
+.readout .cell + .cell {
+  padding-left: clamp(10px, 1.8vw, 22px);
+  border-left: 1px solid rgba(231, 194, 91, 0.14);
 }
 
 .readout .k {
+  font-family: var(--font-body);
   font-size: 9px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #6a5a30;
+  letter-spacing: 0.22em;
+  color: var(--ink-faint);
 }
 
 .readout .v {
-  color: #d0b870;
+  font-family: var(--font-display);
+  font-size: clamp(15px, 1.7vw, 21px);
+  font-weight: 500;
+  line-height: 1.05;
+  color: var(--ink-dim);
 }
 
-/* ── CameraInset ────────────────────────────────────────────────────────────── */
-.camera-inset {
+.readout .cell.maqam .v {
+  font-weight: 600;
+  color: var(--brass-glow);
+  text-shadow: 0 0 12px rgba(255, 221, 128, 0.25);
+}
+
+/* The tune toggle — quiet brass capsule, opt-in progressive disclosure. */
+.controls-toggle {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  background: linear-gradient(180deg, #2c1d10, #1b1107);
+  border: 1px solid rgba(231, 194, 91, 0.2);
+  border-radius: 999px;
+  padding: 7px 16px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.controls-toggle:hover {
+  color: var(--brass-glow);
+  border-color: rgba(231, 194, 91, 0.5);
+}
+.controls-toggle.is-open {
+  color: var(--ink-engrave);
+  background: linear-gradient(180deg, var(--brass-lit), var(--brass-base));
+  border-color: var(--brass-base);
+  box-shadow: 0 0 14px rgba(231, 194, 91, 0.35);
+}
+
+/* ═══ THE SOUNDBOARD ════════════════════════════════════════════════════════
+   Warm wood is the playing surface. The camera/canvas sit inside this same box
+   so courseScreenX (0..1 of width) lines up with the mirrored video. */
+.soundboard {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+  /* Layered grain: two fine stripe gradients + a broad warm spotlight + base. */
+  background:
+    radial-gradient(140% 120% at 62% 18%, rgba(255, 214, 140, 0.20) 0%, rgba(120, 74, 36, 0) 46%),
+    repeating-linear-gradient(
+      88deg,
+      rgba(20, 12, 6, 0.42) 0px,
+      rgba(20, 12, 6, 0) 2px,
+      rgba(255, 220, 150, 0.05) 5px,
+      rgba(20, 12, 6, 0) 9px,
+      rgba(20, 12, 6, 0.30) 13px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.10) 0px,
+      rgba(0, 0, 0, 0) 28px,
+      rgba(120, 80, 40, 0.10) 60px,
+      rgba(0, 0, 0, 0) 96px
+    ),
+    linear-gradient(165deg, var(--wood-glow) 0%, var(--wood-warm) 34%, var(--wood-base) 68%, var(--wood-deep) 100%);
+}
+
+/* Fine film grain + a darkening edge vignette painted over the wood. */
+.soundboard::before {
+  content: '';
   position: absolute;
-  bottom: 12px;
-  right: 12px;
-  width: 120px;
-  height: 90px;
-  border: 1px solid #3a3020;
-  border-radius: 4px;
-  background: #0b0a0880;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+}
+.soundboard::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  /* Inner shadow frame so the board feels recessed into the cabinet. */
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
+    inset 0 2px 3px rgba(255, 222, 150, 0.10),
+    inset 0 0 120px 20px rgba(20, 12, 6, 0.55);
+  background: radial-gradient(130% 130% at 50% 50%, rgba(0, 0, 0, 0) 58%, rgba(15, 8, 4, 0.5) 100%);
+}
+
+/* ── Stage: the camera + overlay canvas, layered into the wood ─────────────── */
+.stage {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+.stage .video,
+.stage .overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Mirror the camera so movement matches the player (overlay drawn mirror=true
+     to match). */
+  transform: scaleX(-1);
+}
+
+/* Sink the raw camera into the board: low opacity + multiply so the wood reads
+   as the surface and only the player's hands/shadows show through warmly. */
+.stage .video {
+  opacity: 0.22;
+  mix-blend-mode: luminosity;
+  filter: contrast(1.05) sepia(0.35) brightness(0.92);
+}
+
+/* The fingertip rings — full strength, above everything in the stage. */
+.stage .overlay {
+  z-index: 3;
+  mix-blend-mode: screen;
+}
+
+/* ── Rosettes (inlaid sound-holes) ─────────────────────────────────────────── */
+.rosettes {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
   pointer-events: none;
 }
+.rosette {
+  position: absolute;
+  opacity: 0.7;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
+}
+.rosette-major {
+  width: clamp(170px, 24vmin, 300px);
+  height: clamp(170px, 24vmin, 300px);
+  right: 7%;
+  bottom: 8%;
+}
+.rosette-minor {
+  width: clamp(90px, 13vmin, 150px);
+  height: clamp(90px, 13vmin, 150px);
+  left: 23%;
+  top: 9%;
+  opacity: 0.5;
+}
 
-/* ── Controls ───────────────────────────────────────────────────────────────── */
+/* ═══ STRING FIELD — vertical brass strings ═════════════════════════════════ */
+.string-field {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.string-field .string {
+  position: absolute;
+  top: 3%;
+  bottom: 3%;
+  width: 1px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+  /* Brass wire: dark cores at the rim, bright specular sheen down the centre. */
+  background: linear-gradient(
+    90deg,
+    rgba(60, 42, 14, 0.85) 0%,
+    var(--brass-base) 38%,
+    var(--brass-spec) 50%,
+    var(--brass-base) 62%,
+    rgba(60, 42, 14, 0.85) 100%
+  );
+  box-shadow:
+    0 0 1px rgba(0, 0, 0, 0.6),
+    0 1px 4px rgba(0, 0, 0, 0.35);
+  opacity: 0.9;
+  transition: filter 0.12s ease-out, box-shadow 0.12s ease-out, opacity 0.12s;
+}
+
+/* Register-graded thickness: low strings (degree 1) are fattest, high thinnest.
+   data-degree 1..7 (1 = octave root, lowest within an octave). */
+.string-field .string[data-degree='1'] { width: 3px; }
+.string-field .string[data-degree='2'] { width: 2.6px; }
+.string-field .string[data-degree='3'] { width: 2.3px; }
+.string-field .string[data-degree='4'] { width: 2px; }
+.string-field .string[data-degree='5'] { width: 1.8px; }
+.string-field .string[data-degree='6'] { width: 1.5px; }
+.string-field .string[data-degree='7'] { width: 1.3px; }
+
+/* Tonic course (every degree-1 string): brighter, with a faint standing glow. */
+.string-field .string.is-tonic {
+  background: linear-gradient(
+    90deg,
+    rgba(90, 60, 18, 0.9) 0%,
+    var(--brass-lit) 36%,
+    #fff8d8 50%,
+    var(--brass-lit) 64%,
+    rgba(90, 60, 18, 0.9) 100%
+  );
+  box-shadow:
+    0 0 4px 0.5px rgba(255, 221, 128, 0.4),
+    0 1px 5px rgba(0, 0, 0, 0.4);
+  opacity: 1;
+}
+
+/* Nearest string under a finger: lit and haloed. */
+.string-field .string.is-highlight {
+  filter: brightness(1.5) saturate(1.2);
+  box-shadow:
+    0 0 7px 2px rgba(255, 221, 128, 0.55),
+    0 0 16px 4px rgba(255, 200, 90, 0.28);
+  opacity: 1;
+}
+
+/* A struck string: bright flash that decays via the pulse animation. The
+   .is-plucked class lives ~6 frames (PLUCK_GLOW_FRAMES); the pulse is tuned to
+   read fully within that window, after which the string falls back to its
+   resting look (or .is-highlight glow if a finger is still over it). */
+.string-field .string.is-plucked {
+  filter: brightness(1.9) saturate(1.15);
+  animation: pluck-pulse 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@keyframes pluck-pulse {
+  0% {
+    box-shadow:
+      0 0 20px 7px rgba(255, 244, 200, 0.9),
+      0 0 40px 14px rgba(255, 210, 110, 0.5);
+    filter: brightness(2.4) saturate(1.1);
+  }
+  100% {
+    box-shadow:
+      0 0 6px 1px rgba(255, 221, 128, 0.25),
+      0 1px 5px rgba(0, 0, 0, 0.35);
+    filter: brightness(1.1) saturate(1);
+  }
+}
+
+/* ═══ MANDAL RACK — brass levers seated in wood, at the LEFT ════════════════ */
+.mandal-rack {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 4;
+  width: 19%;            /* aligns with PLAY_FIELD_LEFT (0.2) — strings start after */
+  min-width: 132px;
+  max-width: 230px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(3px, 0.9vmin, 9px);
+  padding: clamp(10px, 2.2vmin, 22px) clamp(8px, 1.4vw, 16px);
+  /* A darker walnut block with a raised inner bezel and a hard right edge. */
+  background:
+    repeating-linear-gradient(2deg, rgba(0, 0, 0, 0.18) 0 3px, rgba(0, 0, 0, 0) 3px 7px),
+    linear-gradient(100deg, #1d1209 0%, #2e1d10 60%, #25180d 100%);
+  border-right: 2px solid rgba(0, 0, 0, 0.7);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 222, 150, 0.08),
+    inset -8px 0 16px -8px rgba(0, 0, 0, 0.7),
+    4px 0 18px -6px rgba(0, 0, 0, 0.6);
+}
+
+.mandal-rack .rack-label {
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.mandal-rack .lever {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: clamp(3px, 0.7vmin, 7px) 8px;
+  border-radius: 5px;
+  /* Each lever sits in its own routed slot. */
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.32), rgba(40, 26, 14, 0.2));
+  box-shadow:
+    inset 0 1px 1px rgba(0, 0, 0, 0.6),
+    inset 0 -1px 0 rgba(255, 222, 150, 0.06);
+  transition: box-shadow 0.18s, background 0.18s;
+}
+
+/* The lever under the left hand — lit brass. */
+.mandal-rack .lever.is-active {
+  background: linear-gradient(180deg, rgba(231, 194, 91, 0.22), rgba(120, 80, 30, 0.12));
+  box-shadow:
+    inset 0 0 0 1px rgba(231, 194, 91, 0.5),
+    0 0 14px rgba(231, 194, 91, 0.35);
+}
+
+/* Fixed pillar degrees (1 & 5) read as locked/dim. */
+.mandal-rack .lever.is-fixed {
+  opacity: 0.55;
+}
+
+.mandal-rack .lever button {
+  width: 18px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #3a2814, #241608);
+  color: var(--brass-base);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  border-radius: 3px;
+  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.12);
+  cursor: pointer;
+  font-size: 9px;
+  line-height: 1;
+  padding: 0;
+  transition: color 0.15s, box-shadow 0.15s, transform 0.05s;
+}
+.mandal-rack .lever button:not(:disabled):hover {
+  color: var(--brass-glow);
+  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.2), 0 0 8px rgba(231, 194, 91, 0.3);
+}
+.mandal-rack .lever button:not(:disabled):active {
+  transform: translateY(1px);
+}
+.mandal-rack .lever button:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+/* The position indicator: a small brass lever-pin that slides between ticks. */
+.mandal-rack .lever .pos {
+  display: flex;
+  flex-direction: column-reverse;  /* low position at the bottom, high at top */
+  justify-content: space-between;
+  align-items: center;
+  gap: 3px;
+  min-height: 22px;
+  padding: 2px 0;
+}
+.mandal-rack .lever .tick {
+  display: block;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #4a3620, #2a1c0e);
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.5);
+  transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.mandal-rack .lever .tick.on {
+  background: linear-gradient(180deg, var(--brass-spec), var(--brass-base));
+  box-shadow: 0 0 8px rgba(255, 221, 128, 0.6);
+  /* flip cue: the lit pin gives a quick settle when the position changes */
+  animation: lever-flip 0.28s ease-out;
+}
+
+@keyframes lever-flip {
+  0% { transform: scaleX(0.4); filter: brightness(1.8); }
+  60% { transform: scaleX(1.15); }
+  100% { transform: scaleX(1); filter: brightness(1); }
+}
+
+/* ── Camera inset (PIP) ────────────────────────────────────────────────────── */
+.camera-inset {
+  position: absolute;
+  top: clamp(10px, 1.8vmin, 18px);
+  right: clamp(10px, 1.8vmin, 18px);
+  z-index: 4;
+  width: clamp(116px, 13vw, 168px);
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  pointer-events: none;
+  /* A brass-rimmed window cut into the board. */
+  background: rgba(10, 6, 3, 0.25);
+  border: 1px solid rgba(231, 194, 91, 0.35);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.6),
+    inset 0 0 18px rgba(0, 0, 0, 0.5),
+    0 4px 14px rgba(0, 0, 0, 0.5);
+}
+.camera-inset::after {
+  content: 'your hands';
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(231, 194, 91, 0.6);
+}
+
+/* ═══ STAGE COVER — zero-config start / loading / error ═════════════════════ */
+.stage-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  text-align: center;
+  background: radial-gradient(120% 100% at 50% 40%, rgba(28, 18, 9, 0.55), rgba(10, 6, 3, 0.82));
+  backdrop-filter: blur(2px);
+}
+
+.stage-cover .primary {
+  font-family: var(--font-display);
+  font-size: clamp(20px, 2.6vw, 30px);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--ink-engrave);
+  background: radial-gradient(120% 120% at 50% 25%, var(--brass-spec) 0%, var(--brass-lit) 40%, var(--brass-base) 100%);
+  border: none;
+  border-radius: 999px;
+  padding: 16px 52px;
+  cursor: pointer;
+  box-shadow:
+    inset 0 2px 2px rgba(255, 248, 216, 0.7),
+    inset 0 -3px 6px rgba(110, 79, 28, 0.6),
+    0 10px 30px -6px rgba(0, 0, 0, 0.7),
+    0 0 30px rgba(231, 194, 91, 0.3);
+  transition: transform 0.12s ease-out, box-shadow 0.18s, filter 0.18s;
+  /* a slow breathing pulse so the single affordance invites a tap */
+  animation: play-breathe 2.8s ease-in-out infinite;
+}
+.stage-cover .primary:hover {
+  transform: translateY(-1px) scale(1.02);
+  filter: brightness(1.06);
+  box-shadow:
+    inset 0 2px 2px rgba(255, 248, 216, 0.8),
+    inset 0 -3px 6px rgba(110, 79, 28, 0.6),
+    0 14px 38px -6px rgba(0, 0, 0, 0.75),
+    0 0 44px rgba(231, 194, 91, 0.5);
+}
+.stage-cover .primary:active { transform: translateY(1px) scale(0.99); }
+
+@keyframes play-breathe {
+  0%, 100% { box-shadow:
+    inset 0 2px 2px rgba(255, 248, 216, 0.7),
+    inset 0 -3px 6px rgba(110, 79, 28, 0.6),
+    0 10px 30px -6px rgba(0, 0, 0, 0.7),
+    0 0 22px rgba(231, 194, 91, 0.22); }
+  50% { box-shadow:
+    inset 0 2px 2px rgba(255, 248, 216, 0.7),
+    inset 0 -3px 6px rgba(110, 79, 28, 0.6),
+    0 10px 30px -6px rgba(0, 0, 0, 0.7),
+    0 0 38px rgba(231, 194, 91, 0.42); }
+}
+
+.stage-cover .spinner {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.2vw, 26px);
+  font-style: italic;
+  color: var(--ink-dim);
+  letter-spacing: 0.08em;
+  animation: spinner-fade 1.3s ease-in-out infinite;
+}
+@keyframes spinner-fade { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+
+.stage-cover .error {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 32ch;
+  color: var(--danger);
+}
+.stage-cover .error strong {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+}
+.stage-cover .error span { color: var(--ink-dim); font-size: 13px; }
+
+/* ═══ CONTROLS DRAWER — quiet, opt-in (progressive disclosure, spec §1) ═════ */
+.controls-drawer {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.32s ease, opacity 0.24s ease, padding 0.32s ease;
+  background: linear-gradient(180deg, #20140b, #160d07);
+  border-top: 1px solid rgba(0, 0, 0, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.08);
+}
+.controls-drawer.is-open {
+  max-height: 200px;
+  opacity: 1;
+}
+/* `hidden` is set in markup when closed; un-hide for the open transition. */
+.controls-drawer[hidden] { display: block; }
+
 .controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  background: #141008;
-  border-top: 1px solid #2a2418;
-  font-size: 12px;
-  color: #a09060;
+  gap: clamp(12px, 2vw, 26px);
+  padding: 14px clamp(16px, 2.4vw, 28px);
 }
 
 .controls .ctrl {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
-
-.controls .ctrl span {
-  text-transform: uppercase;
+.controls .ctrl > span {
   font-size: 9px;
-  letter-spacing: 0.08em;
-  color: #6a5a30;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--ink-faint);
 }
-
 .controls .ctrl select {
-  background: #1e1810;
-  color: #c8a848;
-  border: 1px solid #3a3020;
-  border-radius: 3px;
-  padding: 2px 4px;
-  font-size: 12px;
+  font-family: var(--font-body);
+  background: linear-gradient(180deg, #2c1d10, #1b1107);
+  color: var(--brass-lit);
+  border: 1px solid rgba(231, 194, 91, 0.25);
+  border-radius: 5px;
+  padding: 5px 10px;
+  font-size: 13px;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.08);
+  transition: border-color 0.15s;
 }
+.controls .ctrl select:hover { border-color: rgba(231, 194, 91, 0.5); }
+.controls .ctrl select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .controls .quick-swaps {
   display: flex;
-  gap: 8px;
+  gap: 10px;
+  margin-left: auto;
 }
 
 .controls .swap {
-  background: #1e1810;
-  color: #a08840;
-  border: 1px solid #3a3020;
-  border-radius: 3px;
-  padding: 3px 8px;
-  font-size: 11px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--ink-dim);
+  background: linear-gradient(180deg, #2c1d10, #1b1107);
+  border: 1px solid rgba(231, 194, 91, 0.22);
+  border-radius: 999px;
+  padding: 6px 16px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
-
 .controls .swap:hover {
-  background: #2e2418;
-  color: #d4b060;
+  color: var(--brass-glow);
+  border-color: rgba(231, 194, 91, 0.5);
+}
+.controls .swap.is-active {
+  color: var(--ink-engrave);
+  background: linear-gradient(180deg, var(--brass-lit), var(--brass-base));
+  border-color: var(--brass-base);
+  box-shadow: 0 0 14px rgba(231, 194, 91, 0.32);
 }
 
-.controls .swap.is-active {
-  background: #3a2e14;
-  color: #e8c060;
-  border-color: #c0a040;
+/* Respect reduced-motion: drop the decorative loops/animations. */
+@media (prefers-reduced-motion: reduce) {
+  .stage-cover .primary,
+  .stage-cover .spinner,
+  .string-field .string.is-plucked,
+  .mandal-rack .lever .tick.on {
+    animation: none;
+  }
+  .controls-drawer { transition: none; }
 }
