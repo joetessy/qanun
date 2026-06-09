@@ -28,3 +28,31 @@ export const nearestCourse = ({ x, courseCount, fieldLeft, fieldRight }: Nearest
   const raw = Math.floor((x - fieldLeft) / cell)
   return Math.min(courseCount - 1, Math.max(0, raw))
 }
+
+export interface CoursesCrossedArgs {
+  prevX: number
+  curX: number
+  courseCount: number
+  fieldLeft: number
+  fieldRight: number
+}
+
+/**
+ * Course indices whose CENTRE the finger swept past moving prevX → curX (a
+ * strum). Returned in sweep order (low→high when moving right, reversed when
+ * moving left). Because it keys on crossing a string's centre — not a course
+ * boundary — sweeping back over the SAME string re-plays it, while a stationary
+ * finger crosses nothing (the half-open interval avoids double-counting a centre
+ * across consecutive frames).
+ */
+export const coursesCrossed = ({ prevX, curX, courseCount, fieldLeft, fieldRight }: CoursesCrossedArgs): number[] => {
+  const lo = Math.min(prevX, curX)
+  const hi = Math.max(prevX, curX)
+  const crossed: number[] = []
+  for (let i = 0; i < courseCount; i++) {
+    const cx = courseScreenX(i, courseCount, fieldLeft, fieldRight)
+    if (cx > lo && cx <= hi) crossed.push(i)
+  }
+  if (curX < prevX) crossed.reverse()
+  return crossed
+}

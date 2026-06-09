@@ -86,7 +86,6 @@ export const Qanun = () => {
           onGlideCourse={engine.glideCourse}
           onHoldCourse={engine.holdCourse}
           onReleaseHold={engine.releaseHold}
-          onVibrato={engine.onVibrato}
         />
         {/* Play / start cover — a direct soundboard child so it sits ABOVE the
             strings (z-index), keeping the play button clickable. Self-hides when running. */}
@@ -99,6 +98,8 @@ export const Qanun = () => {
         <Controls
           tonicMidi={engine.tonicMidi}
           onTonic={engine.setTonic}
+          detuneCents={engine.detuneCents}
+          onDetuneCents={engine.setDetuneCents}
           recordingState={engine.recordingState}
           recordingElapsedDisplay={engine.recordingElapsedDisplay}
           onStartRecording={engine.startRecording}

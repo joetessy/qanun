@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import * as ToneNamespace from 'tone'
 import type { Gain, ToneAudioNode } from 'tone'
 import type { ReverbSize } from '../../types'
@@ -7,6 +8,13 @@ import { nextVoiceIndex } from './voicePool'
 import { detunedFreqs } from './detuneCluster'
 import { QANUN_SAMPLE_URLS, QANUN_SAMPLE_BASE_URL } from './qanunSamples'
 
+// The audio engine is a long-lived singleton (cached in a hook ref for the tab's
+// lifetime), so plain HMR would leave a STALE engine running old code — you'd see
+// new visuals but hear the old audio. Self-accept and force a full page reload
+// whenever this file changes in dev, so an engine edit always takes effect. No-op
+// in production / tests (import.meta.hot is undefined there).
+if (import.meta.hot) import.meta.hot.accept(() => window.location.reload())
+
 // Per-course plucked-string engine. P1 voice = Tone.PluckSynth (Karplus-Strong);
 // P2 adds a Tone.Sampler behind the same `pluck()` interface.
 //
@@ -14,23 +22,22 @@ import { QANUN_SAMPLE_URLS, QANUN_SAMPLE_BASE_URL } from './qanunSamples'
 //   'sample' (default) — uses Tone.Sampler once loaded; falls back to synth while loading.
 //   'synth' — always uses the PluckSynth pool.
 //
-// Signal chain (sumBus → limiter → destination; limiter brick-walls at -1 dBFS
-// so dense plucks + rashsh + reverb can't clip):
-//   Sampler → chorus (triple-course shimmer for sampled path) → Vibrato → reverb → sumBus
-//   PluckSynth voices → voiceGain → Vibrato → reverb → sumBus
+// Signal chain (sumBus → limiter → softClip → destination; limiter brick-walls
+// at -1 dBFS and the soft-clip caps any transient, so dense plucks + rashsh +
+// reverb can't clip):
+//   Sampler → chorus (triple-course shimmer for sampled path) → reverb → sumBus
+//   PluckSynth voices → voiceGain → reverb → sumBus
 //
-// v2 changes (per §3 of 2026-06-09-interaction-v2-and-sound.md):
+// Core features:
 //   • Triple-course bloom: each pluck fires 3 detuned voices (±4 cents).
 //   • Longer ring: resonance ↑ to 0.97, dampening 3500 Hz for warmer tone.
 //   • Body reverb on by default (wet ≈ 0.28).
-//   • Rashsh hold: holdStart() re-triggers at ~10 Hz; holdStop() cancels.
-//   • Vibrato: a Tone.Vibrato effect node sits in the dry path (before reverb),
-//     bending the pitch of everything that flows through it. Because both the
-//     sampler and the synth fallback route through it, vibrato works for BOTH
-//     voices, on a ringing/sustained note AND during the rashsh tremolo
-//     (Tone v15's Sampler has no `detune` param, so an LFO→detune approach is
-//     silent — the effect node bends the post-mix signal instead). setVibrato()
-//     drives its depth/rate live; depth 0 ⇒ inaudible.
+//   • Rashsh hold: a continuous loop re-strikes a single held course at ~10 Hz.
+//   • Two-note trill: a DEDICATED engine — two independent voices alternating
+//     attacks hi-lo-hi-lo on the same 16th-note pulse; each string rings out
+//     naturally until struck again (like two real strings plucked in turn).
+//     Each voice has its own Sampler (real qanun timbre) with a brief
+//     Karplus-Strong fallback while samples load (see startTrill).
 export type SoundSource = 'sample' | 'synth'
 
 export interface QanunEngineOptions {
@@ -42,11 +49,10 @@ export interface QanunEngineOptions {
 export interface QanunEngine {
   start: () => Promise<void>
   dispose: () => void
-  pluck: (args: { freqHz: number; velocity: number; time?: number }) => void
+  pluck: (args: { freqHz: number; velocity: number; time?: number; bloom?: boolean }) => void
   holdStart: (args: { freqHz: number; velocity: number; immediate?: boolean }) => void
   holdAlternate: (args: { freqs: number[]; velocity: number }) => void
   holdStop: () => void
-  setVibrato: (a: { cents: number; rateHz?: number }) => void
   trill: (args: { freqHz: number; neighborHz: number; velocity: number; cycles?: number }) => void
   setReverbEnabled: (enabled: boolean) => void
   setReverbWet: (wet: number) => void
@@ -110,8 +116,34 @@ const FX_WET_RAMP = 0.08
 const VOICE_GAIN_RAMP = 0.01
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n))
 
-/** Maximum vibrato depth in cents (full-scale pitch bend at the Vibrato extremes). */
-const MAX_VIBRATO_CENTS = 45
+/** Below this magnitude the soft-clip is fully transparent (identity). */
+const SOFTCLIP_KNEE = 0.9
+
+/**
+ * Builds the transfer curve for the final-stage soft-clip WaveShaper.
+ *
+ * Identity below ±SOFTCLIP_KNEE (so normal-level signal is untouched), then a
+ * smooth tanh saturation that asymptotes toward ±1 above the knee. A
+ * WaveShaperNode clamps its input index to [-1, 1], so any sample that arrives
+ * above full-scale (a transient the limiter's ~3 ms attack let slip) maps to
+ * curve(±1) — strictly below 1.0 — and therefore can never clip the output.
+ * This is what removes the audible crunch on fast glides.
+ */
+export const makeSoftClipCurve = (samples = 2048): Float32Array => {
+  const curve = new Float32Array(samples)
+  for (let i = 0; i < samples; i++) {
+    const x = (i / (samples - 1)) * 2 - 1 // -1 … 1
+    const a = Math.abs(x)
+    if (a <= SOFTCLIP_KNEE) {
+      curve[i] = x
+    } else {
+      const sign = x < 0 ? -1 : 1
+      const t = (a - SOFTCLIP_KNEE) / (1 - SOFTCLIP_KNEE)
+      curve[i] = sign * (SOFTCLIP_KNEE + (1 - SOFTCLIP_KNEE) * Math.tanh(t))
+    }
+  }
+  return curve
+}
 
 // ─── factory ──────────────────────────────────────────────────────────────────
 
@@ -125,20 +157,22 @@ export const createQanunEngine = ({
   let reverbSize: ReverbSize = fx?.reverbSize ?? DEFAULT_REVERB_SIZE
 
   // ── shared output chain ──────────────────────────────────────────────────────
-  // Both voices route through Vibrato → reverb → sumBus → limiter → destination.
-  // sumBus runs at 0.8 for a little headroom; a brick-wall limiter at -1 dBFS
-  // sits at the very end so triple-course plucks + rashsh + reverb can't sum
-  // past 0 dBFS and clip. The limiter is guarded for the injectable Tone mock
-  // (which may not implement it); when absent, sumBus drives the destination
-  // directly so tests still work.
+  // Both voices route through reverb → sumBus → limiter → softClip → destination.
+  // sumBus runs at 0.8 for headroom; the Tone.Limiter brick-walls at
+  // -1 dBFS, but its ~3 ms attack lets sharp pluck transients (and dense glide
+  // bursts) slip through and clip. The softClip WaveShaper is the zero-attack
+  // final safety: it instantaneously caps every sample below full-scale, so the
+  // output can NEVER clip. Both are guarded for the injectable Tone mock (which
+  // may implement neither); the chain is built from whatever nodes exist and the
+  // last one drives the destination, so tests still work.
   const sumBus = new Tone.Gain(0.8)
   const limiter = typeof Tone.Limiter === 'function' ? new Tone.Limiter(-1) : null
-  if (limiter) {
-    sumBus.connect(limiter)
-    limiter.toDestination()
-  } else {
-    sumBus.toDestination()
-  }
+  const softClip = typeof Tone.WaveShaper === 'function' ? new Tone.WaveShaper(makeSoftClipCurve()) : null
+  if (softClip) softClip.oversample = '4x'
+  const masterChain = [sumBus, limiter, softClip].filter((n) => n !== null) as ToneAudioNode[]
+  for (let i = 0; i < masterChain.length - 1; i++) masterChain[i].connect(masterChain[i + 1])
+  const finalNode = masterChain[masterChain.length - 1]
+  finalNode.toDestination()
   const params = reverbSizeToParams(reverbSize)
   const reverb = new Tone.Reverb({
     decay: params.decaySec,
@@ -147,30 +181,13 @@ export const createQanunEngine = ({
   })
   reverb.connect(sumBus)
 
-  // ── vibrato (pitch-bend effect on the dry path, before reverb) ────────────────
-  // A Tone.Vibrato node bends the pitch of EVERYTHING routed through it, so both
-  // the sampler and the synth fallback vibrato — on a ringing/sustained note as
-  // well as during the rashsh tremolo. (Tone v15's Sampler exposes no `detune`
-  // AudioParam, so the old LFO→detune approach was silent; bending the post-mix
-  // signal sidesteps that.) Sits between the sources and reverb so the dry
-  // signal is bent before it hits the reverb tail. setVibrato() drives its
-  // depth/rate live; depth 0 ⇒ inaudible.
-  //
-  // Guarded for the injectable Tone mock, which may not implement Vibrato — then
-  // sources fall back to connecting straight to reverb and setVibrato() no-ops.
-  const vibrato =
-    typeof Tone.Vibrato === 'function'
-      ? new Tone.Vibrato({ frequency: 5.5, depth: 0, maxDelay: 0.01 })
-      : null
-  if (vibrato) vibrato.connect(reverb)
-
   // ── synth voice pool (Karplus-Strong, PluckSynth) ────────────────────────────
   // Pool has `polyphony × VOICES_PER_NOTE` raw voices so that chords (each
   // needing 3 voices) still get their full triple-course allocation.
   const poolSize = polyphony * VOICES_PER_NOTE
   const voices = Array.from({ length: poolSize }, () => {
     const g = new Tone.Gain(0)
-    g.connect(vibrato ?? reverb)
+    g.connect(reverb)
     // Karplus-Strong qanun timbre: long resonance, warm dampening.
     const synth = new Tone.PluckSynth({
       attackNoise: 1,
@@ -182,10 +199,10 @@ export const createQanunEngine = ({
   })
 
   // ── sampler voice (Tone.Sampler with subtle Chorus) ──────────────────────────
-  // Chain: sampler → chorus → Vibrato → reverb → sumBus.
+  // Chain: sampler → chorus → reverb → sumBus.
   const chorus = new Tone.Chorus(CHORUS_FREQUENCY, CHORUS_DELAY_TIME, CHORUS_DEPTH)
   chorus.wet.value = CHORUS_WET
-  chorus.connect(vibrato ?? reverb)
+  chorus.connect(reverb)
   // Chorus needs .start() to activate its LFO. Call it immediately — it's
   // internal DSP, no audio-context unlock required.
   chorus.start()
@@ -209,18 +226,35 @@ export const createQanunEngine = ({
   let voiceIndex = -1
   let started = false
 
-  // ── rashsh state — ONE continuous loop re-plucks the currently-held courses,
-  // rotating through them. Adding/removing a held note does NOT restart the loop,
-  // so a two-string trill always sounds the same regardless of when each finger
-  // landed (the alternation phase is continuous). ───────────────────────────────
+  // ── rashsh state — ONE continuous loop re-plucks the held course (single-note
+  // tremolo). Two simultaneous holds route to the dedicated trill engine below. ──
   interface LoopHandle { start(t: number): void; stop(): void; dispose(): void }
   let rashshLoop: LoopHandle | null = null
   let heldFreqs: number[] = []
   let heldVelocity = 0.6
   let rashshTick = 0
 
-  // Vibrato state lives in the Vibrato node (vibrato.depth/frequency), driven by
-  // the gesture layer via setVibrato().
+  // ── dedicated two-note trill ──────────────────────────────────────────────────
+  // Two held notes get their OWN engine (not the rashsh loop): two independent
+  // voices, one per octave, alternately struck hi→lo→hi→lo at the 16th-note
+  // pulse. Nothing is cut — each string rings out naturally until struck again,
+  // like two real strings plucked in turn. Each voice carries its OWN small
+  // Sampler (so each octave has the real qanun timbre on its own output) plus a
+  // Karplus-Strong fallback while samples load. The per-voice gain carries the
+  // strike level.
+  interface TrillVoice {
+    sampler: { triggerAttack: (f: number, t?: number, v?: number) => void; dispose: () => void }
+    synth: { triggerAttack: (f: number, t?: number) => void; dispose: () => void }
+    gain: Gain
+  }
+  let trillVoices: [TrillVoice, TrillVoice] | null = null
+  // Both trill samplers must be ready before the trill switches to the sampled
+  // timbre, so the two octaves never sound mismatched (one sample, one synth).
+  let trillSamplersLoaded = 0
+  let trillLoop: LoopHandle | null = null
+  let trillFreqs: [number, number] = [0, 0]
+  let trillVelocity = 0.6
+  let trillTick = 0
 
   // ── internal helpers ────────────────────────────────────────────────────────
 
@@ -264,6 +298,9 @@ export const createQanunEngine = ({
     if (started) return
     await Tone.start()
     started = true
+    // Pre-warm the dedicated trill voices so their samplers are loaded (from
+    // browser cache) well before the first two-note trill is played.
+    ensureTrillVoices()
   }
 
   /**
@@ -274,51 +311,142 @@ export const createQanunEngine = ({
   const pluck = ({
     freqHz,
     velocity,
-    time
+    time,
+    bloom = true
   }: {
     freqHz: number
     velocity: number
     time?: number
+    // Triple-course bloom (3 detuned voices). Pass false for glide steps so a
+    // fast drag across many strings fires 1 voice each instead of 3 — keeps the
+    // burst from slamming the master chain (anti-clipping).
+    bloom?: boolean
   }): void => {
     if (!Number.isFinite(freqHz) || freqHz <= 0) return
     const gainValue = velocityCurve(clamp01(velocity))
-    for (const freq of detunedFreqs(freqHz, [...COURSE_CENTS])) {
+    const offsets = bloom ? COURSE_CENTS : [0]
+    for (const freq of detunedFreqs(freqHz, offsets)) {
       fireVoice(freq, gainValue, time)
     }
   }
 
   /**
-   * Set the currently-held courses (rashsh sustain). ONE continuous loop rotates
-   * through `freqs`, one per tick at RASHSH_HZ:
-   *   • 1 held → re-plucks it ~10×/s (tremolo).
-   *   • 2 held → alternates (each ~5×/s) — a steady trill.
-   * The loop starts when the set becomes non-empty and stops when it empties; it
-   * is NOT restarted when the set merely changes, so the trill phase stays stable
-   * regardless of when each finger landed.
+   * Single-note rashsh sustain: ONE continuous loop re-plucks the held note at
+   * RASHSH_HZ (the 16th-note tremolo pulse). Two simultaneous holds are routed to
+   * the dedicated gain-gated trill engine below (startTrill), never here.
    */
   const setHeld = ({ freqs, velocity }: { freqs: number[]; velocity?: number }): void => {
     heldFreqs = freqs.filter((f) => Number.isFinite(f) && f > 0)
     if (velocity !== undefined) heldVelocity = velocity
-    if (heldFreqs.length > 0 && !rashshLoop) {
+
+    if (heldFreqs.length === 0) {
+      // Nothing held — tear the loop down.
+      if (rashshLoop) {
+        rashshLoop.stop()
+        rashshLoop.dispose()
+        rashshLoop = null
+      }
+      return
+    }
+
+    if (!rashshLoop) {
       Tone.Transport.start()
       rashshTick = 0
       rashshLoop = new Tone.Loop((time: number) => {
         if (heldFreqs.length === 0) return
         const freqHz = heldFreqs[rashshTick % heldFreqs.length]
         rashshTick++
-        // Slight velocity jitter so the tremolo isn't mechanical. Vibrato is
-        // applied independently by the Vibrato node in the output chain.
+        // Slight velocity jitter so the tremolo isn't mechanical.
         const jitter = (Math.random() * 2 - 1) * RASHSH_VELOCITY_JITTER
         const v = clamp01(heldVelocity + jitter)
-        for (const freq of detunedFreqs(freqHz, [...COURSE_CENTS])) {
-          fireVoice(freq, velocityCurve(v), time)
-        }
+        // Single voice per strike (not the triple-course bloom): a note re-struck
+        // ~10×/s rings ~1.5 s, so blooming would stack dozens of copies and slam
+        // the master soft-clip.
+        fireVoice(freqHz, velocityCurve(v), time)
       }, RASHSH_INTERVAL)
       rashshLoop.start(0)
-    } else if (heldFreqs.length === 0 && rashshLoop) {
-      rashshLoop.stop()
-      rashshLoop.dispose()
-      rashshLoop = null
+    }
+  }
+
+  // ── dedicated two-note trill engine ──────────────────────────────────────────
+
+  /**
+   * Lazily build the two gated trill voices (one per octave): each is its own
+   * Sampler (the real qanun timbre) + a Karplus-Strong fallback, both feeding the
+   * voice's gate gain → reverb. The sample URLs were already fetched by the main
+   * sampler, so these load from browser cache — typically ready in well under a
+   * second; start() pre-warms them so the first trill is already sampled.
+   */
+  const ensureTrillVoices = (): [TrillVoice, TrillVoice] => {
+    if (trillVoices) return trillVoices
+    const make = (): TrillVoice => {
+      const gain = new Tone.Gain(0)
+      // Through the shared chorus so the trill matches the main sampled path's
+      // shimmer exactly (sampler → gate → chorus → reverb).
+      gain.connect(chorus)
+      const voiceSampler = new Tone.Sampler({
+        urls: QANUN_SAMPLE_URLS,
+        baseUrl: QANUN_SAMPLE_BASE_URL,
+        onload: () => {
+          trillSamplersLoaded++
+        }
+      })
+      voiceSampler.connect(gain)
+      const synth = new Tone.PluckSynth({ attackNoise: 1, dampening: KS_DAMPENING, resonance: KS_RESONANCE })
+      synth.connect(gain)
+      return { sampler: voiceSampler, synth, gain }
+    }
+    trillVoices = [make(), make()]
+    return trillVoices
+  }
+
+  /**
+   * Start (or retune) the two-note trill: alternating 16th-note attacks — hi,
+   * lo, hi, lo — always starting on the high note. Each tick strikes ONE
+   * dedicated voice; nothing is silenced, so both strings ring out naturally
+   * until their next strike, like two real strings plucked in turn. Calling
+   * again while running just retunes (slide) without restarting the loop, so
+   * the phase never stutters.
+   */
+  const startTrill = (hiHz: number, loHz: number, velocity: number): void => {
+    trillFreqs = [hiHz, loHz]
+    trillVelocity = velocity
+    if (trillLoop) return
+    const pair = ensureTrillVoices()
+    Tone.Transport.start()
+    trillTick = 0
+    trillLoop = new Tone.Loop((time: number) => {
+      const idx = trillTick % 2
+      trillTick++
+      const active = pair[idx]
+      const jitter = (Math.random() * 2 - 1) * RASHSH_VELOCITY_JITTER
+      const level = velocityCurve(clamp01(trillVelocity + jitter))
+      // Two INDEPENDENT strings: the gate only carries the strike level — the
+      // other octave is never closed, so each string rings out naturally until
+      // it is struck again (the alternation lives in the attacks, hi-lo-hi-lo,
+      // exactly like two real strings plucked in turn).
+      active.gain.gain.rampTo(level, VOICE_GAIN_RAMP, time)
+      // Sampled qanun timbre once both voice-samplers are ready (and the engine
+      // is in 'sample' mode); Karplus-Strong only as the brief loading fallback.
+      if (currentSource === 'sample' && trillSamplersLoaded >= 2) {
+        active.sampler.triggerAttack(trillFreqs[idx], time, 1)
+      } else {
+        active.synth.triggerAttack(trillFreqs[idx], time)
+      }
+    }, RASHSH_INTERVAL)
+    trillLoop.start(0)
+  }
+
+  /**
+   * Stop the two-note trill. The gates are left open on purpose: like real
+   * strings, the last struck notes ring out naturally after release (matching
+   * how the single-note rashsh ends).
+   */
+  const stopTrill = (): void => {
+    if (trillLoop) {
+      trillLoop.stop()
+      trillLoop.dispose()
+      trillLoop = null
     }
   }
 
@@ -328,45 +456,35 @@ export const createQanunEngine = ({
    */
   const holdStart = ({ freqHz, velocity, immediate = true }: { freqHz: number; velocity: number; immediate?: boolean }): void => {
     if (!Number.isFinite(freqHz) || freqHz <= 0) return
+    stopTrill() // e.g. dropping from a two-note trill back to one held note
     if (immediate) pluck({ freqHz, velocity })
     setHeld({ freqs: [freqHz], velocity })
   }
 
   /**
-   * Hold multiple courses at once — the continuous loop rotates through them
-   * (caller passes [higher, lower] so the higher note sounds first). Same steady
-   * rate as a single-string hold; adding the 2nd note does NOT restart the loop,
-   * so the trill always sounds the same regardless of press timing.
+   * Hold two courses at once → the dedicated alternating trill (caller passes
+   * [higher, lower], and the trill always leads with the higher). With only one
+   * valid note this falls back to the single rashsh; with none it stops all.
    */
   const holdAlternate = ({ freqs, velocity }: { freqs: number[]; velocity: number }): void => {
-    setHeld({ freqs, velocity })
+    const valid = freqs.filter((f) => Number.isFinite(f) && f > 0)
+    if (valid.length >= 2) {
+      setHeld({ freqs: [] }) // the single rashsh yields to the trill engine
+      startTrill(valid[0], valid[1], velocity)
+    } else if (valid.length === 1) {
+      stopTrill()
+      setHeld({ freqs: valid, velocity })
+    } else {
+      holdStop()
+    }
   }
 
   /**
-   * Stop all rashsh sustain (release every held course). Vibrato depth is owned
-   * by setVibrato(), so this does NOT touch the Vibrato node.
+   * Stop all sustain — the single rashsh AND the two-note trill.
    */
   const holdStop = (): void => {
+    stopTrill()
     setHeld({ freqs: [] })
-  }
-
-  /**
-   * Set the vibrato applied to everything in the output chain (both the sample
-   * and synth voices, ringing AND tremolo). `cents` is the bend amount, clamped
-   * to [0, MAX_VIBRATO_CENTS] then mapped to the Vibrato node's normal-range
-   * depth; `rateHz` (optional) the modulation rate in Hz. `cents === 0` ⇒
-   * depth 0 ⇒ no audible vibrato. Safe no-op when the Vibrato node is absent
-   * (e.g. the injectable Tone mock). Driven each frame by the gesture/mouse
-   * layer.
-   */
-  const setVibrato = ({ cents, rateHz }: { cents: number; rateHz?: number }): void => {
-    if (!vibrato) return
-    const peak = Math.max(0, Math.min(MAX_VIBRATO_CENTS, cents))
-    // Map cents → normal-range depth: 0 cents → 0 (inaudible), full → 0.22.
-    // The gentle 0.22 factor keeps the vibrato subtle (a full wave bends only
-    // ~0.22 of the Vibrato node's range, not half).
-    vibrato.depth.value = clamp01((peak / MAX_VIBRATO_CENTS) * 0.22)
-    if (rateHz && rateHz > 0) vibrato.frequency.value = rateHz
   }
 
   /**
@@ -426,24 +544,29 @@ export const createQanunEngine = ({
       v.synth.dispose()
       v.gain.dispose()
     })
-    vibrato?.dispose()
+    trillVoices?.forEach((v) => {
+      v.sampler.dispose()
+      v.synth.dispose()
+      v.gain.dispose()
+    })
     sampler.dispose()
     chorus.dispose()
     reverb.dispose()
     sumBus.dispose()
     limiter?.dispose()
+    softClip?.dispose()
   }
 
   const getSampleRate = (): number => Tone.getContext().sampleRate
 
   /**
-   * Returns the FINAL audible node's output for the recording tap, so
-   * recordings match what's heard: the limiter's output when present, else
-   * sumBus (when the injectable Tone mock has no Limiter). Captures exactly
-   * what the user hears (after reverb + chorus + brick-wall limiting).
+   * Returns the FINAL audible node's output for the recording tap, so recordings
+   * match what's heard — the last node in the master chain (softClip when
+   * present, else limiter, else sumBus for the mock). Captures exactly what the
+   * user hears (after reverb + chorus + brick-wall limiting + soft-clip).
    */
   const getRecorderTap = (): AudioNode =>
-    (limiter ?? sumBus).output as unknown as AudioNode
+    finalNode.output as unknown as AudioNode
 
   return {
     start,
@@ -452,7 +575,6 @@ export const createQanunEngine = ({
     holdStart,
     holdAlternate,
     holdStop,
-    setVibrato,
     trill,
     setReverbEnabled,
     setReverbWet,

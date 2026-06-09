@@ -2,10 +2,15 @@ import type { RecorderState } from '../lib/audio/createRecorder'
 import type { MidiSupportState, MidiOutputInfo } from '../lib/midi/createMidiOut'
 import { TypedSelect } from './TypedSelect'
 import { midiName } from '../lib/music/midiName'
+import { DETUNE_LIMIT_CENTS } from '../lib/music/buildField'
+import { formatCents } from '../lib/ui/formatCents'
 
 interface ControlsProps {
   tonicMidi: number
   onTonic: (midi: number) => void
+  // Global fine-tune (cents), −DETUNE_LIMIT_CENTS…+DETUNE_LIMIT_CENTS.
+  detuneCents: number
+  onDetuneCents: (cents: number) => void
   // P4a: recording
   recordingState: RecorderState
   recordingElapsedDisplay: string
@@ -54,6 +59,8 @@ const BEND_RANGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
 export const Controls = ({
   tonicMidi,
   onTonic,
+  detuneCents,
+  onDetuneCents,
   recordingState,
   recordingElapsedDisplay,
   onStartRecording,
@@ -86,6 +93,31 @@ export const Controls = ({
         onChange={(v) => onTonic(Number(v))}
       />
     </label>
+    {/* Fine-tune: a master detune in cents, ± a semitone. Slider + click-to-reset
+        readout. Shifts the whole instrument's pitch without renaming any note. */}
+    <div className="ctrl">
+      <span>fine</span>
+      <input
+        type="range"
+        className="studio-slider"
+        min={-DETUNE_LIMIT_CENTS}
+        max={DETUNE_LIMIT_CENTS}
+        step={1}
+        value={detuneCents}
+        onChange={(e) => onDetuneCents(Number(e.target.value))}
+        aria-label="fine tune in cents"
+        title={`fine tune ${formatCents(detuneCents)}`}
+      />
+      <button
+        type="button"
+        className="detune-readout"
+        onClick={() => onDetuneCents(0)}
+        title="reset fine tune to 0"
+        aria-label={`fine tune ${formatCents(detuneCents)}, click to reset`}
+      >
+        {formatCents(detuneCents)}
+      </button>
+    </div>
     {/* P4a: Studio extras — all opt-in, off by default */}
     <div className="studio-section">
       <span className="studio-label">studio</span>

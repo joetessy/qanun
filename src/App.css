@@ -327,11 +327,11 @@
   opacity: 0.95;
 }
 
+/* Finger hover: a GENTLE lift, deliberately dim so it doesn't wash out the warm
+   per-octave tonic anchors (is-home) you navigate octaves by. */
 .string-field .course.is-highlight .str {
-  filter: brightness(1.5) saturate(1.2);
-  box-shadow:
-    0 0 5px 2px rgba(255, 221, 128, 0.5),
-    0 0 12px 3px rgba(255, 200, 90, 0.25);
+  filter: brightness(1.18) saturate(1.05);
+  box-shadow: 0 0 3px 1px rgba(255, 221, 128, 0.3);
   opacity: 1;
 }
 
@@ -344,15 +344,15 @@
 @keyframes pluck-pulse {
   0% {
     box-shadow:
-      0 0 14px 5px rgba(255, 244, 200, 0.9),
-      0 0 28px 10px rgba(255, 210, 110, 0.5);
-    filter: brightness(2.4) saturate(1.1);
+      0 0 9px 3px rgba(255, 244, 200, 0.7),
+      0 0 18px 6px rgba(255, 210, 110, 0.32);
+    filter: brightness(1.7) saturate(1.05);
   }
   100% {
     box-shadow:
-      0 0 4px 1px rgba(255, 221, 128, 0.22),
+      0 0 3px 1px rgba(255, 221, 128, 0.18),
       0 1px 4px rgba(0, 0, 0, 0.3);
-    filter: brightness(1.1) saturate(1);
+    filter: brightness(1.05) saturate(1);
   }
 }
 
@@ -559,6 +559,24 @@
   letter-spacing: 0.06em;
   color: var(--brass-glow);
 }
+/* Fine-tune readout doubles as a click-to-reset button. Fixed min-width + tabular
+   digits so the row doesn't reflow as the value's width changes. */
+.detune-readout {
+  min-width: 38px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--brass-glow);
+  background: none;
+  border: none;
+  padding: 2px 2px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.detune-readout:hover { color: var(--brass-lit); }
+.detune-readout:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 3px; }
 .studio-slider {
   -webkit-appearance: none;
   appearance: none;

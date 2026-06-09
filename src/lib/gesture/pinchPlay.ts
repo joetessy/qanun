@@ -28,6 +28,12 @@ export interface PinchPlayOptions {
 export interface PinchPlay {
   update(a: { pinchDist: number; courseIndex: number; tNow: number }): PinchPlayEvent[]
   reset(): void
+  /** True while the pinch is registered as "down" (a pluck has fired). Drives the
+   *  UI press feedback so the ring lights iff a note actually sounded — no dead
+   *  zone where the ring shows pressed but nothing plays. */
+  readonly closed: boolean
+  /** True once a held pinch has crossed into sustain (rashsh/trill). */
+  readonly sustaining: boolean
 }
 
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n))
@@ -127,5 +133,14 @@ export const createPinchPlay = (opts: PinchPlayOptions = {}): PinchPlay => {
     pendingT = 0
   }
 
-  return { update, reset }
+  return {
+    update,
+    reset,
+    get closed() {
+      return closed
+    },
+    get sustaining() {
+      return sustaining
+    }
+  }
 }

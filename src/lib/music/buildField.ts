@@ -8,12 +8,21 @@ import { midiToFreq } from './midiToFreq'
 export const DEFAULT_TONIC_MIDI = 48
 export const FIELD_OCTAVES = 4
 export const FIELD_OCTAVES_BELOW = 1
+// A fine-tune offset may reach at most one semitone (100 cents) either way — far
+// enough to retune all the way to an adjacent pitch. Shared by the engine clamp
+// and the TUNE-menu slider so the two can't drift apart.
+export const DETUNE_LIMIT_CENTS = 100
 
 export interface BuildFieldArgs {
   tonicMidi: number
   mandalState: MandalState
   octaveCount?: number
   octavesBelow?: number
+  // Global fine-tune in cents (−100…+100). Shifts every course's SOUNDING pitch
+  // by this many cents while leaving its `midi` (note name / degree label)
+  // untouched — a master-tuning offset, not a transposition. cents/100 semitones
+  // fed back through midiToFreq is exactly a 2^(cents/1200) frequency ratio.
+  detuneCents?: number
 }
 
 // Lay out the scale-locked string field: for each octave, one course per scale
@@ -25,14 +34,17 @@ export const buildField = ({
   tonicMidi,
   mandalState,
   octaveCount = FIELD_OCTAVES,
-  octavesBelow = FIELD_OCTAVES_BELOW
+  octavesBelow = FIELD_OCTAVES_BELOW,
+  detuneCents = 0
 }: BuildFieldArgs): Course[] => {
   const courses: Course[] = []
   let index = 0
+  const detuneSemitones = detuneCents / 100
   for (let octave = -octavesBelow; octave < octaveCount - octavesBelow; octave++) {
     for (let degree = 1; degree <= DEGREE_COUNT; degree++) {
       const midi = tonicMidi + 12 * octave + offsetOf(mandalState, degree)
-      courses.push({ index, degree, octave, midi, freqHz: midiToFreq(midi) })
+      // Detune touches only the frequency, never the stored `midi` label.
+      courses.push({ index, degree, octave, midi, freqHz: midiToFreq(midi + detuneSemitones) })
       index++
     }
   }

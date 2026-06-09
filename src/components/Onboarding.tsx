@@ -36,32 +36,34 @@ export const Onboarding = ({ onDismiss }: OnboardingProps) => {
           <li className="onboarding-step">
             <span className="step-num" aria-hidden>1</span>
             <div className="step-body">
-              <strong>play</strong>
+              <strong>pluck &amp; strum</strong>
               <span>
-                Click a string to pluck — drag across to glide, hold to sustain.
-                Or press <em>play</em> to use your hands: pinch to pluck, hold the
-                pinch to sustain, and wave up &amp; down to add vibrato.
+                Press <em>play</em> for your hands: pinch your <em>index</em> finger to
+                the thumb to pluck a string, and sweep sideways to strum across them.
+                No camera? Click a string to pluck, or drag across to strum.
               </span>
             </div>
           </li>
           <li className="onboarding-step">
             <span className="step-num" aria-hidden>2</span>
             <div className="step-body">
-              <strong>choose a maqam</strong>
+              <strong>trill</strong>
               <span>
-                Pick a <em>lower jins</em> (the chips, or keys <em>Q&ndash;O</em>) to
-                set the home note, then an <em>upper jins</em> (keys <em>1&ndash;5</em>)
-                to modulate on the ghammāz. The readout names the maqam you build.
+                Pinch your <em>middle</em> finger to the thumb to trill that string;
+                slide to move the trill. Hold a string with <em>both hands</em> an
+                octave apart for a high&ndash;low trill. (With the mouse, hold a string.)
               </span>
             </div>
           </li>
           <li className="onboarding-step">
             <span className="step-num" aria-hidden>3</span>
             <div className="step-body">
-              <strong>tools</strong>
+              <strong>choose a maqam</strong>
               <span>
-                Open <em>tune</em> (top-right) to set the key, record a take, or turn
-                on the drone, metronome, and MIDI out.
+                Pick a <em>lower jins</em> (the chips, or keys <em>Q&ndash;O</em>) to
+                set the home note, then an <em>upper jins</em> (keys <em>1&ndash;5</em>)
+                to modulate on the ghammāz. The readout names the maqam you build.
+                Open <em>tune</em> for the key, recording, drone, metronome &amp; MIDI.
               </span>
             </div>
           </li>

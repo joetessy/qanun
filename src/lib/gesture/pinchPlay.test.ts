@@ -136,4 +136,38 @@ describe('createPinchPlay', () => {
     const glided = p.update({ pinchDist: 0.02, courseIndex: 6, tNow: 0.2 }) // persisted
     expect(glided.some((e) => e.type === 'glide' && e.courseIndex === 6)).toBe(true)
   })
+
+  // closed/sustaining expose the live state so the UI ring can mirror exactly
+  // what the audio path is doing (no "shown pressed but silent" dead zone).
+  it('exposes closed/sustaining state that tracks the pinch lifecycle', () => {
+    const p = createPinchPlay()
+    expect(p.closed).toBe(false)
+    expect(p.sustaining).toBe(false)
+
+    p.update({ pinchDist: 0.12, courseIndex: 2, tNow: 0 })       // open
+    expect(p.closed).toBe(false)
+
+    p.update({ pinchDist: 0.02, courseIndex: 2, tNow: 0.05 })    // close → pluck
+    expect(p.closed).toBe(true)
+    expect(p.sustaining).toBe(false)
+
+    p.update({ pinchDist: 0.02, courseIndex: 2, tNow: 0.30 })    // held → sustain
+    expect(p.closed).toBe(true)
+    expect(p.sustaining).toBe(true)
+
+    p.update({ pinchDist: 0.12, courseIndex: 2, tNow: 0.40 })    // open → release
+    expect(p.closed).toBe(false)
+    expect(p.sustaining).toBe(false)
+  })
+
+  it('reset() clears closed/sustaining', () => {
+    const p = createPinchPlay()
+    p.update({ pinchDist: 0.02, courseIndex: 0, tNow: 0 })    // close
+    p.update({ pinchDist: 0.02, courseIndex: 0, tNow: 0.30 }) // sustain
+    expect(p.closed).toBe(true)
+    expect(p.sustaining).toBe(true)
+    p.reset()
+    expect(p.closed).toBe(false)
+    expect(p.sustaining).toBe(false)
+  })
 })

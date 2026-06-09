@@ -64,4 +64,33 @@ describe('buildField', () => {
     expect(field.find((c) => c.midi === 48)).toBeTruthy() // the key is still present
     expect(field).toHaveLength(7 * FIELD_OCTAVES)
   })
+
+  // ── detune (cents offset / fine tune) ──────────────────────────────────────
+  // A global cents offset shifts the SOUNDING pitch of every course up or down by
+  // up to a semitone, while leaving each course's `midi` (and therefore its note
+  // name / degree label) untouched. It is purely a frequency ratio.
+  it('defaults to no detune (omitted detuneCents === detuneCents 0)', () => {
+    const base = buildField({ tonicMidi: 48, mandalState: DEFAULT_RAST_STATE })
+    const zero = buildField({ tonicMidi: 48, mandalState: DEFAULT_RAST_STATE, detuneCents: 0 })
+    base.forEach((c, i) => expect(zero[i].freqHz).toBeCloseTo(c.freqHz, 9))
+  })
+
+  it('+100 cents sounds every course a semitone up but leaves midi labels unchanged', () => {
+    const field = buildField({ tonicMidi: 48, mandalState: DEFAULT_RAST_STATE, detuneCents: 100 })
+    expect(field[7].midi).toBe(48)                            // label/midi untouched
+    expect(field[7].freqHz).toBeCloseTo(midiToFreq(49), 6)    // …but sounds a semitone up
+    expect(field[9].midi).toBe(51.5)                          // quarter-tone label untouched
+    expect(field[9].freqHz).toBeCloseTo(midiToFreq(52.5), 6)  // …and its pitch follows
+  })
+
+  it('-100 cents sounds every course a semitone down', () => {
+    const field = buildField({ tonicMidi: 48, mandalState: DEFAULT_RAST_STATE, detuneCents: -100 })
+    expect(field[7].midi).toBe(48)
+    expect(field[7].freqHz).toBeCloseTo(midiToFreq(47), 6)
+  })
+
+  it('applies a partial offset as a frequency ratio (2^(cents/1200))', () => {
+    const field = buildField({ tonicMidi: 48, mandalState: DEFAULT_RAST_STATE, detuneCents: 37 })
+    expect(field[7].freqHz).toBeCloseTo(midiToFreq(48) * Math.pow(2, 37 / 1200), 6)
+  })
 })

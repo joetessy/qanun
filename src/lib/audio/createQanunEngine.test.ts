@@ -1,14 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createQanunEngine } from './createQanunEngine'
+import { createQanunEngine, makeSoftClipCurve } from './createQanunEngine'
 import { QANUN_SAMPLE_URLS, QANUN_SAMPLE_BASE_URL } from './qanunSamples'
 
 // ─── mock factory ────────────────────────────────────────────────────────────
 
 const makeMockTone = () => {
   const triggerAttack = vi.fn()           // PluckSynth triggerAttack
-  const samplerTriggerAttack = vi.fn()    // Sampler triggerAttack
+  const samplerTriggerAttack = vi.fn()    // Sampler triggerAttack (all instances)
+  const samplerTriggerRelease = vi.fn()   // Sampler triggerRelease
   const samplerDispose = vi.fn()
-  let samplerOnload: (() => void) | undefined
+  // One onload per constructed Sampler (main + the two trill voices).
+  const samplerOnloads: Array<() => void> = []
   const voiceGainRampTo = vi.fn()
   const reverbWetRampTo = vi.fn()
   const loopStop = vi.fn()
@@ -25,13 +27,6 @@ const makeMockTone = () => {
   const limiterToDestination = vi.fn().mockReturnThis()
   const limiterDispose = vi.fn()
   const limiterOutput = {}
-  // Tone.Vibrato mock: a settable depth.value + frequency.value, plus
-  // connect/dispose. The node lives in the output chain (sources → Vibrato →
-  // reverb), bending the pitch of everything that flows through it.
-  const vibratoConnect = vi.fn()
-  const vibratoDispose = vi.fn()
-  // Capture the live Vibrato object so tests can assert on depth/frequency.value.
-  const vibratoState = { depth: { value: 0 }, frequency: { value: 0 } }
 
   const ToneMock = {
     start: vi.fn().mockResolvedValue(undefined),
@@ -64,11 +59,13 @@ const makeMockTone = () => {
       output: limiterOutput,
       dispose: limiterDispose
     })),
-    // Tone.Sampler mock: captures onload so tests can simulate loading.
+    // Tone.Sampler mock: captures each instance's onload so tests can simulate
+    // every sampler (main + trill voices) finishing its buffer load.
     Sampler: vi.fn().mockImplementation((opts: { onload?: () => void }) => {
-      samplerOnload = opts?.onload
+      if (opts?.onload) samplerOnloads.push(opts.onload)
       return {
         triggerAttack: samplerTriggerAttack,
+        triggerRelease: samplerTriggerRelease,
         connect: vi.fn().mockReturnThis(),
         dispose: samplerDispose
       }
@@ -87,30 +84,19 @@ const makeMockTone = () => {
       stop: loopStop,
       dispose: loopDispose
     })),
-    // Tone.Vibrato mock: depth/frequency proxy to vibratoState so tests can read
-    // what setVibrato() wrote.
-    Vibrato: vi.fn().mockImplementation((opts: { frequency?: number; depth?: number; maxDelay?: number }) => {
-      vibratoState.depth.value = opts?.depth ?? 0
-      vibratoState.frequency.value = opts?.frequency ?? 0
-      return {
-        depth: vibratoState.depth,
-        frequency: vibratoState.frequency,
-        connect: vibratoConnect,
-        dispose: vibratoDispose
-      }
-    }),
     Transport: { start: transportStart }
   }
 
-  /** Simulate the sampler finishing its async buffer load. */
+  /** Simulate every constructed sampler finishing its async buffer load. */
   const simulateSamplerLoaded = () => {
-    samplerOnload?.()
+    samplerOnloads.forEach((fn) => fn())
   }
 
   return {
     ToneMock,
     triggerAttack,
     samplerTriggerAttack,
+    samplerTriggerRelease,
     samplerDispose,
     simulateSamplerLoaded,
     voiceGainRampTo,
@@ -122,9 +108,6 @@ const makeMockTone = () => {
     chorusStart,
     chorusDispose,
     chorusWetValue,
-    vibratoConnect,
-    vibratoDispose,
-    vibratoState,
     limiterConnect,
     limiterToDestination,
     limiterDispose,
@@ -169,6 +152,16 @@ describe('createQanunEngine — surface', () => {
     await e.start() // idempotent — guarded by `started`
     expect(ToneMock.start).toHaveBeenCalledTimes(1)
     expect(e.isStarted).toBe(true)
+  })
+
+  it('start() pre-warms the two dedicated trill samplers (built once)', async () => {
+    const { ToneMock } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(ToneMock.Sampler).toHaveBeenCalledTimes(1) // construction: main only
+    await e.start()
+    expect(ToneMock.Sampler).toHaveBeenCalledTimes(3) // + one per trill octave
+    await e.start()
+    expect(ToneMock.Sampler).toHaveBeenCalledTimes(3) // idempotent
   })
 
   it('getSampleRate delegates to Tone.getContext()', () => {
@@ -232,6 +225,85 @@ describe('createQanunEngine — master limiter', () => {
       polyphony: 4
     })
     expect(e2.getRecorderTap()).toBeDefined()
+  })
+})
+
+// ─── soft-clip safety node (zero-attack anti-clipping final stage) ───────────
+
+/** Extend the base mock with a Tone.WaveShaper so the soft-clip path is built. */
+const makeToneWithWaveShaper = () => {
+  const base = makeMockTone()
+  const waveShaperConnect = vi.fn().mockReturnThis()
+  const waveShaperToDestination = vi.fn().mockReturnThis()
+  const waveShaperDispose = vi.fn()
+  const waveShaperOutput = {}
+  const waveShaperInstance = {
+    oversample: 'none' as string,
+    connect: waveShaperConnect,
+    toDestination: waveShaperToDestination,
+    output: waveShaperOutput,
+    dispose: waveShaperDispose
+  }
+  const ToneMock = {
+    ...base.ToneMock,
+    WaveShaper: vi.fn().mockImplementation(() => waveShaperInstance)
+  }
+  return { ToneMock, base, waveShaperInstance, waveShaperToDestination, waveShaperDispose, waveShaperOutput }
+}
+
+describe('createQanunEngine — soft-clip safety node', () => {
+  it('inserts a WaveShaper as the terminal node (limiter → softClip → destination)', () => {
+    const { ToneMock, base, waveShaperToDestination } = makeToneWithWaveShaper()
+    createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(ToneMock.WaveShaper).toHaveBeenCalledTimes(1)
+    // The soft-clip is the LAST node, so IT drives the destination — not the limiter.
+    expect(waveShaperToDestination).toHaveBeenCalledTimes(1)
+    expect(base.limiterToDestination).not.toHaveBeenCalled()
+  })
+
+  it('uses 4x oversampling for clean saturation', () => {
+    const { ToneMock, waveShaperInstance } = makeToneWithWaveShaper()
+    createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(waveShaperInstance.oversample).toBe('4x')
+  })
+
+  it('getRecorderTap() taps the WaveShaper output (true final node) when present', () => {
+    const { ToneMock, waveShaperOutput } = makeToneWithWaveShaper()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(e.getRecorderTap()).toBe(waveShaperOutput)
+  })
+
+  it('dispose() disposes the WaveShaper', () => {
+    const { ToneMock, waveShaperDispose } = makeToneWithWaveShaper()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.dispose()
+    expect(waveShaperDispose).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('makeSoftClipCurve', () => {
+  it('is transparent (identity) below the knee', () => {
+    const curve = makeSoftClipCurve(2048)
+    const idx = Math.round(((0.5 + 1) / 2) * (2048 - 1)) // input ≈ 0.5
+    expect(curve[idx]).toBeCloseTo(0.5, 2)
+  })
+
+  it('bounds every sample strictly inside (-1, 1) — output can never clip', () => {
+    const curve = makeSoftClipCurve(2048)
+    for (const v of curve) {
+      expect(v).toBeLessThan(1)
+      expect(v).toBeGreaterThan(-1)
+    }
+    // Full-scale input is already saturated below 1 (but still up near the top).
+    expect(curve[curve.length - 1]).toBeLessThan(1)
+    expect(curve[curve.length - 1]).toBeGreaterThan(0.9)
+  })
+
+  it('is a monotonic non-decreasing transfer curve', () => {
+    const curve = makeSoftClipCurve(512)
+    for (let i = 1; i < curve.length; i++) {
+      expect(curve[i]).toBeGreaterThanOrEqual(curve[i - 1])
+    }
   })
 })
 
@@ -299,6 +371,23 @@ describe('createQanunEngine — triple-course pluck', () => {
     e.pluck({ freqHz: 0, velocity: 0.5 })
     e.pluck({ freqHz: NaN, velocity: 0.5 })
     expect(triggerAttack).not.toHaveBeenCalled()
+  })
+
+  // Anti-clipping: glide steps pass bloom:false so a fast drag fires 1 voice per
+  // string instead of 3, keeping the master chain from being slammed.
+  it('pluck({ bloom: false }) fires a single voice at the exact frequency', () => {
+    const { ToneMock, triggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.pluck({ freqHz: 440, velocity: 0.8, bloom: false })
+    expect(triggerAttack).toHaveBeenCalledTimes(1)
+    expect(triggerAttack.mock.calls[0][0] as number).toBeCloseTo(440, 5)
+  })
+
+  it('pluck() still blooms to 3 detuned voices by default', () => {
+    const { ToneMock, triggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.pluck({ freqHz: 440, velocity: 0.8 })
+    expect(triggerAttack).toHaveBeenCalledTimes(3)
   })
 })
 
@@ -470,80 +559,6 @@ describe('createQanunEngine — rashsh hold', () => {
     expect(loopDispose).toHaveBeenCalledTimes(1)
   })
 
-  it('setVibrato clamps cents to [0, MAX] and is callable before any hold', () => {
-    const { ToneMock, vibratoState } = makeMockTone()
-    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
-    expect(typeof (e as unknown as Record<string, unknown>).setVibrato).toBe('function')
-    // Out-of-range cents (high/low) and an optional rate are all tolerated.
-    expect(() => e.setVibrato({ cents: 999 })).not.toThrow()
-    // 999 clamps to MAX_VIBRATO_CENTS (45) → full depth 0.22 (gentle factor).
-    expect(vibratoState.depth.value).toBeCloseTo(0.22, 6)
-    expect(() => e.setVibrato({ cents: -5, rateHz: 6 })).not.toThrow()
-    // Negative cents clamps to 0 → depth 0; rateHz drives the Vibrato frequency.
-    expect(vibratoState.depth.value).toBe(0)
-    expect(vibratoState.frequency.value).toBe(6)
-  })
-})
-
-// ─── vibrato (Tone.Vibrato effect node in the output chain) ──────────────────
-
-describe('createQanunEngine — vibrato', () => {
-  it('creates a Tone.Vibrato node at engine setup and wires it into the chain', () => {
-    const { ToneMock, vibratoConnect } = makeMockTone()
-    createQanunEngine(ENGINE_ARGS(ToneMock))
-    expect(ToneMock.Vibrato).toHaveBeenCalledTimes(1)
-    // The node routes onward to reverb (vibrato → reverb).
-    expect(vibratoConnect).toHaveBeenCalledTimes(1)
-  })
-
-  it('constructs Vibrato with depth 0 (inaudible until setVibrato opens it)', () => {
-    const { ToneMock } = makeMockTone()
-    createQanunEngine(ENGINE_ARGS(ToneMock))
-    const opts = ToneMock.Vibrato.mock.calls[0][0] as { depth?: number; frequency?: number }
-    expect(opts.depth).toBe(0)
-    expect(opts.frequency).toBeGreaterThan(0)
-  })
-
-  it('setVibrato({ cents }) maps cents → normal-range depth (gentle 0.22 factor)', () => {
-    const { ToneMock, vibratoState } = makeMockTone()
-    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
-    // 22.5 of 45 cents → half-scale → depth (22.5/45)*0.22 = 0.11.
-    e.setVibrato({ cents: 22.5 })
-    expect(vibratoState.depth.value).toBeCloseTo(0.11, 6)
-  })
-
-  it('setVibrato({ cents: 0 }) collapses depth to 0 (no audible vibrato)', () => {
-    const { ToneMock, vibratoState } = makeMockTone()
-    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
-    e.setVibrato({ cents: 50, rateHz: 6 })
-    e.setVibrato({ cents: 0 })
-    expect(vibratoState.depth.value).toBe(0)
-  })
-
-  it('setVibrato({ rateHz }) drives the Vibrato frequency', () => {
-    const { ToneMock, vibratoState } = makeMockTone()
-    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
-    e.setVibrato({ cents: 40, rateHz: 7 })
-    expect(vibratoState.frequency.value).toBe(7)
-  })
-
-  it('dispose() disposes the Vibrato node', () => {
-    const { ToneMock, vibratoDispose } = makeMockTone()
-    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
-    e.dispose()
-    expect(vibratoDispose).toHaveBeenCalledTimes(1)
-  })
-
-  it('setVibrato is a safe no-op when Tone has no Vibrato (mock without Vibrato)', () => {
-    const base = makeMockTone()
-    // Simulate a mock that lacks Vibrato: setVibrato must no-op rather than crash.
-    const toneNoVibrato = { ...base.ToneMock, Vibrato: undefined }
-    const e = createQanunEngine({
-      Tone: toneNoVibrato as unknown as typeof import('tone'),
-      polyphony: 4
-    })
-    expect(() => e.setVibrato({ cents: 30, rateHz: 6 })).not.toThrow()
-  })
 })
 
 // ─── holdAlternate (two-string alternating hold) ─────────────────────────────
@@ -562,8 +577,8 @@ describe('createQanunEngine — holdAlternate', () => {
     expect(ToneMock.Loop).toHaveBeenCalledTimes(1)
     const [callback, interval] = ToneMock.Loop.mock.calls[0]
     expect(typeof callback).toBe('function')
-    // Alternation ticks at ALTERNATE_HZ (= RASHSH_HZ, 10 Hz) — the same tremolo
-    // rate as a single held string, the loop alternating between the two pitches.
+    // The trill is ONE 16th-note line that swaps octave each note, so it ticks at
+    // the same 1/10 s pulse as the single-string tremolo (one note per tick).
     expect(interval).toBeCloseTo(1 / 10, 3)
     expect(loopStart).toHaveBeenCalledWith(0)
     expect(transportStart).toHaveBeenCalledTimes(1)
@@ -599,26 +614,172 @@ describe('createQanunEngine — holdAlternate', () => {
     expect(freqs.some((f) => Math.abs(f - 660) < 1)).toBe(true)
   })
 
-  it('fires 3 detuned voices per tick (triple-course)', () => {
+  it('strikes a SINGLE dedicated voice per trill tick (no triple-course bloom)', () => {
     const { ToneMock, triggerAttack } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
     e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
     const callback = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
     triggerAttack.mockClear()
     callback(0)
-    expect(triggerAttack).toHaveBeenCalledTimes(3)
+    // One dedicated voice per strike (a pluck still blooms to 3) — the trill line
+    // stays lean and can't pile voices up.
+    expect(triggerAttack).toHaveBeenCalledTimes(1)
+    expect(triggerAttack.mock.calls[0][0] as number).toBeCloseTo(660, 0)
   })
 
-  it('reuses the running loop instead of restarting (stable trill phase)', () => {
+  it('1→2 swaps engines: the rashsh loop stops and the dedicated trill loop starts', () => {
     const { ToneMock, loopStop, loopDispose } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     e.holdStart({ freqHz: 440, velocity: 0.7 })
-    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 }) // adds the 2nd note in place
-    // Same single loop — adding a string does NOT restart it, so the trill phase
-    // is independent of when each finger landed.
-    expect(ToneMock.Loop).toHaveBeenCalledTimes(1)
-    expect(loopStop).not.toHaveBeenCalled()
-    expect(loopDispose).not.toHaveBeenCalled()
+    expect(ToneMock.Loop).toHaveBeenCalledTimes(1) // single rashsh
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+    // The rashsh loop is stopped; the trill engine gets its own loop.
+    expect(loopStop).toHaveBeenCalledTimes(1)
+    expect(loopDispose).toHaveBeenCalledTimes(1)
+    expect(ToneMock.Loop).toHaveBeenCalledTimes(2)
+    // Sliding while trilling retunes in place — no new loop, no restart.
+    e.holdAlternate({ freqs: [660, 450], velocity: 0.7 })
+    expect(ToneMock.Loop).toHaveBeenCalledTimes(2)
+    expect(loopStop).toHaveBeenCalledTimes(1)
+  })
+
+  // The two-note trill must sound IDENTICAL regardless of when each finger landed:
+  // it starts fresh and always LEADS with the higher note (freqs[0]), no matter
+  // what internal phase the prior single-note loop had reached.
+  it('the trill always leads with the higher note, regardless of prior single-note phase', () => {
+    const { ToneMock, triggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    // Hold the LOWER note alone; run its loop to an odd internal phase.
+    e.holdStart({ freqHz: 440, velocity: 0.7, immediate: false })
+    const rashshCb = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
+    rashshCb(0)   // tick 0
+    rashshCb(0.1) // tick 1
+    rashshCb(0.2) // tick 2 → internal counter now odd
+    // Add the HIGHER note → the dedicated trill loop starts fresh, leading high.
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+    const trillCb = ToneMock.Loop.mock.calls[1][0] as (t: number) => void
+    triggerAttack.mockClear()
+    trillCb(0.3) // first trill tick
+    const freqs = triggerAttack.mock.calls.map((c) => c[0] as number)
+    expect(freqs.some((f) => Math.abs(f - 660) < 1)).toBe(true)  // higher leads
+    expect(freqs.some((f) => Math.abs(f - 440) < 1)).toBe(false) // not the lower
+  })
+
+  // Lifting one finger of a trill returns cleanly to the single-note tremolo.
+  it('2→1 swaps back: the trill stops and a fresh 1/10 s rashsh plays the survivor', () => {
+    const { ToneMock, loopStop, triggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })         // trill loop (#1)
+    e.holdStart({ freqHz: 440, velocity: 0.7, immediate: false }) // one finger lifted
+    expect(loopStop).toHaveBeenCalledTimes(1)                     // trill stopped
+    expect(ToneMock.Loop).toHaveBeenCalledTimes(2)                // rashsh loop (#2)
+    expect(ToneMock.Loop.mock.calls[1][1] as number).toBeCloseTo(1 / 10, 4)
+    const cb = ToneMock.Loop.mock.calls[1][0] as (t: number) => void
+    triggerAttack.mockClear()
+    cb(0)
+    expect(triggerAttack.mock.calls[0][0] as number).toBeCloseTo(440, 0)
+  })
+
+  // Phase resets only on a COUNT change (note added/removed), not when a held
+  // note's pitch shifts — so a jittering held course can't restart the trill.
+  it('does not reset the alternation phase when a held note shifts pitch (count unchanged)', () => {
+    const { ToneMock, triggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+    const callback = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
+    callback(0) // tick 0 → 660 (internal counter → 1)
+    // One held note jitters 440 → 450 (same count) — must NOT reset to tick 0.
+    e.holdAlternate({ freqs: [660, 450], velocity: 0.7 })
+    triggerAttack.mockClear()
+    callback(0.05) // continues at tick 1 → the LOWER note (450), not a reset to 660
+    const freqs = triggerAttack.mock.calls.map((c) => c[0] as number)
+    expect(freqs.some((f) => Math.abs(f - 450) < 1)).toBe(true)
+    expect(freqs.some((f) => Math.abs(f - 660) < 1)).toBe(false)
+  })
+
+  // Independent strings: a strike sets only ITS OWN voice's level — the other
+  // octave is never closed, so both rings overlap naturally until re-struck.
+  it('never silences the other octave: strikes only set the struck voice level', () => {
+    const { ToneMock, voiceGainRampTo } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+    const callback = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
+    voiceGainRampTo.mockClear()
+    callback(0); callback(0.1); callback(0.2) // hi, lo, hi
+    // One gate move per tick — always a strike level (> 0), never a close (0).
+    const levels = voiceGainRampTo.mock.calls.map((c) => c[0] as number)
+    expect(levels).toHaveLength(3)
+    expect(levels.every((l) => l > 0)).toBe(true)
+  })
+
+  it('releasing the trill lets the strings ring out (no gate slam on holdStop)', () => {
+    const { ToneMock, voiceGainRampTo, loopStop } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+    const callback = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
+    callback(0)
+    voiceGainRampTo.mockClear()
+    e.holdStop()
+    expect(loopStop).toHaveBeenCalledTimes(1)           // the loop stops...
+    expect(voiceGainRampTo).not.toHaveBeenCalled()      // ...but nothing is muted
+  })
+
+  // The trill must use the real SAMPLED qanun timbre once its dedicated
+  // voice-samplers finish loading — the synth is only the brief loading fallback.
+  it('strikes the sampled voice once the dedicated trill samplers load', () => {
+    const { ToneMock, samplerTriggerAttack, triggerAttack, simulateSamplerLoaded } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 }) // builds the 2 trill samplers
+    simulateSamplerLoaded()                                // all samplers finish loading
+    const callback = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
+    samplerTriggerAttack.mockClear()
+    triggerAttack.mockClear()
+    callback(0)
+    expect(samplerTriggerAttack).toHaveBeenCalledTimes(1)  // sampled strike
+    expect(triggerAttack).not.toHaveBeenCalled()           // not the synth fallback
+    expect(samplerTriggerAttack.mock.calls[0][0] as number).toBeCloseTo(660, 0)
+    // And it alternates on the sampled voice too.
+    samplerTriggerAttack.mockClear()
+    callback(0.1)
+    expect(samplerTriggerAttack.mock.calls[0][0] as number).toBeCloseTo(440, 0)
+  })
+
+  it('falls back to the synth while the trill samplers are still loading', () => {
+    const { ToneMock, samplerTriggerAttack, triggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 }) // samplers NOT loaded yet
+    const callback = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
+    samplerTriggerAttack.mockClear()
+    triggerAttack.mockClear()
+    callback(0)
+    expect(triggerAttack).toHaveBeenCalledTimes(1)         // synth fallback
+    expect(samplerTriggerAttack).not.toHaveBeenCalled()
+  })
+
+  it('setSoundSource("synth") keeps the trill on the synth even with samples loaded', () => {
+    const { ToneMock, samplerTriggerAttack, triggerAttack, simulateSamplerLoaded } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+    simulateSamplerLoaded()
+    e.setSoundSource('synth')
+    const callback = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
+    samplerTriggerAttack.mockClear()
+    triggerAttack.mockClear()
+    callback(0)
+    expect(triggerAttack).toHaveBeenCalledTimes(1)
+    expect(samplerTriggerAttack).not.toHaveBeenCalled()
+  })
+
+  it('single-note hold never gates to silence between strikes (it rings/shimmers)', () => {
+    const { ToneMock, voiceGainRampTo } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdStart({ freqHz: 440, velocity: 0.7, immediate: false })
+    const callback = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
+    voiceGainRampTo.mockClear()
+    callback(0); callback(0.1); callback(0.2) // same pitch repeated
+    // Pool voices only ramp UP to strike level; nothing is ever gated to 0.
+    expect(voiceGainRampTo.mock.calls.length).toBeGreaterThan(0)
+    expect(voiceGainRampTo.mock.calls.every((c) => (c[0] as number) > 0)).toBe(true)
   })
 
   it('filters out non-finite freqs (the loop only plays valid notes)', () => {
@@ -628,8 +789,8 @@ describe('createQanunEngine — holdAlternate', () => {
     const callback = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
     triggerAttack.mockClear()
     expect(() => callback(0)).not.toThrow()
-    // Every tick plays the one valid note (triple-course = 3 attacks).
-    expect(triggerAttack).toHaveBeenCalledTimes(3)
+    // Every tick plays the one valid note (single-voice rashsh = 1 attack).
+    expect(triggerAttack).toHaveBeenCalledTimes(1)
   })
 
   it('empty freqs is a no-op (no loop created)', () => {

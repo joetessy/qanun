@@ -9,5 +9,5 @@
  */
 export const detunedFreqs = (
   freqHz: number,
-  cents: number[] = [-4, 0, 4]
+  cents: readonly number[] = [-4, 0, 4]
 ): number[] => cents.map((c) => freqHz * Math.pow(2, c / 1200))
