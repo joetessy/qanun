@@ -1,1 +1,44 @@
 .app-root { display: flex; align-items: center; justify-content: center; height: 100%; }
+
+/* ── StringField ────────────────────────────────────────────────────────────── */
+.string-field {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.string-field .string {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #b8a070;
+  transform: translateX(-50%);
+  opacity: 0.6;
+  transition: opacity 0.1s;
+}
+
+.string-field .string.is-tonic {
+  background: #e8c060;
+  width: 2px;
+  opacity: 0.85;
+}
+
+.string-field .string.is-highlight {
+  opacity: 1;
+  background: #ffe090;
+  box-shadow: 0 0 4px 1px #ffe09088;
+}
+
+.string-field .string.is-plucked {
+  background: #fff4c0;
+  opacity: 1;
+  box-shadow: 0 0 8px 3px #fff4c088;
+  animation: pluck-pulse 0.25s ease-out;
+}
+
+@keyframes pluck-pulse {
+  from { box-shadow: 0 0 14px 6px #fff4c0cc; }
+  to   { box-shadow: 0 0 4px 1px #fff4c022; }
+}
