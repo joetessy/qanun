@@ -10,6 +10,8 @@ export const isInMandalZone = (x: number, zoneRight = MANDAL_ZONE_RIGHT): boolea
 // Which lever the fingertip is on. y is 0 at the top of frame, 1 at the bottom.
 // Top band = highest degree (7), bottom band = degree 1.
 export const mandalLeverFromY = (y: number, degreeCount = DEGREE_COUNT): number => {
+  // Clamp just under 1 so Math.floor(clamped * degreeCount) stays in
+  // [0, degreeCount-1]; a raw y of 1.0 would otherwise floor to degreeCount.
   const clamped = Math.min(0.999999, Math.max(0, y))
   const band = Math.floor(clamped * degreeCount) // 0 (top) .. degreeCount-1 (bottom)
   return degreeCount - band

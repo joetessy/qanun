@@ -43,4 +43,13 @@ describe('createRakeDetector — cross-velocity glissando', () => {
     r.setSensitivity('full')
     expect(r.update({ courseIndex: 3, tNow: 0.05 })).toEqual([1, 2, 3])
   })
+
+  it('reset() re-primes — the next frame is treated as the first again', () => {
+    const r = createRakeDetector({ sensitivity: 'full' })
+    r.update({ courseIndex: 2, tNow: 0 })
+    r.update({ courseIndex: 5, tNow: 0.05 }) // rakes
+    r.reset()
+    expect(r.update({ courseIndex: 0, tNow: 0.10 })).toEqual([]) // primes again, no rake
+    expect(r.update({ courseIndex: 3, tNow: 0.15 })).toEqual([1, 2, 3]) // then normal
+  })
 })

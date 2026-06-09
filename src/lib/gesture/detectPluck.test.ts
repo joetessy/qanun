@@ -38,11 +38,20 @@ describe('createPluckDetector — pinch onset edge', () => {
     expect(slowEv!.velocity).toBeGreaterThan(0)
   })
 
-  it('reset() clears the pinch state', () => {
+  it('cold-start (already closed, no prior open frame) emits at the minVelocity floor', () => {
     const d = createPluckDetector()
-    d.update({ pinchDist: 0.02, courseIndex: 0, tNow: 0 }) // starts closed → no prior open, no emit
+    // No prior frame → no close-speed to measure → fires at the minVelocity floor.
+    expect(d.update({ pinchDist: 0.02, courseIndex: 0, tNow: 0 })).toMatchObject({
+      courseIndex: 0,
+      velocity: 0.4
+    })
+  })
+
+  it('reset() re-arms the detector for a fresh open→closed edge', () => {
+    const d = createPluckDetector()
+    d.update({ pinchDist: 0.02, courseIndex: 0, tNow: 0 }) // cold-start emit
     d.reset()
-    d.update({ pinchDist: 0.12, courseIndex: 2, tNow: 0.05 })
+    d.update({ pinchDist: 0.12, courseIndex: 2, tNow: 0.05 }) // open again
     expect(d.update({ pinchDist: 0.02, courseIndex: 2, tNow: 0.10 })).not.toBeNull()
   })
 })
