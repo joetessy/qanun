@@ -8,3 +8,16 @@ export interface NormPoint {
 
 // Reverb preset size (consumed by reverbSize.ts / the audio engine).
 export type ReverbSize = 'small' | 'medium' | 'hall'
+
+export type QanunStatus = 'idle' | 'loading' | 'running' | 'error'
+
+export type RakeSensitivity = 'off' | 'subtle' | 'full'
+
+// Live readout pushed to the HUD a few times a second.
+export interface QanunReading {
+  maqamName: string
+  lowerJins: string | null
+  upperJins: string | null
+  tonicMidi: number
+  lastPluckMidi: number | null
+}

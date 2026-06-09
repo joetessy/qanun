@@ -1,3 +1,7 @@
-// Vitest setup. Intentionally empty for now — component-testing matchers
-// (@testing-library/jest-dom) may be added by a later sub-plan.
-export {}
+import '@testing-library/jest-dom/vitest'
+import { afterEach } from 'vitest'
+import { cleanup } from '@testing-library/react'
+
+afterEach(() => {
+  cleanup()
+})
