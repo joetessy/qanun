@@ -1,30 +1,17 @@
-import { isInMandalZone } from '../lib/gesture/detectMandal'
-
 export interface HandRolesArgs {
-  rightHandIdx: number  // -1 if absent
-  leftHandIdx: number   // -1 if absent
-  leftHandX: number     // mirrored screen x of the left hand's index tip
+  rightHandIdx: number // -1 if absent
+  leftHandIdx: number  // -1 if absent
 }
 
 export interface HandRoles {
-  playHands: number[]        // landmark indices that pluck this frame
-  mandalHandIdx: number | null // landmark index controlling the mandal rack, or null
+  playHands: number[] // landmark indices that play this frame (both hands)
 }
 
-// Right hand plays only. Left hand plays — unless it's in the mandal zone, in
-// which case it switches to modulating and stops plucking (clear separation,
-// mirrors the real instrument's geography).
-export const deriveHandRoles = ({ rightHandIdx, leftHandIdx, leftHandX }: HandRolesArgs): HandRoles => {
+// Both hands play now (the mandal was retired). Each present hand becomes a
+// playing hand; the engine drives one pinchPlay slot per hand.
+export const deriveHandRoles = ({ rightHandIdx, leftHandIdx }: HandRolesArgs): HandRoles => {
   const playHands: number[] = []
   if (rightHandIdx !== -1) playHands.push(rightHandIdx)
-
-  let mandalHandIdx: number | null = null
-  if (leftHandIdx !== -1) {
-    if (isInMandalZone(leftHandX)) {
-      mandalHandIdx = leftHandIdx
-    } else {
-      playHands.push(leftHandIdx)
-    }
-  }
-  return { playHands, mandalHandIdx }
+  if (leftHandIdx !== -1) playHands.push(leftHandIdx)
+  return { playHands }
 }

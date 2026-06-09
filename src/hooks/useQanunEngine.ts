@@ -17,7 +17,6 @@ import type { SayrMove } from '../lib/music/sayr/SAYR_NETWORKS'
 import { nearestCourse, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
 import { upperNeighborCourse } from '../lib/gesture/pointerPlay'
 import { createPinchPlay } from '../lib/gesture/pinchPlay'
-import { createMandalGesture } from '../lib/gesture/detectMandal'
 import { createQanunEngine, type QanunEngine, type SoundSource } from '../lib/audio/createQanunEngine'
 import { createRecorder, type Recorder, type RecorderState } from '../lib/audio/createRecorder'
 import { formatElapsed } from '../lib/audio/formatElapsed'
@@ -44,7 +43,6 @@ const PLUCK_GLOW_FRAMES = 6
 // modulating hand (mirrors the theremin overlay idiom).
 const PLAY_RING_COLOR = 'rgba(255, 244, 214, 0.92)'
 const PLUCK_RING_COLOR = 'rgba(255, 255, 255, 1)'
-const MANDAL_RING_COLOR = 'rgba(226, 184, 110, 0.85)'
 // Pinch distance below which a fingertip shows "pressed" feedback (tighter ring + filled dot).
 const PINCH_VISUAL_THRESHOLD = 0.06
 const OVERLAY_SHADOW = 'rgba(0, 0, 0, 0.55)'
@@ -209,7 +207,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
   // One pinchPlay per role slot — handles pluck / sustain / glide / release.
   const pinchPlayRef = useRef([createPinchPlay(), createPinchPlay()])
-  const mandalGestureRef = useRef(createMandalGesture())
   const fingerFiltersRef = useRef([createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 }), createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 })])
 
   const recompute = useCallback((next: MandalState, nextTonic: number): void => {
@@ -597,34 +594,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
     const tNow = performance.now() / 1000
     const { rightHandIdx, leftHandIdx } = findHandedness({ result })
-    // Mirror x to screen space (0 = screen-left). Left hand's index tip x.
-    const leftHandX = leftHandIdx !== -1 ? 1 - result.landmarks[leftHandIdx][INDEX_TIP].x : 1
-    const { playHands, mandalHandIdx } = deriveHandRoles({ rightHandIdx, leftHandIdx, leftHandX })
+    const { playHands } = deriveHandRoles({ rightHandIdx, leftHandIdx })
     const field = coursesRef.current
 
     // Fingertips to draw this frame, collected during detection and rendered
     // AFTER the audio path so canvas work never delays a pluck.
-    let mandalTip: NormPoint | null = null
-    let mandalPinched = false
     const playTips: { tip: NormPoint; pinched: boolean }[] = []
-
-    // --- Mandal hand ---
-    if (mandalHandIdx !== null) {
-      const lm = result.landmarks[mandalHandIdx]
-      const tip = lm[INDEX_TIP]
-      mandalTip = tip
-      const mandalPinchDist = pinchDistance({ a: tip, b: lm[THUMB_TIP] })
-      mandalPinched = mandalPinchDist < PINCH_VISUAL_THRESHOLD
-      const ev = mandalGestureRef.current.update({
-        x: 1 - tip.x,
-        y: tip.y,
-        pinchDist: mandalPinchDist,
-        tNow
-      })
-      if (ev) setMandalAll(cycleMandal(mandalRef.current, ev.degree, ev.direction))
-    } else {
-      mandalGestureRef.current.reset()
-    }
 
     // --- Playing hands ---
     let lastPluckMidi: number | null = null
@@ -732,8 +707,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
           ctx.fill()
         }
       }
-      // Modulating (mandal) hand: a calmer brass ring.
-      if (mandalTip) drawTip(mandalTip, mandalPinched, MANDAL_RING_COLOR, 8)
       // Playing hands: bone-white rings; tighten + fill on pinch.
       playTips.forEach(({ tip, pinched }) => drawTip(tip, pinched, PLAY_RING_COLOR, 9))
       // Reset shadow so the next frame's clearRect / draws aren't haloed twice.
@@ -759,7 +732,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       canvas.width = width
       canvas.height = height
       pinchPlayRef.current.forEach((d) => d.reset())
-      mandalGestureRef.current.reset()
       fingerFiltersRef.current.forEach((f) => f.reset())
       frameCounterRef.current = 0
       pluckClearRef.current = 0
@@ -784,7 +756,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     // inherit a stale One-Euro timestamp (which would spike the derivative and
     // misfire on the first frame back).
     pinchPlayRef.current.forEach((d) => d.reset())
-    mandalGestureRef.current.reset()
     fingerFiltersRef.current.forEach((f) => f.reset())
     // Clear any lingering overlay ring and the string highlight/pluck glow.
     const canvas = canvasRef.current
