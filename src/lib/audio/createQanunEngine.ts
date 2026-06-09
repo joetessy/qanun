@@ -14,7 +14,8 @@ import { QANUN_SAMPLE_URLS, QANUN_SAMPLE_BASE_URL } from './qanunSamples'
 //   'sample' (default) — uses Tone.Sampler once loaded; falls back to synth while loading.
 //   'synth' — always uses the PluckSynth pool.
 //
-// Signal chain:
+// Signal chain (sumBus → limiter → destination; limiter brick-walls at -1 dBFS
+// so dense plucks + rashsh + reverb can't clip):
 //   Sampler → chorus (triple-course shimmer for sampled path) → Vibrato → reverb → sumBus
 //   PluckSynth voices → voiceGain → Vibrato → reverb → sumBus
 //
@@ -77,6 +78,15 @@ const RASHSH_HZ = 10
  */
 const RASHSH_INTERVAL = 1 / RASHSH_HZ
 
+/**
+ * Alternation rate (Hz) for a two-string hold (holdAlternate). Deliberately
+ * slower than the single-note rashsh (RASHSH_HZ) so the two pitches are
+ * individually audible as a back-and-forth instead of blurring into a unison
+ * tremolo. ~5.5 Hz ⇒ each note sounds ~0.18 s per turn.
+ */
+const ALTERNATE_HZ = 5.5
+const ALTERNATE_INTERVAL = 1 / ALTERNATE_HZ
+
 /** Trill attack spacing — same 7 Hz rhythm as rashsh, but finite. */
 const TRILL_HZ = 7
 const TRILL_INTERVAL = 1 / TRILL_HZ
@@ -110,7 +120,7 @@ const VOICE_GAIN_RAMP = 0.01
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n))
 
 /** Maximum vibrato depth in cents (full-scale pitch bend at the Vibrato extremes). */
-const MAX_VIBRATO_CENTS = 70
+const MAX_VIBRATO_CENTS = 45
 
 // ─── factory ──────────────────────────────────────────────────────────────────
 
@@ -124,8 +134,20 @@ export const createQanunEngine = ({
   let reverbSize: ReverbSize = fx?.reverbSize ?? DEFAULT_REVERB_SIZE
 
   // ── shared output chain ──────────────────────────────────────────────────────
-  // Both voices route through Vibrato → reverb → sumBus.
-  const sumBus = new Tone.Gain(1).toDestination()
+  // Both voices route through Vibrato → reverb → sumBus → limiter → destination.
+  // sumBus runs at 0.8 for a little headroom; a brick-wall limiter at -1 dBFS
+  // sits at the very end so triple-course plucks + rashsh + reverb can't sum
+  // past 0 dBFS and clip. The limiter is guarded for the injectable Tone mock
+  // (which may not implement it); when absent, sumBus drives the destination
+  // directly so tests still work.
+  const sumBus = new Tone.Gain(0.8)
+  const limiter = typeof Tone.Limiter === 'function' ? new Tone.Limiter(-1) : null
+  if (limiter) {
+    sumBus.connect(limiter)
+    limiter.toDestination()
+  } else {
+    sumBus.toDestination()
+  }
   const params = reverbSizeToParams(reverbSize)
   const reverb = new Tone.Reverb({
     decay: params.decaySec,
@@ -312,6 +334,10 @@ export const createQanunEngine = ({
    * Like holdStart(): cancels any previous hold (single active loop) and starts
    * Tone.Transport. No initial `immediate` pluck — the caller has already
    * plucked. Non-finite entries are skipped per-tick.
+   *
+   * Unlike holdStart's single-note rashsh (RASHSH_HZ ≈ 10 Hz), the alternation
+   * ticks at the slower ALTERNATE_HZ so each pitch sounds long enough to be
+   * heard as a distinct back-and-forth rather than a blurred unison.
    */
   const holdAlternate = ({ freqs, velocity }: { freqs: number[]; velocity: number }): void => {
     holdStop() // single active loop
@@ -331,7 +357,10 @@ export const createQanunEngine = ({
       for (const freq of detunedFreqs(freqHz, [...COURSE_CENTS])) {
         fireVoice(freq, velocityCurve(v), time)
       }
-    }, RASHSH_INTERVAL)
+      // ALTERNATE_INTERVAL (the calibratable alternation rate) is slower than
+      // the single-note rashsh so each of the two pitches sounds ~0.18 s and
+      // the two are individually audible as a clear back-and-forth.
+    }, ALTERNATE_INTERVAL)
 
     activeLoop.start(0)
   }
@@ -361,8 +390,10 @@ export const createQanunEngine = ({
   const setVibrato = ({ cents, rateHz }: { cents: number; rateHz?: number }): void => {
     if (!vibrato) return
     const peak = Math.max(0, Math.min(MAX_VIBRATO_CENTS, cents))
-    // Map cents → normal-range depth: 0 cents → 0 (inaudible), full → 0.5.
-    vibrato.depth.value = clamp01((peak / MAX_VIBRATO_CENTS) * 0.5)
+    // Map cents → normal-range depth: 0 cents → 0 (inaudible), full → 0.22.
+    // The gentle 0.22 factor keeps the vibrato subtle (a full wave bends only
+    // ~0.22 of the Vibrato node's range, not half).
+    vibrato.depth.value = clamp01((peak / MAX_VIBRATO_CENTS) * 0.22)
     if (rateHz && rateHz > 0) vibrato.frequency.value = rateHz
   }
 
@@ -428,15 +459,19 @@ export const createQanunEngine = ({
     chorus.dispose()
     reverb.dispose()
     sumBus.dispose()
+    limiter?.dispose()
   }
 
   const getSampleRate = (): number => Tone.getContext().sampleRate
 
   /**
-   * Returns the post-fx bus output node for recording tap.
-   * Captures exactly what the user hears (after reverb + chorus).
+   * Returns the FINAL audible node's output for the recording tap, so
+   * recordings match what's heard: the limiter's output when present, else
+   * sumBus (when the injectable Tone mock has no Limiter). Captures exactly
+   * what the user hears (after reverb + chorus + brick-wall limiting).
    */
-  const getRecorderTap = (): AudioNode => sumBus.output as unknown as AudioNode
+  const getRecorderTap = (): AudioNode =>
+    (limiter ?? sumBus).output as unknown as AudioNode
 
   return {
     start,

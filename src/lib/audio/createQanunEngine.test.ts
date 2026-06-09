@@ -18,6 +18,13 @@ const makeMockTone = () => {
   const chorusStart = vi.fn()
   const chorusDispose = vi.fn()
   const chorusWetValue = { value: 0 }
+  // Tone.Limiter mock: brick-wall on the master chain (sumBus → limiter →
+  // destination). connect/toDestination/dispose, plus an `output` node so
+  // getRecorderTap() can tap it.
+  const limiterConnect = vi.fn().mockReturnThis()
+  const limiterToDestination = vi.fn().mockReturnThis()
+  const limiterDispose = vi.fn()
+  const limiterOutput = {}
   // Tone.Vibrato mock: a settable depth.value + frequency.value, plus
   // connect/dispose. The node lives in the output chain (sources → Vibrato →
   // reverb), bending the pitch of everything that flows through it.
@@ -48,6 +55,14 @@ const makeMockTone = () => {
       preDelay: 0,
       connect: vi.fn().mockReturnThis(),
       dispose: vi.fn()
+    })),
+    // Tone.Limiter mock: brick-wall master limiter (sumBus → limiter → dest).
+    Limiter: vi.fn().mockImplementation((threshold: number) => ({
+      threshold: { value: threshold },
+      connect: limiterConnect,
+      toDestination: limiterToDestination,
+      output: limiterOutput,
+      dispose: limiterDispose
     })),
     // Tone.Sampler mock: captures onload so tests can simulate loading.
     Sampler: vi.fn().mockImplementation((opts: { onload?: () => void }) => {
@@ -109,7 +124,11 @@ const makeMockTone = () => {
     chorusWetValue,
     vibratoConnect,
     vibratoDispose,
-    vibratoState
+    vibratoState,
+    limiterConnect,
+    limiterToDestination,
+    limiterDispose,
+    limiterOutput
   }
 }
 
@@ -156,6 +175,63 @@ describe('createQanunEngine — surface', () => {
     const { ToneMock } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     expect(e.getSampleRate()).toBe(48000)
+  })
+})
+
+// ─── master chain / brick-wall limiter (anti-clipping) ───────────────────────
+
+describe('createQanunEngine — master limiter', () => {
+  it('runs sumBus at 0.8 for headroom (not unity 1.0)', () => {
+    const { ToneMock } = makeMockTone()
+    createQanunEngine(ENGINE_ARGS(ToneMock))
+    // The Gain constructed with the largest value is the master sumBus; voice
+    // gains are all created at 0. sumBus must now be 0.8, not 1.0.
+    const gainArgs = ToneMock.Gain.mock.calls.map((c) => c[0] as number)
+    expect(gainArgs).toContain(0.8)
+    expect(gainArgs).not.toContain(1)
+  })
+
+  it('constructs a Tone.Limiter at -1 dBFS and wires sumBus → limiter → destination', () => {
+    const { ToneMock, limiterToDestination } = makeMockTone()
+    createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(ToneMock.Limiter).toHaveBeenCalledTimes(1)
+    expect(ToneMock.Limiter.mock.calls[0][0]).toBe(-1)
+    // The limiter is the terminal node: it drives the destination (sumBus
+    // connects INTO it via sumBus.connect(limiter), so the limiter itself only
+    // needs toDestination()). sumBus must NOT call toDestination in this path.
+    expect(limiterToDestination).toHaveBeenCalledTimes(1)
+  })
+
+  it('getRecorderTap() taps the limiter output (final audible node) when present', () => {
+    const { ToneMock, limiterOutput } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    // Recording must match what's heard → the post-limiter node.
+    expect(e.getRecorderTap()).toBe(limiterOutput)
+  })
+
+  it('dispose() disposes the limiter', () => {
+    const { ToneMock, limiterDispose } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.dispose()
+    expect(limiterDispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to sumBus.toDestination() and taps sumBus when Tone has no Limiter', () => {
+    const base = makeMockTone()
+    // A mock lacking Tone.Limiter: the guard must keep the engine working —
+    // sumBus drives the destination directly and the recorder taps sumBus.
+    const toneNoLimiter = { ...base.ToneMock, Limiter: undefined }
+    const e = createQanunEngine({
+      Tone: toneNoLimiter as unknown as typeof import('tone'),
+      polyphony: 4
+    })
+    expect(() => e.dispose()).not.toThrow()
+    // getRecorderTap() returns the sumBus output (an object) without throwing.
+    const e2 = createQanunEngine({
+      Tone: { ...base.ToneMock, Limiter: undefined } as unknown as typeof import('tone'),
+      polyphony: 4
+    })
+    expect(e2.getRecorderTap()).toBeDefined()
   })
 })
 
@@ -401,8 +477,8 @@ describe('createQanunEngine — rashsh hold', () => {
     expect(typeof (e as unknown as Record<string, unknown>).setVibrato).toBe('function')
     // Out-of-range cents (high/low) and an optional rate are all tolerated.
     expect(() => e.setVibrato({ cents: 999 })).not.toThrow()
-    // 999 clamps to MAX_VIBRATO_CENTS (70) → full depth 0.5.
-    expect(vibratoState.depth.value).toBe(0.5)
+    // 999 clamps to MAX_VIBRATO_CENTS (45) → full depth 0.22 (gentle factor).
+    expect(vibratoState.depth.value).toBeCloseTo(0.22, 6)
     expect(() => e.setVibrato({ cents: -5, rateHz: 6 })).not.toThrow()
     // Negative cents clamps to 0 → depth 0; rateHz drives the Vibrato frequency.
     expect(vibratoState.depth.value).toBe(0)
@@ -429,12 +505,12 @@ describe('createQanunEngine — vibrato', () => {
     expect(opts.frequency).toBeGreaterThan(0)
   })
 
-  it('setVibrato({ cents }) maps cents → normal-range depth (full → 0.5)', () => {
+  it('setVibrato({ cents }) maps cents → normal-range depth (gentle 0.22 factor)', () => {
     const { ToneMock, vibratoState } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
-    // 35 of 70 cents → half-scale → depth (35/70)*0.5 = 0.25.
-    e.setVibrato({ cents: 35 })
-    expect(vibratoState.depth.value).toBeCloseTo(0.25, 6)
+    // 22.5 of 45 cents → half-scale → depth (22.5/45)*0.22 = 0.11.
+    e.setVibrato({ cents: 22.5 })
+    expect(vibratoState.depth.value).toBeCloseTo(0.11, 6)
   })
 
   it('setVibrato({ cents: 0 }) collapses depth to 0 (no audible vibrato)', () => {
@@ -487,7 +563,9 @@ describe('createQanunEngine — holdAlternate', () => {
     expect(ToneMock.Loop).toHaveBeenCalledTimes(1)
     const [callback, interval] = ToneMock.Loop.mock.calls[0]
     expect(typeof callback).toBe('function')
-    expect(interval).toBeCloseTo(1 / 10, 3) // RASHSH_HZ = 10
+    // Alternation ticks at ALTERNATE_HZ (5.5) — slower than the single-note
+    // rashsh (10 Hz) so the two pitches are individually audible.
+    expect(interval).toBeCloseTo(1 / 5.5, 3)
     expect(loopStart).toHaveBeenCalledWith(0)
     expect(transportStart).toHaveBeenCalledTimes(1)
     // No initial pluck — the caller already plucked.
