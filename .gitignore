@@ -9,11 +9,12 @@ build/
 # brainstorming scratch (visual companion mockups, server state)
 .superpowers/
 
-# editor / OS
+# editor / OS / local tooling
 .DS_Store
 *.local
 .vscode/
 .idea/
+.claude/
 
 # logs
 *.log
