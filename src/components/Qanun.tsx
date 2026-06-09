@@ -4,6 +4,7 @@ import { StageCover } from './StageCover'
 import { StringField } from './StringField'
 import { MandalRack } from './MandalRack'
 import { MaqamPresets } from './MaqamPresets'
+import { UpperJinsSwitcher } from './UpperJinsSwitcher'
 import { QanunHud } from './QanunHud'
 import { CameraInset } from './CameraInset'
 import { Controls } from './Controls'
@@ -85,6 +86,12 @@ export const Qanun = () => {
           mandalState={engine.mandalState}
           onSelectPreset={engine.setMaqamPreset}
           onReset={() => engine.setMaqamPreset('rast')}
+        />
+        {/* Upper-jins switcher — primary modulation control, always visible. */}
+        <UpperJinsSwitcher
+          mandalState={engine.mandalState}
+          tonicMidi={engine.tonicMidi}
+          onApplyUpper={engine.applyUpper}
         />
         <StringField
           courses={engine.courses}

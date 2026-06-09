@@ -8,6 +8,7 @@ import { MAQAM_PRESETS } from '../lib/music/MAQAM_PRESETS'
 import { buildField, DEFAULT_TONIC_MIDI } from '../lib/music/buildField'
 import { identifyAjnas } from '../lib/music/identifyAjnas'
 import { applyJinsPair, type JinsPair } from '../lib/music/sayr/jinsPairs'
+import { applyUpperJins, upperOptions, type UpperJinsOption } from '../lib/music/sayr/upperJins'
 import { suggestModulations } from '../lib/music/sayr/suggestModulations'
 import { emphasisNotes, type EmphasisNotes } from '../lib/music/sayr/emphasisNotes'
 import type { SayrMove } from '../lib/music/sayr/SAYR_NETWORKS'
@@ -70,6 +71,8 @@ export interface UseQanunEngine {
   setMandalState: (state: MandalState) => void
   setMaqamPreset: (id: string) => void
   applyPair: (pair: JinsPair) => void
+  applyUpper: (id: string) => void
+  upperJinsOptions: UpperJinsOption[]
   trillEnabled: boolean
   setTrillEnabled: (b: boolean) => void
   pluckCourse: (index: number) => void
@@ -227,6 +230,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
   const applyPair = useCallback((pair: JinsPair): void => {
     setMandalAll(applyJinsPair(mandalRef.current, pair))
+  }, [setMandalAll])
+
+  const applyUpper = useCallback((id: string): void => {
+    setMandalAll(applyUpperJins(mandalRef.current, id))
   }, [setMandalAll])
 
   const setTonic = useCallback((midi: number): void => {
@@ -583,10 +590,20 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         tNow
       })
       if (pluck && field[pluck.courseIndex]) {
-        audio.pluck({ freqHz: field[pluck.courseIndex].freqHz, velocity: pluck.velocity })
-        emitMidi(field[pluck.courseIndex].freqHz, pluck.velocity)
-        lastPluckMidi = field[pluck.courseIndex].midi
-        pluckedCourse = pluck.courseIndex
+        const c = pluck.courseIndex
+        if (trillEnabled) {
+          const neighborIdx = upperNeighborCourse(c, field.length)
+          audio.trill({
+            freqHz: field[c].freqHz,
+            neighborHz: field[neighborIdx].freqHz,
+            velocity: pluck.velocity
+          })
+        } else {
+          audio.pluck({ freqHz: field[c].freqHz, velocity: pluck.velocity })
+        }
+        emitMidi(field[c].freqHz, pluck.velocity)
+        lastPluckMidi = field[c].midi
+        pluckedCourse = c
       }
       // Rake (glissando).
       const raked = rakeDetectorsRef.current[slot].update({ courseIndex: course, tNow })
@@ -650,7 +667,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     }
 
     scheduleNext()
-  }, [videoRef, canvasRef, setMandalAll, emitMidi])
+  }, [videoRef, canvasRef, setMandalAll, emitMidi, trillEnabled])
 
   const start = useCallback(async (): Promise<void> => {
     if (status === 'running' || status === 'loading') return
@@ -725,6 +742,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const suggestions = suggestModulations(mandalState)
   const emphasis = emphasisNotes({ mandalState, courses })
 
+  // Ghammāz upper-jins options — computed from current mandal state.
+  const upperJinsOptions = upperOptions(mandalState)
+
   // P4a: derive display string for recording elapsed time from stored frame count.
   const recordingElapsedDisplay = formatElapsed(recordingElapsedFrames, sampleRate)
 
@@ -746,6 +766,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setMandalState,
     setMaqamPreset,
     applyPair,
+    applyUpper,
+    upperJinsOptions,
     trillEnabled,
     setTrillEnabled,
     pluckCourse,
