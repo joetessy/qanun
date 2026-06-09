@@ -154,3 +154,66 @@
   background: #0b0a0880;
   pointer-events: none;
 }
+
+/* ── Controls ───────────────────────────────────────────────────────────────── */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #141008;
+  border-top: 1px solid #2a2418;
+  font-size: 12px;
+  color: #a09060;
+}
+
+.controls .ctrl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.controls .ctrl span {
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: #6a5a30;
+}
+
+.controls .ctrl select {
+  background: #1e1810;
+  color: #c8a848;
+  border: 1px solid #3a3020;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.controls .quick-swaps {
+  display: flex;
+  gap: 8px;
+}
+
+.controls .swap {
+  background: #1e1810;
+  color: #a08840;
+  border: 1px solid #3a3020;
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.controls .swap:hover {
+  background: #2e2418;
+  color: #d4b060;
+}
+
+.controls .swap.is-active {
+  background: #3a2e14;
+  color: #e8c060;
+  border-color: #c0a040;
+}
