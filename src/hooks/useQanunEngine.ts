@@ -12,7 +12,7 @@ import { upperNeighborCourse } from '../lib/gesture/pointerPlay'
 import { createPluckDetector } from '../lib/gesture/detectPluck'
 import { createRakeDetector } from '../lib/gesture/detectRake'
 import { createMandalGesture } from '../lib/gesture/detectMandal'
-import { createQanunEngine, type QanunEngine } from '../lib/audio/createQanunEngine'
+import { createQanunEngine, type QanunEngine, type SoundSource } from '../lib/audio/createQanunEngine'
 import { velocityCurve } from '../lib/audio/velocityCurve'
 import { createOneEuroFilter } from '../lib/oneEuro/createOneEuroFilter'
 import { findHandedness } from '../lib/vision/findHandedness'
@@ -67,6 +67,10 @@ export interface UseQanunEngine {
   glideCourse: (index: number) => void
   holdCourse: (index: number) => void
   releaseHold: () => void
+  // P2: sampler voice switching
+  soundSource: SoundSource
+  setSoundSource: (s: SoundSource) => void
+  isSampleLoaded: boolean
 }
 
 const EMPTY_READING: QanunReading = {
@@ -90,6 +94,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     buildField({ tonicMidi: DEFAULT_TONIC_MIDI, mandalState: DEFAULT_RAST_STATE })
   )
   const [trillEnabled, setTrillEnabled] = useState(false)
+  // P2: sampler sound-source state — defaults before the engine is created.
+  const [soundSource, setSoundSourceState] = useState<SoundSource>('sample')
+  const [isSampleLoaded, setIsSampleLoaded] = useState(false)
 
   // Hot refs (read inside the frame loop without re-subscribing).
   const tonicRef = useRef(DEFAULT_TONIC_MIDI)
@@ -161,6 +168,26 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     if (!audioRef.current) audioRef.current = createQanunEngine({ polyphony: 16 })
     if (!audioRef.current.isStarted) await audioRef.current.start()
   }, [])
+
+  // ── P2: sound-source helpers ─────────────────────────────────────────────────
+
+  const setSoundSource = useCallback((s: SoundSource): void => {
+    setSoundSourceState(s)
+    audioRef.current?.setSoundSource(s)
+  }, [])
+
+  // Poll the engine for isSampleLoaded until it becomes true (then stop).
+  // The interval is short (~200 ms) so the UI update is snappy.
+  useEffect(() => {
+    if (isSampleLoaded) return // already done
+    const id = setInterval(() => {
+      if (audioRef.current?.isSampleLoaded) {
+        setIsSampleLoaded(true)
+        clearInterval(id)
+      }
+    }, 200)
+    return () => clearInterval(id)
+  }, [isSampleLoaded])
 
   // ── Pointer play primitives ─────────────────────────────────────────────────
   // These work without the webcam — ensureAudioEngine() handles lazy audio init.
@@ -448,6 +475,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     pluckCourse,
     glideCourse,
     holdCourse,
-    releaseHold
+    releaseHold,
+    soundSource,
+    setSoundSource,
+    isSampleLoaded
   }
 }

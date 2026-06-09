@@ -82,10 +82,13 @@ export const Qanun = () => {
           rakeSensitivity={engine.rakeSensitivity}
           mandalState={engine.mandalState}
           trillEnabled={engine.trillEnabled}
+          soundSource={engine.soundSource}
+          isSampleLoaded={engine.isSampleLoaded}
           onTonic={engine.setTonic}
           onRakeSensitivity={engine.setRakeSensitivity}
           onApplyPair={engine.applyPair}
           onTrillEnabled={engine.setTrillEnabled}
+          onSoundSource={engine.setSoundSource}
         />
       </div>
     </div>

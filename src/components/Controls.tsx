@@ -1,5 +1,6 @@
 import type { MandalState } from '../lib/music/types'
 import type { RakeSensitivity } from '../types'
+import type { SoundSource } from '../lib/audio/createQanunEngine'
 import { TypedSelect } from './TypedSelect'
 import { JINS_PAIRS, isPairActive, type JinsPair } from '../lib/music/sayr/jinsPairs'
 import { midiName } from '../lib/music/midiName'
@@ -9,10 +10,13 @@ interface ControlsProps {
   rakeSensitivity: RakeSensitivity
   mandalState: MandalState
   trillEnabled: boolean
+  soundSource: SoundSource
+  isSampleLoaded: boolean
   onTonic: (midi: number) => void
   onRakeSensitivity: (s: RakeSensitivity) => void
   onApplyPair: (pair: JinsPair) => void
   onTrillEnabled: (b: boolean) => void
+  onSoundSource: (s: SoundSource) => void
 }
 
 // 12 tonic choices, one per pitch class, anchored near the qanun's low register.
@@ -28,17 +32,20 @@ const RAKE_OPTIONS: ReadonlyArray<{ value: RakeSensitivity; label: string }> = [
 ]
 
 // Progressive disclosure (spec §1): tonic + rake + trill ornament toggle +
-// the headline jins-pair quick-swaps. Everything deeper (sayr guide, FX, MIDI)
-// is later phases.
+// sound-source toggle + the headline jins-pair quick-swaps.
+// Everything deeper (sayr guide, FX, MIDI) is later phases.
 export const Controls = ({
   tonicMidi,
   rakeSensitivity,
   mandalState,
   trillEnabled,
+  soundSource,
+  isSampleLoaded,
   onTonic,
   onRakeSensitivity,
   onApplyPair,
-  onTrillEnabled
+  onTrillEnabled,
+  onSoundSource
 }: ControlsProps) => (
   <div className="controls">
     <label className="ctrl">
@@ -62,6 +69,20 @@ export const Controls = ({
         aria-pressed={trillEnabled}
       >
         {trillEnabled ? 'on' : 'off'}
+      </button>
+    </label>
+    <label className="ctrl">
+      <span>sound</span>
+      <button
+        type="button"
+        className={`toggle ${soundSource === 'sample' ? 'is-on' : ''}`}
+        onClick={() => onSoundSource(soundSource === 'sample' ? 'synth' : 'sample')}
+        aria-pressed={soundSource === 'sample'}
+        title={soundSource === 'sample' && !isSampleLoaded ? 'loading samples…' : undefined}
+      >
+        {soundSource === 'sample'
+          ? (isSampleLoaded ? 'sample' : 'sample…')
+          : 'synth'}
       </button>
     </label>
     <div className="quick-swaps">
