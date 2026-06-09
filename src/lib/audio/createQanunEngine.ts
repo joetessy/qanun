@@ -15,16 +15,21 @@ import { QANUN_SAMPLE_URLS, QANUN_SAMPLE_BASE_URL } from './qanunSamples'
 //   'synth' — always uses the PluckSynth pool.
 //
 // Signal chain:
-//   Sampler → chorus (triple-course shimmer for sampled path) → reverb → sumBus
-//   PluckSynth voices → voiceGain → reverb → sumBus
+//   Sampler → chorus (triple-course shimmer for sampled path) → Vibrato → reverb → sumBus
+//   PluckSynth voices → voiceGain → Vibrato → reverb → sumBus
 //
 // v2 changes (per §3 of 2026-06-09-interaction-v2-and-sound.md):
 //   • Triple-course bloom: each pluck fires 3 detuned voices (±4 cents).
 //   • Longer ring: resonance ↑ to 0.97, dampening 3500 Hz for warmer tone.
 //   • Body reverb on by default (wet ≈ 0.28).
 //   • Rashsh hold: holdStart() re-triggers at ~10 Hz; holdStop() cancels.
-//   • Vibrato: a Tone.LFO modulates sampler.detune (setVibrato), so a single
-//     ringing note vibratos — not just during the rashsh tremolo.
+//   • Vibrato: a Tone.Vibrato effect node sits in the dry path (before reverb),
+//     bending the pitch of everything that flows through it. Because both the
+//     sampler and the synth fallback route through it, vibrato works for BOTH
+//     voices, on a ringing/sustained note AND during the rashsh tremolo
+//     (Tone v15's Sampler has no `detune` param, so an LFO→detune approach is
+//     silent — the effect node bends the post-mix signal instead). setVibrato()
+//     drives its depth/rate live; depth 0 ⇒ inaudible.
 export type SoundSource = 'sample' | 'synth'
 
 export interface QanunEngineOptions {
@@ -104,7 +109,7 @@ const FX_WET_RAMP = 0.08
 const VOICE_GAIN_RAMP = 0.01
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n))
 
-/** Maximum vibrato depth in cents (peak detune at the LFO extremes). */
+/** Maximum vibrato depth in cents (full-scale pitch bend at the Vibrato extremes). */
 const MAX_VIBRATO_CENTS = 70
 
 // ─── factory ──────────────────────────────────────────────────────────────────
@@ -119,7 +124,7 @@ export const createQanunEngine = ({
   let reverbSize: ReverbSize = fx?.reverbSize ?? DEFAULT_REVERB_SIZE
 
   // ── shared output chain ──────────────────────────────────────────────────────
-  // Both voices route through reverb → sumBus.
+  // Both voices route through Vibrato → reverb → sumBus.
   const sumBus = new Tone.Gain(1).toDestination()
   const params = reverbSizeToParams(reverbSize)
   const reverb = new Tone.Reverb({
@@ -129,13 +134,30 @@ export const createQanunEngine = ({
   })
   reverb.connect(sumBus)
 
+  // ── vibrato (pitch-bend effect on the dry path, before reverb) ────────────────
+  // A Tone.Vibrato node bends the pitch of EVERYTHING routed through it, so both
+  // the sampler and the synth fallback vibrato — on a ringing/sustained note as
+  // well as during the rashsh tremolo. (Tone v15's Sampler exposes no `detune`
+  // AudioParam, so the old LFO→detune approach was silent; bending the post-mix
+  // signal sidesteps that.) Sits between the sources and reverb so the dry
+  // signal is bent before it hits the reverb tail. setVibrato() drives its
+  // depth/rate live; depth 0 ⇒ inaudible.
+  //
+  // Guarded for the injectable Tone mock, which may not implement Vibrato — then
+  // sources fall back to connecting straight to reverb and setVibrato() no-ops.
+  const vibrato =
+    typeof Tone.Vibrato === 'function'
+      ? new Tone.Vibrato({ frequency: 5.5, depth: 0, maxDelay: 0.01 })
+      : null
+  if (vibrato) vibrato.connect(reverb)
+
   // ── synth voice pool (Karplus-Strong, PluckSynth) ────────────────────────────
   // Pool has `polyphony × VOICES_PER_NOTE` raw voices so that chords (each
   // needing 3 voices) still get their full triple-course allocation.
   const poolSize = polyphony * VOICES_PER_NOTE
   const voices = Array.from({ length: poolSize }, () => {
     const g = new Tone.Gain(0)
-    g.connect(reverb)
+    g.connect(vibrato ?? reverb)
     // Karplus-Strong qanun timbre: long resonance, warm dampening.
     const synth = new Tone.PluckSynth({
       attackNoise: 1,
@@ -147,10 +169,10 @@ export const createQanunEngine = ({
   })
 
   // ── sampler voice (Tone.Sampler with subtle Chorus) ──────────────────────────
-  // Chain: sampler → chorus → reverb → sumBus.
+  // Chain: sampler → chorus → Vibrato → reverb → sumBus.
   const chorus = new Tone.Chorus(CHORUS_FREQUENCY, CHORUS_DELAY_TIME, CHORUS_DEPTH)
   chorus.wet.value = CHORUS_WET
-  chorus.connect(reverb)
+  chorus.connect(vibrato ?? reverb)
   // Chorus needs .start() to activate its LFO. Call it immediately — it's
   // internal DSP, no audio-context unlock required.
   chorus.start()
@@ -166,33 +188,6 @@ export const createQanunEngine = ({
   })
   sampler.connect(chorus)
 
-  // ── vibrato LFO (modulates the sampler's detune in cents) ─────────────────────
-  // A single LFO on the sampler's `detune` lets a note that's still RINGING
-  // vibrato — not just one re-triggered during the rashsh tremolo. min/max are
-  // the peak detune (± cents); 0/0 ⇒ no audible vibrato. setVibrato() drives
-  // them live.
-  //
-  // NOTE: this bends the SAMPLE voice only (the default sound). The Karplus
-  // synth fallback can't bend an already-ringing note, so synth-vibrato is a
-  // known limitation.
-  //
-  // Two guards are required:
-  //   1. The injectable Tone mock may not implement LFO, so guard construction
-  //      (`typeof Tone.LFO === 'function'`); setVibrato() then no-ops.
-  //   2. Tone.Sampler only exposes a `detune` AudioParam in some versions
-  //      (it's absent in the installed v15). Connect only when it's present,
-  //      so the LFO is still created/disposed cleanly but stays inert when the
-  //      param doesn't exist.
-  const samplerDetune = (sampler as unknown as { detune?: ToneAudioNode }).detune
-  const vibratoLfo =
-    typeof Tone.LFO === 'function'
-      ? new Tone.LFO({ frequency: 5.5, min: 0, max: 0 })
-      : null
-  if (vibratoLfo) {
-    vibratoLfo.start()
-    if (samplerDetune) vibratoLfo.connect(samplerDetune)
-  }
-
   // ── sound-source state ────────────────────────────────────────────────────────
   let currentSource: SoundSource = 'sample'
 
@@ -205,7 +200,7 @@ export const createQanunEngine = ({
   interface LoopHandle { start(t: number): void; stop(): void; dispose(): void }
   let activeLoop: LoopHandle | null = null
 
-  // Vibrato state lives in the LFO (vibratoLfo.min/max/frequency), driven by
+  // Vibrato state lives in the Vibrato node (vibrato.depth/frequency), driven by
   // the gesture layer via setVibrato().
 
   // ── internal helpers ────────────────────────────────────────────────────────
@@ -295,7 +290,7 @@ export const createQanunEngine = ({
     activeLoop = new Tone.Loop((time: number) => {
       // Re-pluck the full course with slight velocity jitter so the tremolo
       // doesn't sound mechanical. Vibrato (if any) is applied independently by
-      // the LFO on the sampler's detune, so a ringing note bends without
+      // the Vibrato node in the output chain, so a ringing note bends without
       // re-plucking.
       const jitter = (Math.random() * 2 - 1) * RASHSH_VELOCITY_JITTER
       const v = clamp01(velocity + jitter)
@@ -350,28 +345,25 @@ export const createQanunEngine = ({
       activeLoop.dispose()
       activeLoop = null
     }
-    if (vibratoLfo) {
-      // A new hold starts with vibrato off (depth → 0). The LFO keeps running;
-      // setVibrato() re-opens its depth when the gesture layer requests it.
-      vibratoLfo.min = 0
-      vibratoLfo.max = 0
-    }
+    // Vibrato depth is owned entirely by setVibrato() (the gesture layer sets it
+    // to 0 when there's no wave), so holdStop() does NOT touch the Vibrato node.
   }
 
   /**
-   * Set the vibrato applied to the (ringing) sample voice. `cents` is the peak
-   * detune (clamped to [0, MAX_VIBRATO_CENTS]); `rateHz` (optional) the LFO
-   * rate in Hz. Drives the LFO on sampler.detune live, so a single note that's
-   * still ringing vibratos. `cents === 0` ⇒ min=max=0 ⇒ no audible vibrato.
-   * Safe no-op when the LFO is absent (e.g. the injectable Tone mock).
-   * Driven each frame by the gesture/mouse layer.
+   * Set the vibrato applied to everything in the output chain (both the sample
+   * and synth voices, ringing AND tremolo). `cents` is the bend amount, clamped
+   * to [0, MAX_VIBRATO_CENTS] then mapped to the Vibrato node's normal-range
+   * depth; `rateHz` (optional) the modulation rate in Hz. `cents === 0` ⇒
+   * depth 0 ⇒ no audible vibrato. Safe no-op when the Vibrato node is absent
+   * (e.g. the injectable Tone mock). Driven each frame by the gesture/mouse
+   * layer.
    */
   const setVibrato = ({ cents, rateHz }: { cents: number; rateHz?: number }): void => {
-    if (!vibratoLfo) return
+    if (!vibrato) return
     const peak = Math.max(0, Math.min(MAX_VIBRATO_CENTS, cents))
-    vibratoLfo.min = -peak || 0 // `-peak || 0` avoids a -0 when peak === 0
-    vibratoLfo.max = peak
-    if (rateHz && rateHz > 0) vibratoLfo.frequency.value = rateHz
+    // Map cents → normal-range depth: 0 cents → 0 (inaudible), full → 0.5.
+    vibrato.depth.value = clamp01((peak / MAX_VIBRATO_CENTS) * 0.5)
+    if (rateHz && rateHz > 0) vibrato.frequency.value = rateHz
   }
 
   /**
@@ -431,7 +423,7 @@ export const createQanunEngine = ({
       v.synth.dispose()
       v.gain.dispose()
     })
-    vibratoLfo?.dispose()
+    vibrato?.dispose()
     sampler.dispose()
     chorus.dispose()
     reverb.dispose()

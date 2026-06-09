@@ -18,12 +18,13 @@ const makeMockTone = () => {
   const chorusStart = vi.fn()
   const chorusDispose = vi.fn()
   const chorusWetValue = { value: 0 }
-  // Tone.LFO mock: a settable min/max + frequency.value, plus start/connect/dispose.
-  const lfoStart = vi.fn()
-  const lfoConnect = vi.fn()
-  const lfoDispose = vi.fn()
-  // Capture the live LFO object so tests can assert on min/max/frequency.value.
-  const lfoState = { min: 0, max: 0, frequency: { value: 0 } }
+  // Tone.Vibrato mock: a settable depth.value + frequency.value, plus
+  // connect/dispose. The node lives in the output chain (sources → Vibrato →
+  // reverb), bending the pitch of everything that flows through it.
+  const vibratoConnect = vi.fn()
+  const vibratoDispose = vi.fn()
+  // Capture the live Vibrato object so tests can assert on depth/frequency.value.
+  const vibratoState = { depth: { value: 0 }, frequency: { value: 0 } }
 
   const ToneMock = {
     start: vi.fn().mockResolvedValue(undefined),
@@ -71,21 +72,16 @@ const makeMockTone = () => {
       stop: loopStop,
       dispose: loopDispose
     })),
-    // Tone.LFO mock: min/max/frequency proxy to lfoState so tests can read
+    // Tone.Vibrato mock: depth/frequency proxy to vibratoState so tests can read
     // what setVibrato() wrote.
-    LFO: vi.fn().mockImplementation((opts: { frequency?: number; min?: number; max?: number }) => {
-      lfoState.min = opts?.min ?? 0
-      lfoState.max = opts?.max ?? 0
-      lfoState.frequency.value = opts?.frequency ?? 0
+    Vibrato: vi.fn().mockImplementation((opts: { frequency?: number; depth?: number; maxDelay?: number }) => {
+      vibratoState.depth.value = opts?.depth ?? 0
+      vibratoState.frequency.value = opts?.frequency ?? 0
       return {
-        get min() { return lfoState.min },
-        set min(v: number) { lfoState.min = v },
-        get max() { return lfoState.max },
-        set max(v: number) { lfoState.max = v },
-        frequency: lfoState.frequency,
-        start: lfoStart,
-        connect: lfoConnect,
-        dispose: lfoDispose
+        depth: vibratoState.depth,
+        frequency: vibratoState.frequency,
+        connect: vibratoConnect,
+        dispose: vibratoDispose
       }
     }),
     Transport: { start: transportStart }
@@ -111,10 +107,9 @@ const makeMockTone = () => {
     chorusStart,
     chorusDispose,
     chorusWetValue,
-    lfoStart,
-    lfoConnect,
-    lfoDispose,
-    lfoState
+    vibratoConnect,
+    vibratoDispose,
+    vibratoState
   }
 }
 
@@ -401,62 +396,75 @@ describe('createQanunEngine — rashsh hold', () => {
   })
 
   it('setVibrato clamps cents to [0, MAX] and is callable before any hold', () => {
-    const { ToneMock, lfoState } = makeMockTone()
+    const { ToneMock, vibratoState } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     expect(typeof (e as unknown as Record<string, unknown>).setVibrato).toBe('function')
     // Out-of-range cents (high/low) and an optional rate are all tolerated.
     expect(() => e.setVibrato({ cents: 999 })).not.toThrow()
-    // 999 clamps to MAX_VIBRATO_CENTS (70) → LFO swings ±70.
-    expect(lfoState.max).toBe(70)
-    expect(lfoState.min).toBe(-70)
+    // 999 clamps to MAX_VIBRATO_CENTS (70) → full depth 0.5.
+    expect(vibratoState.depth.value).toBe(0.5)
     expect(() => e.setVibrato({ cents: -5, rateHz: 6 })).not.toThrow()
-    // Negative cents clamps to 0 → no swing; rateHz drives the LFO frequency.
-    expect(lfoState.max).toBe(0)
-    expect(lfoState.min).toBe(0)
-    expect(lfoState.frequency.value).toBe(6)
+    // Negative cents clamps to 0 → depth 0; rateHz drives the Vibrato frequency.
+    expect(vibratoState.depth.value).toBe(0)
+    expect(vibratoState.frequency.value).toBe(6)
   })
 })
 
-// ─── vibrato LFO (modulates the sampler's detune) ────────────────────────────
+// ─── vibrato (Tone.Vibrato effect node in the output chain) ──────────────────
 
-describe('createQanunEngine — vibrato LFO', () => {
-  it('creates and starts a Tone.LFO at engine setup', () => {
-    const { ToneMock, lfoStart } = makeMockTone()
+describe('createQanunEngine — vibrato', () => {
+  it('creates a Tone.Vibrato node at engine setup and wires it into the chain', () => {
+    const { ToneMock, vibratoConnect } = makeMockTone()
     createQanunEngine(ENGINE_ARGS(ToneMock))
-    expect(ToneMock.LFO).toHaveBeenCalledTimes(1)
-    expect(lfoStart).toHaveBeenCalledTimes(1)
+    expect(ToneMock.Vibrato).toHaveBeenCalledTimes(1)
+    // The node routes onward to reverb (vibrato → reverb).
+    expect(vibratoConnect).toHaveBeenCalledTimes(1)
   })
 
-  it('setVibrato({ cents }) drives the LFO depth symmetrically (min=-cents, max=+cents)', () => {
-    const { ToneMock, lfoState } = makeMockTone()
+  it('constructs Vibrato with depth 0 (inaudible until setVibrato opens it)', () => {
+    const { ToneMock } = makeMockTone()
+    createQanunEngine(ENGINE_ARGS(ToneMock))
+    const opts = ToneMock.Vibrato.mock.calls[0][0] as { depth?: number; frequency?: number }
+    expect(opts.depth).toBe(0)
+    expect(opts.frequency).toBeGreaterThan(0)
+  })
+
+  it('setVibrato({ cents }) maps cents → normal-range depth (full → 0.5)', () => {
+    const { ToneMock, vibratoState } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
-    e.setVibrato({ cents: 40 })
-    expect(lfoState.min).toBe(-40)
-    expect(lfoState.max).toBe(40)
+    // 35 of 70 cents → half-scale → depth (35/70)*0.5 = 0.25.
+    e.setVibrato({ cents: 35 })
+    expect(vibratoState.depth.value).toBeCloseTo(0.25, 6)
   })
 
-  it('setVibrato({ cents: 0 }) collapses the LFO to no audible vibrato (min=max=0)', () => {
-    const { ToneMock, lfoState } = makeMockTone()
+  it('setVibrato({ cents: 0 }) collapses depth to 0 (no audible vibrato)', () => {
+    const { ToneMock, vibratoState } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     e.setVibrato({ cents: 50, rateHz: 6 })
     e.setVibrato({ cents: 0 })
-    expect(lfoState.min).toBe(0)
-    expect(lfoState.max).toBe(0)
+    expect(vibratoState.depth.value).toBe(0)
   })
 
-  it('dispose() disposes the vibrato LFO', () => {
-    const { ToneMock, lfoDispose } = makeMockTone()
+  it('setVibrato({ rateHz }) drives the Vibrato frequency', () => {
+    const { ToneMock, vibratoState } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.setVibrato({ cents: 40, rateHz: 7 })
+    expect(vibratoState.frequency.value).toBe(7)
+  })
+
+  it('dispose() disposes the Vibrato node', () => {
+    const { ToneMock, vibratoDispose } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     e.dispose()
-    expect(lfoDispose).toHaveBeenCalledTimes(1)
+    expect(vibratoDispose).toHaveBeenCalledTimes(1)
   })
 
-  it('setVibrato is a safe no-op when Tone has no LFO (mock without LFO)', () => {
+  it('setVibrato is a safe no-op when Tone has no Vibrato (mock without Vibrato)', () => {
     const base = makeMockTone()
-    // Simulate a mock that lacks LFO: setVibrato must no-op rather than crash.
-    const toneNoLfo = { ...base.ToneMock, LFO: undefined }
+    // Simulate a mock that lacks Vibrato: setVibrato must no-op rather than crash.
+    const toneNoVibrato = { ...base.ToneMock, Vibrato: undefined }
     const e = createQanunEngine({
-      Tone: toneNoLfo as unknown as typeof import('tone'),
+      Tone: toneNoVibrato as unknown as typeof import('tone'),
       polyphony: 4
     })
     expect(() => e.setVibrato({ cents: 30, rateHz: 6 })).not.toThrow()
