@@ -4,8 +4,9 @@ import { buildField } from '../buildField'
 import { DEFAULT_RAST_STATE, DEFAULT_RAST_STATE as RAST } from '../ajnas/MANDALS'
 
 // Default: Rast from C3 (midi 48), 4 octaves = 28 courses, indices 0..27
+// With octavesBelow=1 (default): octave -1 = indices 0..6, octave 0 = 7..13, etc.
 // Degrees cycle: 1,2,3,4,5,6,7 per octave
-// degree-1 courses: 0,7,14,21  (octaves 0,1,2,3)
+// degree-1 courses: 0,7,14,21  (octaves -1,0,1,2)
 // degree-5 courses: 4,11,18,25 (the ghammaz for rast lower jins, ghammazDegree=5)
 // degree-7 courses: 6,13,20,27
 
@@ -24,8 +25,9 @@ describe('emphasisNotes — Rast C3 defaults', () => {
 
   it('octave: tonic courses at octave >= 1', () => {
     const result = emphasisNotes({ mandalState: RAST, courses })
-    // octave 0 = index 0, octave 1 = index 7, octave 2 = index 14, octave 3 = index 21
-    expect(result.octave).toEqual([7, 14, 21])
+    // octave -1 = index 0, octave 0 = index 7, octave 1 = index 14, octave 2 = index 21
+    // octave >= 1 → indices 14 and 21
+    expect(result.octave).toEqual([14, 21])
   })
 
   it('leadingTone: courses with degree === 7', () => {
