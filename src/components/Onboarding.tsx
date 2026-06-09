@@ -38,29 +38,30 @@ export const Onboarding = ({ onDismiss }: OnboardingProps) => {
             <div className="step-body">
               <strong>play</strong>
               <span>
-                Click a string to pluck; drag across strings to glide; hold for
-                sustain. Press <em>play</em> to use your hands over the webcam.
+                Click a string to pluck — drag across to glide, hold to sustain.
+                Or press <em>play</em> to use your hands: pinch to pluck, hold the
+                pinch to sustain, and wave up &amp; down to add vibrato.
               </span>
             </div>
           </li>
           <li className="onboarding-step">
             <span className="step-num" aria-hidden>2</span>
             <div className="step-body">
-              <strong>modulate</strong>
+              <strong>choose a maqam</strong>
               <span>
-                Tap the <em>mandal switches</em> on the left to retune a scale
-                degree, or tap a <em>maqam preset</em> chip along the bottom rail to
-                jump to a maqam.
+                Pick a <em>lower jins</em> (the chips, or keys <em>Q&ndash;O</em>) to
+                set the home note, then an <em>upper jins</em> (keys <em>1&ndash;5</em>)
+                to modulate on the ghammāz. The readout names the maqam you build.
               </span>
             </div>
           </li>
           <li className="onboarding-step">
             <span className="step-num" aria-hidden>3</span>
             <div className="step-body">
-              <strong>ornament &amp; tools</strong>
+              <strong>tools</strong>
               <span>
-                Open <em>tune</em> in the top-right for tonic, trill, Sample/Synth
-                voice, sayr guide, recording, drone, metronome, and MIDI.
+                Open <em>tune</em> (top-right) to set the key, record a take, or turn
+                on the drone, metronome, and MIDI out.
               </span>
             </div>
           </li>

@@ -275,7 +275,9 @@
 /* Each of the three wires — fine brass gradient, slight rounding at each end. */
 .string-field .course .str {
   flex-shrink: 0;
-  width: 1.3px;
+  /* A crisp whole pixel so all three wires rasterize identically (a sub-pixel
+     width made the centre wire look skinnier than the outer two). */
+  width: 1px;
   height: 100%;
   border-radius: 1px;
   /* Brass wire: shadowed rim, bright specular centre. */
@@ -1173,7 +1175,7 @@
 .onboarding-scrim {
   position: absolute;
   inset: 0;
-  z-index: 20;
+  z-index: 40; /* above the play cover (25) so the guide is never hidden behind it */
   display: flex;
   align-items: center;
   justify-content: center;
