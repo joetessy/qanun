@@ -5,16 +5,26 @@ import { reverbSizeToParams } from './reverbSize'
 import { velocityCurve } from './velocityCurve'
 import { nextVoiceIndex } from './voicePool'
 import { detunedFreqs } from './detuneCluster'
+import { QANUN_SAMPLE_URLS, QANUN_SAMPLE_BASE_URL } from './qanunSamples'
 
 // Per-course plucked-string engine. P1 voice = Tone.PluckSynth (Karplus-Strong);
-// P2 swaps in a Tone.Sampler behind this same `pluck()` interface. A pool of
-// monophonic voices gives polyphony for chords + fast runs (voice stealing).
+// P2 adds a Tone.Sampler behind the same `pluck()` interface.
+//
+// Sound source routing:
+//   'sample' (default) — uses Tone.Sampler once loaded; falls back to synth while loading.
+//   'synth' — always uses the PluckSynth pool.
+//
+// Signal chain:
+//   Sampler → chorus (triple-course shimmer for sampled path) → reverb → sumBus
+//   PluckSynth voices → voiceGain → reverb → sumBus
 //
 // v2 changes (per §3 of 2026-06-09-interaction-v2-and-sound.md):
 //   • Triple-course bloom: each pluck fires 3 detuned voices (±4 cents).
 //   • Longer ring: resonance ↑ to 0.97, dampening 3500 Hz for warmer tone.
 //   • Body reverb on by default (wet ≈ 0.28).
 //   • Rashsh hold: holdStart() re-triggers at ~7 Hz; holdStop() cancels.
+export type SoundSource = 'sample' | 'synth'
+
 export interface QanunEngineOptions {
   Tone?: typeof ToneNamespace // injectable for tests (see createDrone.ts)
   polyphony?: number           // logical note polyphony (pool = polyphony × 3)
@@ -34,6 +44,10 @@ export interface QanunEngine {
   getSampleRate: () => number
   readonly sumBus: Gain
   readonly isStarted: boolean
+  // P2: sampler voice switching
+  setSoundSource: (source: SoundSource) => void
+  readonly soundSource: SoundSource
+  readonly isSampleLoaded: boolean
 }
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -75,6 +89,12 @@ const KS_DAMPENING = 3500
 const DEFAULT_REVERB_WET = 0.28
 const DEFAULT_REVERB_SIZE: ReverbSize = 'medium'
 
+// Subtle chorus on the sampled path to reinforce the triple-course shimmer.
+const CHORUS_FREQUENCY = 1.5   // Hz — slow LFO, avoids obvious wobble
+const CHORUS_DELAY_TIME = 3.5  // ms — moderate width
+const CHORUS_DEPTH = 0.15      // low depth for subtlety
+const CHORUS_WET = 0.35        // blend: mostly dry, gentle shimmer
+
 const FX_WET_RAMP = 0.08
 const VOICE_GAIN_RAMP = 0.01
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n))
@@ -90,7 +110,8 @@ export const createQanunEngine = ({
   let reverbWet = fx?.reverbWet ?? DEFAULT_REVERB_WET
   let reverbSize: ReverbSize = fx?.reverbSize ?? DEFAULT_REVERB_SIZE
 
-  // Chain: voice[i] → voiceGain[i] → reverb → sumBus → destination.
+  // ── shared output chain ──────────────────────────────────────────────────────
+  // Both voices route through reverb → sumBus.
   const sumBus = new Tone.Gain(1).toDestination()
   const params = reverbSizeToParams(reverbSize)
   const reverb = new Tone.Reverb({
@@ -100,6 +121,7 @@ export const createQanunEngine = ({
   })
   reverb.connect(sumBus)
 
+  // ── synth voice pool (Karplus-Strong, PluckSynth) ────────────────────────────
   // Pool has `polyphony × VOICES_PER_NOTE` raw voices so that chords (each
   // needing 3 voices) still get their full triple-course allocation.
   const poolSize = polyphony * VOICES_PER_NOTE
@@ -116,6 +138,30 @@ export const createQanunEngine = ({
     return { synth, gain: g }
   })
 
+  // ── sampler voice (Tone.Sampler with subtle Chorus) ──────────────────────────
+  // Chain: sampler → chorus → reverb → sumBus.
+  const chorus = new Tone.Chorus(CHORUS_FREQUENCY, CHORUS_DELAY_TIME, CHORUS_DEPTH)
+  chorus.wet.value = CHORUS_WET
+  chorus.connect(reverb)
+  // Chorus needs .start() to activate its LFO. Call it immediately — it's
+  // internal DSP, no audio-context unlock required.
+  chorus.start()
+
+  let sampleLoaded = false
+
+  const sampler = new Tone.Sampler({
+    urls: QANUN_SAMPLE_URLS,
+    baseUrl: QANUN_SAMPLE_BASE_URL,
+    onload: () => {
+      sampleLoaded = true
+    }
+  })
+  sampler.connect(chorus)
+
+  // ── sound-source state ────────────────────────────────────────────────────────
+  let currentSource: SoundSource = 'sample'
+
+  // ── shared state ─────────────────────────────────────────────────────────────
   // Round-robin cursor — tracks the last allocated voice slot.
   let voiceIndex = -1
   let started = false
@@ -132,8 +178,8 @@ export const createQanunEngine = ({
     return voices[voiceIndex]
   }
 
-  /** Fire a single raw attack on one voice (used by both pluck and rashsh). */
-  const fireVoice = (
+  /** Fire a single raw attack on one synth voice (used by both pluck and rashsh). */
+  const fireSynthVoice = (
     freqHz: number,
     gainValue: number,
     time?: number
@@ -141,6 +187,23 @@ export const createQanunEngine = ({
     const v = allocVoice()
     v.gain.gain.rampTo(gainValue, VOICE_GAIN_RAMP)
     v.synth.triggerAttack(freqHz, time)
+  }
+
+  /**
+   * Fire a single attack through whichever voice is active.
+   * - If soundSource === 'sample' AND sampler is loaded → use sampler.
+   * - Otherwise → fall back to synth.
+   */
+  const fireVoice = (
+    freqHz: number,
+    gainValue: number,
+    time?: number
+  ): void => {
+    if (currentSource === 'sample' && sampleLoaded) {
+      sampler.triggerAttack(freqHz, time, gainValue)
+    } else {
+      fireSynthVoice(freqHz, gainValue, time)
+    }
   }
 
   // ── public methods ──────────────────────────────────────────────────────────
@@ -153,7 +216,8 @@ export const createQanunEngine = ({
 
   /**
    * Pluck a note: fires one voice per COURSE_CENTS offset (triple-course bloom).
-   * Signature unchanged from v1 — all call-sites remain valid.
+   * For the sampler path we fire 3 separate triggerAttacks at detuned frequencies
+   * so the shimmer is preserved; for the synth path we use the original voice pool.
    */
   const pluck = ({
     freqHz,
@@ -255,12 +319,18 @@ export const createQanunEngine = ({
     reverb.preDelay = p.preDelaySec
   }
 
+  const setSoundSource = (source: SoundSource): void => {
+    currentSource = source
+  }
+
   const dispose = (): void => {
     holdStop()
     voices.forEach((v) => {
       v.synth.dispose()
       v.gain.dispose()
     })
+    sampler.dispose()
+    chorus.dispose()
     reverb.dispose()
     sumBus.dispose()
   }
@@ -278,11 +348,18 @@ export const createQanunEngine = ({
     setReverbWet,
     setReverbSize,
     getSampleRate,
+    setSoundSource,
     get sumBus() {
       return sumBus as unknown as Gain
     },
     get isStarted() {
       return started
+    },
+    get soundSource() {
+      return currentSource
+    },
+    get isSampleLoaded() {
+      return sampleLoaded
     }
   }
 }

@@ -1,16 +1,23 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createQanunEngine } from './createQanunEngine'
+import { QANUN_SAMPLE_URLS } from './qanunSamples'
 
 // ─── mock factory ────────────────────────────────────────────────────────────
 
 const makeMockTone = () => {
-  const triggerAttack = vi.fn()
+  const triggerAttack = vi.fn()           // PluckSynth triggerAttack
+  const samplerTriggerAttack = vi.fn()    // Sampler triggerAttack
+  const samplerDispose = vi.fn()
+  let samplerOnload: (() => void) | undefined
   const voiceGainRampTo = vi.fn()
   const reverbWetRampTo = vi.fn()
   const loopStop = vi.fn()
   const loopDispose = vi.fn()
   const loopStart = vi.fn()
   const transportStart = vi.fn()
+  const chorusStart = vi.fn()
+  const chorusDispose = vi.fn()
+  const chorusWetValue = { value: 0 }
 
   const ToneMock = {
     start: vi.fn().mockResolvedValue(undefined),
@@ -34,6 +41,23 @@ const makeMockTone = () => {
       connect: vi.fn().mockReturnThis(),
       dispose: vi.fn()
     })),
+    // Tone.Sampler mock: captures onload so tests can simulate loading.
+    Sampler: vi.fn().mockImplementation((opts: { onload?: () => void }) => {
+      samplerOnload = opts?.onload
+      return {
+        triggerAttack: samplerTriggerAttack,
+        connect: vi.fn().mockReturnThis(),
+        dispose: samplerDispose
+      }
+    }),
+    // Tone.Chorus mock: subtle shimmer on sampler path.
+    Chorus: vi.fn().mockImplementation(() => ({
+      wet: chorusWetValue,
+      connect: vi.fn().mockReturnThis(),
+      start: chorusStart,
+      stop: vi.fn(),
+      dispose: chorusDispose
+    })),
     // Tone.Loop mock: captures the callback so tests can inspect it.
     Loop: vi.fn().mockImplementation(() => ({
       start: loopStart,
@@ -43,15 +67,26 @@ const makeMockTone = () => {
     Transport: { start: transportStart }
   }
 
+  /** Simulate the sampler finishing its async buffer load. */
+  const simulateSamplerLoaded = () => {
+    samplerOnload?.()
+  }
+
   return {
     ToneMock,
     triggerAttack,
+    samplerTriggerAttack,
+    samplerDispose,
+    simulateSamplerLoaded,
     voiceGainRampTo,
     reverbWetRampTo,
     loopStop,
     loopDispose,
     loopStart,
-    transportStart
+    transportStart,
+    chorusStart,
+    chorusDispose,
+    chorusWetValue
   }
 }
 
@@ -67,17 +102,20 @@ const ENGINE_ARGS = (ToneMock: unknown, polyphony = 4) => ({
 // ─── surface / backwards-compat tests ────────────────────────────────────────
 
 describe('createQanunEngine — surface', () => {
-  it('exposes the documented surface including holdStart/holdStop', () => {
+  it('exposes the documented surface including holdStart/holdStop and P2 sampler methods', () => {
     const { ToneMock } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     for (const fn of [
       'start', 'dispose', 'pluck',
       'holdStart', 'holdStop',
-      'setReverbEnabled', 'setReverbWet', 'setReverbSize', 'getSampleRate'
+      'setReverbEnabled', 'setReverbWet', 'setReverbSize', 'getSampleRate',
+      'setSoundSource'
     ]) {
       expect(typeof (e as unknown as Record<string, unknown>)[fn]).toBe('function')
     }
     expect(e.isStarted).toBe(false)
+    expect(e.soundSource).toBe('sample')
+    expect(e.isSampleLoaded).toBe(false)
   })
 
   it('start() unlocks the audio context once, even when called twice', async () => {
@@ -432,5 +470,108 @@ describe('createQanunEngine — trill', () => {
     expect(capturedCalls).toHaveLength(5 * 3)
     const uniqueTimes = [...new Set(capturedCalls.map(c => c.time))].sort((a, b) => a - b)
     expect(uniqueTimes.length).toBe(5)
+  })
+})
+
+// ─── P2: Tone.Sampler construction ───────────────────────────────────────────
+
+describe('createQanunEngine — sampler construction', () => {
+  it('builds a Tone.Sampler with the QANUN_SAMPLE_URLS map', () => {
+    const { ToneMock } = makeMockTone()
+    createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(ToneMock.Sampler).toHaveBeenCalledTimes(1)
+    const opts = ToneMock.Sampler.mock.calls[0][0] as { urls: Record<string, string>; baseUrl: string }
+    // The urls object should match the exported sample map exactly.
+    expect(opts.urls).toEqual(QANUN_SAMPLE_URLS)
+    expect(Object.keys(opts.urls)).toHaveLength(17)
+  })
+
+  it('builds a Tone.Chorus for the sampler shimmer path', () => {
+    const { ToneMock } = makeMockTone()
+    createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(ToneMock.Chorus).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts the Chorus LFO on construction', () => {
+    const { ToneMock, chorusStart } = makeMockTone()
+    createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(chorusStart).toHaveBeenCalledTimes(1)
+  })
+
+  it('defaults to soundSource=sample and isSampleLoaded=false before onload fires', () => {
+    const { ToneMock } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(e.soundSource).toBe('sample')
+    expect(e.isSampleLoaded).toBe(false)
+  })
+
+  it('isSampleLoaded becomes true after the Sampler onload callback fires', () => {
+    const { ToneMock, simulateSamplerLoaded } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(e.isSampleLoaded).toBe(false)
+    simulateSamplerLoaded()
+    expect(e.isSampleLoaded).toBe(true)
+  })
+})
+
+// ─── P2: sound-source routing ─────────────────────────────────────────────────
+
+describe('createQanunEngine — sound-source routing', () => {
+  it('pluck() falls back to synth when source=sample but sampler not yet loaded', () => {
+    const { ToneMock, triggerAttack, samplerTriggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    // Default: source=sample, loaded=false → synth fallback
+    e.pluck({ freqHz: 440, velocity: 0.7 })
+    expect(triggerAttack).toHaveBeenCalled()        // synth fired
+    expect(samplerTriggerAttack).not.toHaveBeenCalled() // sampler NOT fired
+  })
+
+  it('pluck() uses sampler when source=sample AND sampler is loaded', () => {
+    const { ToneMock, triggerAttack, samplerTriggerAttack, simulateSamplerLoaded } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    simulateSamplerLoaded()
+    e.pluck({ freqHz: 440, velocity: 0.7 })
+    expect(samplerTriggerAttack).toHaveBeenCalled()  // sampler fired
+    expect(triggerAttack).not.toHaveBeenCalled()     // synth NOT fired
+  })
+
+  it('pluck() fires sampler 3× (triple-course) when loaded', () => {
+    const { ToneMock, samplerTriggerAttack, simulateSamplerLoaded } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    simulateSamplerLoaded()
+    e.pluck({ freqHz: 440, velocity: 0.8 })
+    // 3 detuned attacks on the sampler
+    expect(samplerTriggerAttack).toHaveBeenCalledTimes(3)
+  })
+
+  it('setSoundSource("synth") routes pluck to synth even when sampler is loaded', () => {
+    const { ToneMock, triggerAttack, samplerTriggerAttack, simulateSamplerLoaded } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    simulateSamplerLoaded()
+    e.setSoundSource('synth')
+    expect(e.soundSource).toBe('synth')
+    e.pluck({ freqHz: 440, velocity: 0.7 })
+    expect(triggerAttack).toHaveBeenCalled()         // synth fired
+    expect(samplerTriggerAttack).not.toHaveBeenCalled()
+  })
+
+  it('setSoundSource("sample") switches back to sampler after synth mode', () => {
+    const { ToneMock, triggerAttack, samplerTriggerAttack, simulateSamplerLoaded } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    simulateSamplerLoaded()
+    e.setSoundSource('synth')
+    e.setSoundSource('sample')
+    expect(e.soundSource).toBe('sample')
+    e.pluck({ freqHz: 440, velocity: 0.7 })
+    expect(samplerTriggerAttack).toHaveBeenCalled()
+    expect(triggerAttack).not.toHaveBeenCalled()
+  })
+
+  it('dispose() disposes the sampler and chorus', () => {
+    const { ToneMock, samplerDispose, chorusDispose } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.dispose()
+    expect(samplerDispose).toHaveBeenCalledTimes(1)
+    expect(chorusDispose).toHaveBeenCalledTimes(1)
   })
 })
