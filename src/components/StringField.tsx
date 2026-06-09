@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from 'react'
+import { useRef, useCallback, useEffect, memo } from 'react'
 import type { Course } from '../lib/music/types'
 import {
   PLAY_FIELD_LEFT,
@@ -11,8 +11,8 @@ import { createVibrato } from '../lib/gesture/vibrato'
 
 interface StringFieldProps {
   courses: Course[]
-  highlightIndex: number | null   // nearest course under a playing finger
-  pluckedIndex: number | null     // course that just sounded (for feedback)
+  highlightIndices: number[]      // courses under a playing finger (both hands)
+  pluckedIndices: number[]        // courses that just sounded (for feedback)
   homeDegree: number              // field degree the maqam tonic is anchored on (1/2/3)
   // Pointer play
   onPluckCourse: (index: number) => void
@@ -27,10 +27,10 @@ const HOLD_DELAY_MS = 150
 // Vertical brass strings across the play field. Each course is positioned at
 // its screen x (matching nearestCourse, so visuals and hit-testing agree).
 // The wrapper div captures pointer events for mouse/touch play (§2 spec).
-export const StringField = ({
+export const StringField = memo(({
   courses,
-  highlightIndex,
-  pluckedIndex,
+  highlightIndices,
+  pluckedIndices,
   homeDegree,
   onPluckCourse,
   onGlideCourse,
@@ -153,8 +153,8 @@ export const StringField = ({
         const classes = [
           'course',
           c.degree === homeDegree ? 'is-home' : '',
-          c.index === highlightIndex ? 'is-highlight' : '',
-          c.index === pluckedIndex ? 'is-plucked' : ''
+          highlightIndices.includes(c.index) ? 'is-highlight' : '',
+          pluckedIndices.includes(c.index) ? 'is-plucked' : ''
         ].filter(Boolean).join(' ')
         return (
           <span key={c.index} className={classes} style={{ left: `${xPct}%` }} data-degree={c.degree} aria-hidden>
@@ -166,4 +166,4 @@ export const StringField = ({
       })}
     </div>
   )
-}
+})

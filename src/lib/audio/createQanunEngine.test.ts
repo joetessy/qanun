@@ -563,9 +563,9 @@ describe('createQanunEngine — holdAlternate', () => {
     expect(ToneMock.Loop).toHaveBeenCalledTimes(1)
     const [callback, interval] = ToneMock.Loop.mock.calls[0]
     expect(typeof callback).toBe('function')
-    // Alternation ticks at ALTERNATE_HZ (5.5) — slower than the single-note
-    // rashsh (10 Hz) so the two pitches are individually audible.
-    expect(interval).toBeCloseTo(1 / 5.5, 3)
+    // Alternation ticks at ALTERNATE_HZ (= RASHSH_HZ, 10 Hz) — the same tremolo
+    // rate as a single held string, the loop alternating between the two pitches.
+    expect(interval).toBeCloseTo(1 / 10, 3)
     expect(loopStart).toHaveBeenCalledWith(0)
     expect(transportStart).toHaveBeenCalledTimes(1)
     // No initial pluck — the caller already plucked.

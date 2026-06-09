@@ -58,8 +58,8 @@ export interface UseQanunEngine {
   courses: Course[]
   mandalState: MandalState
   tonicMidi: number
-  highlightIndex: number | null
-  pluckedIndex: number | null
+  highlightIndices: number[]
+  pluckedIndices: number[]
   start: () => Promise<void>
   stop: () => void
   setTonic: (midi: number) => void
@@ -125,8 +125,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const [lowerJins, setLowerJinsState] = useState('rast')
   const [upperJins, setUpperJinsState] = useState('rast')
   const [homeDegree, setHomeDegreeState] = useState(1)
-  const [highlightIndex, setHighlightIndex] = useState<number | null>(null)
-  const [pluckedIndex, setPluckedIndex] = useState<number | null>(null)
+  const [highlightIndices, setHighlightIndices] = useState<number[]>([])
+  const [pluckedIndices, setPluckedIndices] = useState<number[]>([])
   const [courses, setCourses] = useState<Course[]>(() =>
     buildField({ tonicMidi: DEFAULT_TONIC_MIDI, mandalState: DEFAULT_RAST_STATE })
   )
@@ -186,8 +186,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // Tighter close/open thresholds than the defaults so a pluck fires only on a
   // real (near-complete) pinch, not as the fingers approach.
   const pinchPlayRef = useRef([
-    createPinchPlay({ glideDebounceSec: 0.07, closeThreshold: 0.038, openThreshold: 0.055 }),
-    createPinchPlay({ glideDebounceSec: 0.07, closeThreshold: 0.038, openThreshold: 0.055 })
+    createPinchPlay({ glideDebounceSec: 0.07, closeThreshold: 0.03, openThreshold: 0.045 }),
+    createPinchPlay({ glideDebounceSec: 0.07, closeThreshold: 0.03, openThreshold: 0.045 })
   ])
   const fingerFiltersRef = useRef([createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 }), createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 })])
   // Per-hand vibrato detectors — a deliberate vertical wave on either hand bends
@@ -196,6 +196,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const vibratoRefs = useRef([createVibrato(), createVibrato()])
   const sustainCourseRef = useRef<(number | null)[]>([null, null])
   const lastHoldKeyRef = useRef('')
+  // Guards so the per-frame highlight/pluck setState only fires when the set of
+  // lit courses actually changes (otherwise React re-renders 84 string spans every frame).
+  const lastHoverKeyRef = useRef('')
+  const lastPluckedKeyRef = useRef('')
 
   const recompute = useCallback((next: MandalState, nextTonic: number): void => {
     const field = buildField({ tonicMidi: nextTonic, mandalState: next })
@@ -476,8 +480,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       const audio = audioRef.current
       const field = coursesRef.current
       if (!audio || !field[index]) return
-      setHighlightIndex(index)
-      setPluckedIndex(index)
+      setHighlightIndices([index])
+      setPluckedIndices([index])
       pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
       audio.pluck({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY })
       emitMidi(field[index].freqHz, POINTER_VELOCITY)
@@ -489,8 +493,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       const audio = audioRef.current
       const field = coursesRef.current
       if (!audio || !field[index]) return
-      setHighlightIndex(index)
-      setPluckedIndex(index)
+      setHighlightIndices([index])
+      setPluckedIndices([index])
       pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
       audio.pluck({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY })
       emitMidi(field[index].freqHz, POINTER_VELOCITY)
@@ -502,7 +506,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       const audio = audioRef.current
       const field = coursesRef.current
       if (!audio || !field[index]) return
-      setHighlightIndex(index)
+      setHighlightIndices([index])
       holdingRef.current = true
       // Pass immediate:false because pluckCourse() already attacked ~150 ms
       // earlier on pointer-down; we only want to start the rashsh loop.
@@ -562,8 +566,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
     // --- Playing hands ---
     let lastPluckMidi: number | null = null
-    let primaryCourse: number | null = null
-    let pluckedCourse: number | null = null
+    const hoverCourses: number[] = []
+    const pluckedCourses: number[] = []
     // Raw (un-mirrored) index-tip y per slot — fed to the vibrato detector after
     // the loop for whichever slot is sustaining. -1 = no tip this frame.
     const slotTipY: number[] = [-1, -1]
@@ -581,8 +585,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         fieldLeft: PLAY_FIELD_LEFT,
         fieldRight: PLAY_FIELD_RIGHT
       })
-      // Slot 0 is the primary playing hand — the string it hovers is highlighted.
-      if (slot === 0) primaryCourse = course
+      // Every playing hand's hovered string is highlighted (both hands).
+      hoverCourses.push(course)
       // Pinch-as-button: pluck on close edge, sustain when held, glide on course change.
       const pinchEvts = pinchPlayRef.current[slot].update({
         pinchDist,
@@ -599,7 +603,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
             // Record the held course; the reconcile (after the loop) starts the
             // rashsh — alternating between the two when both hands hold at once.
             sustainCourseRef.current[slot] = c
-            pluckedCourse = c
+            pluckedCourses.push(c)
           }
         } else if (ev.type === 'pluck') {
           const c = ev.courseIndex
@@ -607,7 +611,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
             audio.pluck({ freqHz: field[c].freqHz, velocity: ev.velocity })
             emitMidi(field[c].freqHz, ev.velocity)
             lastPluckMidi = field[c].midi
-            pluckedCourse = c
+            pluckedCourses.push(c)
           }
         } else if (ev.type === 'glide') {
           const c = ev.courseIndex
@@ -616,7 +620,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
             audio.pluck({ freqHz: field[c].freqHz, velocity: ev.velocity })
             emitMidi(field[c].freqHz, ev.velocity)
             lastPluckMidi = field[c].midi
-            pluckedCourse = c
+            pluckedCourses.push(c)
           }
         }
       }
@@ -662,12 +666,18 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     }
 
     // --- String highlight / pluck feedback (state for StringField) ---
-    setHighlightIndex(primaryCourse)
-    if (pluckedCourse !== null) {
-      setPluckedIndex(pluckedCourse)
+    const hoverKey = hoverCourses.slice().sort((a, b) => a - b).join(',')
+    if (hoverKey !== lastHoverKeyRef.current) {
+      lastHoverKeyRef.current = hoverKey
+      setHighlightIndices(hoverCourses)
+    }
+    if (pluckedCourses.length > 0) {
+      setPluckedIndices(pluckedCourses)
+      lastPluckedKeyRef.current = pluckedCourses.slice().sort((a, b) => a - b).join(',')
       pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
-    } else if (frameCounterRef.current >= pluckClearRef.current) {
-      setPluckedIndex(null)
+    } else if (frameCounterRef.current >= pluckClearRef.current && lastPluckedKeyRef.current !== '') {
+      setPluckedIndices([])
+      lastPluckedKeyRef.current = ''
     }
 
     // --- Overlay drawing (finger rings) ---
@@ -727,8 +737,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       lastHoldKeyRef.current = ''
       frameCounterRef.current = 0
       pluckClearRef.current = 0
-      setHighlightIndex(null)
-      setPluckedIndex(null)
+      setHighlightIndices([])
+      setPluckedIndices([])
       runningRef.current = true
       setStatus('running')
       frameHandleRef.current = scheduleVideoFrame({ video, callback: tick })
@@ -758,8 +768,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
-    setHighlightIndex(null)
-    setPluckedIndex(null)
+    setHighlightIndices([])
+    setPluckedIndices([])
     setStatus('idle')
   }, [videoRef, canvasRef])
 
@@ -798,8 +808,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     courses,
     mandalState,
     tonicMidi,
-    highlightIndex,
-    pluckedIndex,
+    highlightIndices,
+    pluckedIndices,
     start,
     stop,
     setTonic,

@@ -78,8 +78,8 @@ export const Qanun = () => {
         />
         <StringField
           courses={engine.courses}
-          highlightIndex={engine.highlightIndex}
-          pluckedIndex={engine.pluckedIndex}
+          highlightIndices={engine.highlightIndices}
+          pluckedIndices={engine.pluckedIndices}
           homeDegree={engine.homeDegree}
           onPluckCourse={engine.pluckCourse}
           onGlideCourse={engine.glideCourse}

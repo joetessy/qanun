@@ -82,9 +82,10 @@ const RASHSH_INTERVAL = 1 / RASHSH_HZ
  * Alternation rate (Hz) for a two-string hold (holdAlternate). Deliberately
  * slower than the single-note rashsh (RASHSH_HZ) so the two pitches are
  * individually audible as a back-and-forth instead of blurring into a unison
- * tremolo. ~5.5 Hz ⇒ each note sounds ~0.18 s per turn.
+ * tremolo at the SAME rate as the single-string rashsh (the user wants the same
+ * tremolo speed), the loop alternating between the two held pitches.
  */
-const ALTERNATE_HZ = 5.5
+const ALTERNATE_HZ = RASHSH_HZ
 const ALTERNATE_INTERVAL = 1 / ALTERNATE_HZ
 
 /** Trill attack spacing — same 7 Hz rhythm as rashsh, but finite. */
