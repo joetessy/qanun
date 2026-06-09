@@ -116,7 +116,7 @@ export const Qanun = () => {
             jinsPairs={JINS_PAIRS}
           />
         )}
-        <CameraInset enabled={engine.status === 'running'} />
+        <CameraInset stream={engine.cameraStream} />
 
         {/* First-run onboarding guide — overlaid above everything, dismissible. */}
         {showOnboarding && <Onboarding onDismiss={dismissOnboarding} />}

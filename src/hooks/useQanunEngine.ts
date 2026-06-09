@@ -62,6 +62,7 @@ export interface UseQanunEngine {
   tonicMidi: number
   highlightIndex: number | null
   pluckedIndex: number | null
+  cameraStream: MediaStream | null
   start: () => Promise<void>
   stop: () => void
   setTonic: (midi: number) => void
@@ -127,6 +128,7 @@ const EMPTY_READING: QanunReading = {
 export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): UseQanunEngine => {
   const [status, setStatus] = useState<QanunStatus>('idle')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
   const [reading, setReading] = useState<QanunReading>(EMPTY_READING)
   const [tonicMidi, setTonicMidi] = useState(DEFAULT_TONIC_MIDI)
   const [mandalState, setMandalStateRaw] = useState<MandalState>(DEFAULT_RAST_STATE)
@@ -684,7 +686,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       const video = videoRef.current
       const canvas = canvasRef.current
       if (!video || !canvas) throw new Error('Video/canvas element missing')
-      const { width, height } = await startCamera({ video })
+      const { stream, width, height } = await startCamera({ video })
+      setCameraStream(stream)
       canvas.width = width
       canvas.height = height
       pinchPlayRef.current.forEach((d) => d.reset())
@@ -708,6 +711,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     frameHandleRef.current?.cancel()
     frameHandleRef.current = null
     stopCamera({ video: videoRef.current })
+    setCameraStream(null)
     // Reset gesture state, symmetric with start(), so a Stop→Start cycle doesn't
     // inherit a stale One-Euro timestamp (which would spike the derivative and
     // misfire on the first frame back).
@@ -753,6 +757,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
   return {
     status,
+    cameraStream,
     errorMsg,
     reading,
     courses,
