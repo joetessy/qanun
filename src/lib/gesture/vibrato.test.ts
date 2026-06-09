@@ -25,6 +25,16 @@ describe('createVibrato', () => {
     expect(r.rateHz).toBeGreaterThan(4)
     expect(r.rateHz).toBeLessThan(8)
   })
+  it('slow drift (2 Hz, below the wave-rate floor) → no vibrato even at full amplitude', () => {
+    // A gentle 2 Hz vertical sway should NOT register as an intentional wave,
+    // regardless of how large the excursion is.
+    const slow = feedSine(createVibrato(), { amp: 0.06, freq: 2, secs: 0.4, dt: 1 / 60 })
+    expect(slow.cents).toBe(0)
+    expect(slow.rateHz).toBe(0)
+    // Sanity: the deliberate 6 Hz wave with the same amplitude still registers.
+    const fast = feedSine(createVibrato(), { amp: 0.06, freq: 6, secs: 0.4, dt: 1 / 60 })
+    expect(fast.cents).toBeGreaterThan(0)
+  })
   it('bigger wobble → more cents (clamped)', () => {
     const small = feedSine(createVibrato(), { amp: 0.01, freq: 6, secs: 0.4, dt: 1 / 60 })
     const big = feedSine(createVibrato(), { amp: 0.06, freq: 6, secs: 0.4, dt: 1 / 60 })

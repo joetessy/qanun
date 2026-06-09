@@ -18,6 +18,12 @@ const makeMockTone = () => {
   const chorusStart = vi.fn()
   const chorusDispose = vi.fn()
   const chorusWetValue = { value: 0 }
+  // Tone.LFO mock: a settable min/max + frequency.value, plus start/connect/dispose.
+  const lfoStart = vi.fn()
+  const lfoConnect = vi.fn()
+  const lfoDispose = vi.fn()
+  // Capture the live LFO object so tests can assert on min/max/frequency.value.
+  const lfoState = { min: 0, max: 0, frequency: { value: 0 } }
 
   const ToneMock = {
     start: vi.fn().mockResolvedValue(undefined),
@@ -65,6 +71,23 @@ const makeMockTone = () => {
       stop: loopStop,
       dispose: loopDispose
     })),
+    // Tone.LFO mock: min/max/frequency proxy to lfoState so tests can read
+    // what setVibrato() wrote.
+    LFO: vi.fn().mockImplementation((opts: { frequency?: number; min?: number; max?: number }) => {
+      lfoState.min = opts?.min ?? 0
+      lfoState.max = opts?.max ?? 0
+      lfoState.frequency.value = opts?.frequency ?? 0
+      return {
+        get min() { return lfoState.min },
+        set min(v: number) { lfoState.min = v },
+        get max() { return lfoState.max },
+        set max(v: number) { lfoState.max = v },
+        frequency: lfoState.frequency,
+        start: lfoStart,
+        connect: lfoConnect,
+        dispose: lfoDispose
+      }
+    }),
     Transport: { start: transportStart }
   }
 
@@ -87,7 +110,11 @@ const makeMockTone = () => {
     transportStart,
     chorusStart,
     chorusDispose,
-    chorusWetValue
+    chorusWetValue,
+    lfoStart,
+    lfoConnect,
+    lfoDispose,
+    lfoState
   }
 }
 
@@ -108,7 +135,7 @@ describe('createQanunEngine — surface', () => {
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     for (const fn of [
       'start', 'dispose', 'pluck',
-      'holdStart', 'holdStop',
+      'holdStart', 'holdAlternate', 'holdStop',
       'trill',
       'setReverbEnabled', 'setReverbWet', 'setReverbSize', 'getSampleRate',
       'getRecorderTap',
@@ -309,8 +336,8 @@ describe('createQanunEngine — rashsh hold', () => {
     // Loop constructor receives (callback, interval).
     const [callback, interval] = ToneMock.Loop.mock.calls[0]
     expect(typeof callback).toBe('function')
-    // Interval should be close to 1/13 s (rashsh ~13 Hz).
-    expect(interval).toBeCloseTo(1 / 13, 3)
+    // Interval should be close to 1/10 s (rashsh ~10 Hz).
+    expect(interval).toBeCloseTo(1 / 10, 3)
 
     expect(loopStart).toHaveBeenCalledWith(0)
     expect(transportStart).toHaveBeenCalledTimes(1)
@@ -374,12 +401,159 @@ describe('createQanunEngine — rashsh hold', () => {
   })
 
   it('setVibrato clamps cents to [0, MAX] and is callable before any hold', () => {
-    const { ToneMock } = makeMockTone()
+    const { ToneMock, lfoState } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     expect(typeof (e as unknown as Record<string, unknown>).setVibrato).toBe('function')
     // Out-of-range cents (high/low) and an optional rate are all tolerated.
     expect(() => e.setVibrato({ cents: 999 })).not.toThrow()
+    // 999 clamps to MAX_VIBRATO_CENTS (70) → LFO swings ±70.
+    expect(lfoState.max).toBe(70)
+    expect(lfoState.min).toBe(-70)
     expect(() => e.setVibrato({ cents: -5, rateHz: 6 })).not.toThrow()
+    // Negative cents clamps to 0 → no swing; rateHz drives the LFO frequency.
+    expect(lfoState.max).toBe(0)
+    expect(lfoState.min).toBe(0)
+    expect(lfoState.frequency.value).toBe(6)
+  })
+})
+
+// ─── vibrato LFO (modulates the sampler's detune) ────────────────────────────
+
+describe('createQanunEngine — vibrato LFO', () => {
+  it('creates and starts a Tone.LFO at engine setup', () => {
+    const { ToneMock, lfoStart } = makeMockTone()
+    createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(ToneMock.LFO).toHaveBeenCalledTimes(1)
+    expect(lfoStart).toHaveBeenCalledTimes(1)
+  })
+
+  it('setVibrato({ cents }) drives the LFO depth symmetrically (min=-cents, max=+cents)', () => {
+    const { ToneMock, lfoState } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.setVibrato({ cents: 40 })
+    expect(lfoState.min).toBe(-40)
+    expect(lfoState.max).toBe(40)
+  })
+
+  it('setVibrato({ cents: 0 }) collapses the LFO to no audible vibrato (min=max=0)', () => {
+    const { ToneMock, lfoState } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.setVibrato({ cents: 50, rateHz: 6 })
+    e.setVibrato({ cents: 0 })
+    expect(lfoState.min).toBe(0)
+    expect(lfoState.max).toBe(0)
+  })
+
+  it('dispose() disposes the vibrato LFO', () => {
+    const { ToneMock, lfoDispose } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.dispose()
+    expect(lfoDispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('setVibrato is a safe no-op when Tone has no LFO (mock without LFO)', () => {
+    const base = makeMockTone()
+    // Simulate a mock that lacks LFO: setVibrato must no-op rather than crash.
+    const toneNoLfo = { ...base.ToneMock, LFO: undefined }
+    const e = createQanunEngine({
+      Tone: toneNoLfo as unknown as typeof import('tone'),
+      polyphony: 4
+    })
+    expect(() => e.setVibrato({ cents: 30, rateHz: 6 })).not.toThrow()
+  })
+})
+
+// ─── holdAlternate (two-string alternating hold) ─────────────────────────────
+
+describe('createQanunEngine — holdAlternate', () => {
+  it('is exposed on the engine surface', () => {
+    const { ToneMock } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    expect(typeof (e as unknown as Record<string, unknown>).holdAlternate).toBe('function')
+  })
+
+  it('creates a Tone.Loop and starts Tone.Transport, no immediate attack', () => {
+    const { ToneMock, loopStart, transportStart, triggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+    expect(ToneMock.Loop).toHaveBeenCalledTimes(1)
+    const [callback, interval] = ToneMock.Loop.mock.calls[0]
+    expect(typeof callback).toBe('function')
+    expect(interval).toBeCloseTo(1 / 10, 3) // RASHSH_HZ = 10
+    expect(loopStart).toHaveBeenCalledWith(0)
+    expect(transportStart).toHaveBeenCalledTimes(1)
+    // No initial pluck — the caller already plucked.
+    expect(triggerAttack).not.toHaveBeenCalled()
+  })
+
+  it('alternates through freqs in order, starting with the first (higher) entry', () => {
+    const { ToneMock, triggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+    // Drive the captured loop callback tick-by-tick.
+    const callback = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
+
+    // Tick 0 → freqs[0] = 660 (the higher note sounds first).
+    triggerAttack.mockClear()
+    callback(0)
+    let freqs = triggerAttack.mock.calls.map((c) => c[0] as number)
+    expect(freqs.some((f) => Math.abs(f - 660) < 1)).toBe(true)
+    expect(freqs.some((f) => Math.abs(f - 440) < 1)).toBe(false)
+
+    // Tick 1 → freqs[1] = 440.
+    triggerAttack.mockClear()
+    callback(0.1)
+    freqs = triggerAttack.mock.calls.map((c) => c[0] as number)
+    expect(freqs.some((f) => Math.abs(f - 440) < 1)).toBe(true)
+    expect(freqs.some((f) => Math.abs(f - 660) < 1)).toBe(false)
+
+    // Tick 2 → wraps back to freqs[0] = 660.
+    triggerAttack.mockClear()
+    callback(0.2)
+    freqs = triggerAttack.mock.calls.map((c) => c[0] as number)
+    expect(freqs.some((f) => Math.abs(f - 660) < 1)).toBe(true)
+  })
+
+  it('fires 3 detuned voices per tick (triple-course)', () => {
+    const { ToneMock, triggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+    const callback = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
+    triggerAttack.mockClear()
+    callback(0)
+    expect(triggerAttack).toHaveBeenCalledTimes(3)
+  })
+
+  it('cancels a previous hold before starting (single active loop)', () => {
+    const { ToneMock, loopStop, loopDispose } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.holdStart({ freqHz: 440, velocity: 0.7 })
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+    expect(loopStop).toHaveBeenCalledTimes(1)
+    expect(loopDispose).toHaveBeenCalledTimes(1)
+    expect(ToneMock.Loop).toHaveBeenCalledTimes(2)
+  })
+
+  it('skips non-finite freqs per tick without throwing', () => {
+    const { ToneMock, triggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdAlternate({ freqs: [NaN, 440], velocity: 0.7 })
+    const callback = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
+    // Tick 0 → NaN → no attack.
+    triggerAttack.mockClear()
+    expect(() => callback(0)).not.toThrow()
+    expect(triggerAttack).not.toHaveBeenCalled()
+    // Tick 1 → 440 → 3 attacks.
+    triggerAttack.mockClear()
+    callback(0.1)
+    expect(triggerAttack).toHaveBeenCalledTimes(3)
+  })
+
+  it('empty freqs is a no-op (no loop created)', () => {
+    const { ToneMock } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.holdAlternate({ freqs: [], velocity: 0.7 })
+    expect(ToneMock.Loop).not.toHaveBeenCalled()
   })
 })
 

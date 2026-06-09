@@ -4,11 +4,13 @@
 export interface VibratoOut { cents: number; rateHz: number }
 
 export interface VibratoOptions {
-  windowSec?: number   // analysis window
-  maxCents?: number    // clamp
-  ampToCents?: number  // normalized-y peak-to-peak → cents gain
+  windowSec?: number      // analysis window
+  maxCents?: number       // clamp
+  ampToCents?: number     // normalized-y peak-to-peak → cents gain
   minRateHz?: number
   maxRateHz?: number
+  minWaveRateHz?: number  // below this estimated rate, treat motion as slow drift → no vibrato
+  minCents?: number       // amplitude floor — wobbles quieter than this → no vibrato
 }
 
 export interface Vibrato {
@@ -24,6 +26,11 @@ export const createVibrato = (opts: VibratoOptions = {}): Vibrato => {
   const ampToCents = opts.ampToCents ?? 1400 // 0.05 p2p → ~70 cents
   const minRateHz = opts.minRateHz ?? 3
   const maxRateHz = opts.maxRateHz ?? 9
+  // Below this *raw* (pre-clamp) estimated rate, the motion is slow vertical
+  // drift — not a deliberate wave — so it produces no vibrato.
+  const minWaveRateHz = opts.minWaveRateHz ?? 4
+  // Amplitude floor: wobbles smaller than this many cents are micro-jitter.
+  const minCents = opts.minCents ?? 2
 
   let buf: { y: number; t: number }[] = []
 
@@ -45,8 +52,14 @@ export const createVibrato = (opts: VibratoOptions = {}): Vibrato => {
     const peakToPeak = max - min
     const cents = Math.min(maxCents, peakToPeak * ampToCents)
     const span = Math.max(1e-3, buf[buf.length - 1].t - buf[0].t)
-    const rateHz = Math.min(maxRateHz, Math.max(minRateHz, crossings / (2 * span)))
-    if (cents < 1) return { cents: 0, rateHz: 0 }
+    // Raw (pre-clamp) wave rate from sign-crossings. Slow drift crosses the
+    // mean rarely, so this stays low; a deliberate wave pushes it up.
+    const rawRateHz = crossings / (2 * span)
+    // Slow drift → not an intentional vibrato.
+    if (rawRateHz < minWaveRateHz) return { cents: 0, rateHz: 0 }
+    // Micro-jitter amplitude → ignore.
+    if (cents < minCents) return { cents: 0, rateHz: 0 }
+    const rateHz = Math.min(maxRateHz, Math.max(minRateHz, rawRateHz))
     return { cents, rateHz }
   }
 
