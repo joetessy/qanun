@@ -8,6 +8,7 @@ import { buildField, DEFAULT_TONIC_MIDI } from '../lib/music/buildField'
 import { identifyAjnas } from '../lib/music/identifyAjnas'
 import { applyJinsPair, type JinsPair } from '../lib/music/sayr/jinsPairs'
 import { nearestCourse, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
+import { upperNeighborCourse } from '../lib/gesture/pointerPlay'
 import { createPluckDetector } from '../lib/gesture/detectPluck'
 import { createRakeDetector } from '../lib/gesture/detectRake'
 import { createMandalGesture } from '../lib/gesture/detectMandal'
@@ -60,6 +61,12 @@ export interface UseQanunEngine {
   setMandalState: (state: MandalState) => void
   setMaqamPreset: (id: string) => void
   applyPair: (pair: JinsPair) => void
+  trillEnabled: boolean
+  setTrillEnabled: (b: boolean) => void
+  pluckCourse: (index: number) => void
+  glideCourse: (index: number) => void
+  holdCourse: (index: number) => void
+  releaseHold: () => void
 }
 
 const EMPTY_READING: QanunReading = {
@@ -82,6 +89,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const [courses, setCourses] = useState<Course[]>(() =>
     buildField({ tonicMidi: DEFAULT_TONIC_MIDI, mandalState: DEFAULT_RAST_STATE })
   )
+  const [trillEnabled, setTrillEnabled] = useState(false)
 
   // Hot refs (read inside the frame loop without re-subscribing).
   const tonicRef = useRef(DEFAULT_TONIC_MIDI)
@@ -94,6 +102,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const frameCounterRef = useRef(0)
   // Frame index at which the current pluck glow expires (cleared in tick).
   const pluckClearRef = useRef(0)
+  // Tracks whether a pointer hold (rashsh) is currently active.
+  const holdingRef = useRef(false)
 
   // One detector set per role. Two playing hands → two pluck/rake detectors.
   const pluckDetectorsRef = useRef([createPluckDetector(), createPluckDetector()])
@@ -144,6 +154,67 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const setRakeSensitivity = useCallback((s: RakeSensitivity): void => {
     setRakeSensitivityState(s)
     rakeDetectorsRef.current.forEach((d) => d.setSensitivity(s))
+  }, [])
+
+  /** Lazily creates + starts the audio engine on first user interaction. */
+  const ensureAudioEngine = useCallback(async (): Promise<void> => {
+    if (!audioRef.current) audioRef.current = createQanunEngine({ polyphony: 16 })
+    if (!audioRef.current.isStarted) await audioRef.current.start()
+  }, [])
+
+  // ── Pointer play primitives ─────────────────────────────────────────────────
+  // These work without the webcam — ensureAudioEngine() handles lazy audio init.
+
+  const POINTER_VELOCITY = 0.7
+
+  const pluckCourse = useCallback((index: number): void => {
+    void ensureAudioEngine().then(() => {
+      const audio = audioRef.current
+      const field = coursesRef.current
+      if (!audio || !field[index]) return
+      setHighlightIndex(index)
+      setPluckedIndex(index)
+      pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
+      if (trillEnabled) {
+        const neighborIdx = upperNeighborCourse(index, field.length)
+        audio.trill({
+          freqHz: field[index].freqHz,
+          neighborHz: field[neighborIdx].freqHz,
+          velocity: POINTER_VELOCITY
+        })
+      } else {
+        audio.pluck({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY })
+      }
+    })
+  }, [ensureAudioEngine, trillEnabled])
+
+  const glideCourse = useCallback((index: number): void => {
+    void ensureAudioEngine().then(() => {
+      const audio = audioRef.current
+      const field = coursesRef.current
+      if (!audio || !field[index]) return
+      setHighlightIndex(index)
+      setPluckedIndex(index)
+      pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
+      audio.pluck({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY })
+    })
+  }, [ensureAudioEngine])
+
+  const holdCourse = useCallback((index: number): void => {
+    void ensureAudioEngine().then(() => {
+      const audio = audioRef.current
+      const field = coursesRef.current
+      if (!audio || !field[index]) return
+      setHighlightIndex(index)
+      holdingRef.current = true
+      audio.holdStart({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY })
+    })
+  }, [ensureAudioEngine])
+
+  const releaseHold = useCallback((): void => {
+    if (!holdingRef.current) return
+    holdingRef.current = false
+    audioRef.current?.holdStop()
   }, [])
 
   const tick = useCallback((): void => {
@@ -298,8 +369,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setErrorMsg(null)
     setStatus('loading')
     try {
-      if (!audioRef.current) audioRef.current = createQanunEngine({ polyphony: 16 })
-      await audioRef.current.start()
+      await ensureAudioEngine()
       if (!landmarkerRef.current) landmarkerRef.current = await loadHandLandmarker()
       const video = videoRef.current
       const canvas = canvasRef.current
@@ -322,7 +392,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       setErrorMsg(err instanceof Error ? err.message : String(err))
       setStatus('error')
     }
-  }, [status, videoRef, canvasRef, tick])
+  }, [status, videoRef, canvasRef, tick, ensureAudioEngine])
 
   const stop = useCallback((): void => {
     runningRef.current = false
@@ -372,6 +442,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     cycleMandalDegree,
     setMandalState,
     setMaqamPreset,
-    applyPair
+    applyPair,
+    trillEnabled,
+    setTrillEnabled,
+    pluckCourse,
+    glideCourse,
+    holdCourse,
+    releaseHold
   }
 }
