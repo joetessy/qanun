@@ -7,6 +7,9 @@ import { MAQAM_PRESETS } from '../lib/music/MAQAM_PRESETS'
 import { buildField, DEFAULT_TONIC_MIDI } from '../lib/music/buildField'
 import { identifyAjnas } from '../lib/music/identifyAjnas'
 import { applyJinsPair, type JinsPair } from '../lib/music/sayr/jinsPairs'
+import { suggestModulations } from '../lib/music/sayr/suggestModulations'
+import { emphasisNotes, type EmphasisNotes } from '../lib/music/sayr/emphasisNotes'
+import type { SayrMove } from '../lib/music/sayr/SAYR_NETWORKS'
 import { nearestCourse, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
 import { upperNeighborCourse } from '../lib/gesture/pointerPlay'
 import { createPluckDetector } from '../lib/gesture/detectPluck'
@@ -71,6 +74,13 @@ export interface UseQanunEngine {
   soundSource: SoundSource
   setSoundSource: (s: SoundSource) => void
   isSampleLoaded: boolean
+  // P3: sayr guide + emphasis overlay
+  suggestions: SayrMove[]
+  emphasis: EmphasisNotes
+  showEmphasis: boolean
+  setShowEmphasis: (b: boolean) => void
+  showSayrGuide: boolean
+  setShowSayrGuide: (b: boolean) => void
 }
 
 const EMPTY_READING: QanunReading = {
@@ -97,6 +107,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // P2: sampler sound-source state — defaults before the engine is created.
   const [soundSource, setSoundSourceState] = useState<SoundSource>('sample')
   const [isSampleLoaded, setIsSampleLoaded] = useState(false)
+  // P3: sayr + emphasis toggles (both off by default).
+  const [showEmphasis, setShowEmphasis] = useState(false)
+  const [showSayrGuide, setShowSayrGuide] = useState(false)
 
   // Hot refs (read inside the frame loop without re-subscribing).
   const tonicRef = useRef(DEFAULT_TONIC_MIDI)
@@ -452,6 +465,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     []
   )
 
+  // P3: derive sayr suggestions + emphasis notes from current mandal/courses state.
+  // These are cheap pure-function calls — no memoisation needed at 60fps.
+  const suggestions = suggestModulations(mandalState)
+  const emphasis = emphasisNotes({ mandalState, courses })
+
   return {
     status,
     errorMsg,
@@ -478,6 +496,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     releaseHold,
     soundSource,
     setSoundSource,
-    isSampleLoaded
+    isSampleLoaded,
+    suggestions,
+    emphasis,
+    showEmphasis,
+    setShowEmphasis,
+    showSayrGuide,
+    setShowSayrGuide,
   }
 }

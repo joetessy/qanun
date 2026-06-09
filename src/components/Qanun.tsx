@@ -8,6 +8,9 @@ import { QanunHud } from './QanunHud'
 import { CameraInset } from './CameraInset'
 import { Controls } from './Controls'
 import { Rosette } from './Rosette'
+import { SayrGuide } from './SayrGuide'
+import { EmphasisOverlay } from './EmphasisOverlay'
+import { JINS_PAIRS } from '../lib/music/sayr/jinsPairs'
 import { useQanunEngine } from '../hooks/useQanunEngine'
 
 // The instrument. Composes the camera stage, the painted soundboard overlays
@@ -73,6 +76,20 @@ export const Qanun = () => {
           onHoldCourse={engine.holdCourse}
           onReleaseHold={engine.releaseHold}
         />
+        {/* Emphasis overlay — off by default, layered above strings. */}
+        {engine.showEmphasis && (
+          <EmphasisOverlay courses={engine.courses} emphasis={engine.emphasis} />
+        )}
+        {/* Sayr guide — off by default, positioned above the preset rail. */}
+        {engine.showSayrGuide && (
+          <SayrGuide
+            maqamName={engine.reading.maqamName}
+            suggestions={engine.suggestions}
+            onApplyPreset={engine.setMaqamPreset}
+            onApplyPair={engine.applyPair}
+            jinsPairs={JINS_PAIRS}
+          />
+        )}
         <CameraInset enabled={engine.status === 'running'} />
       </div>
 
@@ -84,11 +101,15 @@ export const Qanun = () => {
           trillEnabled={engine.trillEnabled}
           soundSource={engine.soundSource}
           isSampleLoaded={engine.isSampleLoaded}
+          showEmphasis={engine.showEmphasis}
+          showSayrGuide={engine.showSayrGuide}
           onTonic={engine.setTonic}
           onRakeSensitivity={engine.setRakeSensitivity}
           onApplyPair={engine.applyPair}
           onTrillEnabled={engine.setTrillEnabled}
           onSoundSource={engine.setSoundSource}
+          onShowEmphasis={engine.setShowEmphasis}
+          onShowSayrGuide={engine.setShowSayrGuide}
         />
       </div>
     </div>

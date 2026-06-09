@@ -12,11 +12,15 @@ interface ControlsProps {
   trillEnabled: boolean
   soundSource: SoundSource
   isSampleLoaded: boolean
+  showEmphasis: boolean
+  showSayrGuide: boolean
   onTonic: (midi: number) => void
   onRakeSensitivity: (s: RakeSensitivity) => void
   onApplyPair: (pair: JinsPair) => void
   onTrillEnabled: (b: boolean) => void
   onSoundSource: (s: SoundSource) => void
+  onShowEmphasis: (b: boolean) => void
+  onShowSayrGuide: (b: boolean) => void
 }
 
 // 12 tonic choices, one per pitch class, anchored near the qanun's low register.
@@ -32,8 +36,7 @@ const RAKE_OPTIONS: ReadonlyArray<{ value: RakeSensitivity; label: string }> = [
 ]
 
 // Progressive disclosure (spec §1): tonic + rake + trill ornament toggle +
-// sound-source toggle + the headline jins-pair quick-swaps.
-// Everything deeper (sayr guide, FX, MIDI) is later phases.
+// sound-source toggle + sayr/emphasis toggles + the headline jins-pair quick-swaps.
 export const Controls = ({
   tonicMidi,
   rakeSensitivity,
@@ -41,11 +44,15 @@ export const Controls = ({
   trillEnabled,
   soundSource,
   isSampleLoaded,
+  showEmphasis,
+  showSayrGuide,
   onTonic,
   onRakeSensitivity,
   onApplyPair,
   onTrillEnabled,
-  onSoundSource
+  onSoundSource,
+  onShowEmphasis,
+  onShowSayrGuide,
 }: ControlsProps) => (
   <div className="controls">
     <label className="ctrl">
@@ -83,6 +90,30 @@ export const Controls = ({
         {soundSource === 'sample'
           ? (isSampleLoaded ? 'sample' : 'sample…')
           : 'synth'}
+      </button>
+    </label>
+    <label className="ctrl">
+      <span>emphasis</span>
+      <button
+        type="button"
+        className={`toggle ${showEmphasis ? 'is-on' : ''}`}
+        onClick={() => onShowEmphasis(!showEmphasis)}
+        aria-pressed={showEmphasis}
+        title="Highlight tonic, ghammaz, octave, and leading-tone strings"
+      >
+        {showEmphasis ? 'on' : 'off'}
+      </button>
+    </label>
+    <label className="ctrl">
+      <span>sayr</span>
+      <button
+        type="button"
+        className={`toggle ${showSayrGuide ? 'is-on' : ''}`}
+        onClick={() => onShowSayrGuide(!showSayrGuide)}
+        aria-pressed={showSayrGuide}
+        title="Show idiomatic next-move suggestions"
+      >
+        {showSayrGuide ? 'on' : 'off'}
       </button>
     </label>
     <div className="quick-swaps">

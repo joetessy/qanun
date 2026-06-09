@@ -857,6 +857,227 @@
   bottom: clamp(32px, 5vmin, 46px);
 }
 
+/* ═══ EMPHASIS OVERLAY — sayr emphasis-note glows ════════════════════════════
+   Layered above .string-field (z-index 3), below everything interactive. */
+.emphasis-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.emphasis-glow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* Tonic + ghammaz — strongest golden glow */
+.emphasis-glow.emphasis-strong {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 210, 80, 0.22) 35%,
+    rgba(255, 240, 120, 0.42) 50%,
+    rgba(255, 210, 80, 0.22) 65%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 8px 3px rgba(255, 220, 80, 0.35),
+    0 0 20px 6px rgba(231, 194, 91, 0.18);
+  width: 5px;
+}
+
+/* Octave — medium warm glow */
+.emphasis-glow.emphasis-medium {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 195, 60, 0.14) 35%,
+    rgba(255, 220, 100, 0.28) 50%,
+    rgba(255, 195, 60, 0.14) 65%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 6px 2px rgba(255, 210, 70, 0.22),
+    0 0 14px 4px rgba(231, 194, 91, 0.10);
+  width: 3px;
+}
+
+/* Leading tone — subtle warm hint */
+.emphasis-glow.emphasis-light {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(200, 160, 50, 0.08) 35%,
+    rgba(255, 200, 80, 0.16) 50%,
+    rgba(200, 160, 50, 0.08) 65%,
+    transparent 100%
+  );
+  box-shadow: 0 0 4px 1px rgba(231, 194, 91, 0.10);
+  width: 2px;
+}
+
+/* ═══ SAYR GUIDE — idiomatic next-move chip panel ════════════════════════════
+   Floats above the preset rail when enabled; z-index 5 so it's clickable. */
+.sayr-guide {
+  position: absolute;
+  bottom: clamp(36px, 6vmin, 52px); /* just above the preset rail */
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: clamp(4px, 0.8vmin, 8px) clamp(10px, 1.8vw, 18px);
+  background:
+    repeating-linear-gradient(2deg, rgba(0, 0, 0, 0.10) 0 2px, rgba(0, 0, 0, 0) 2px 6px),
+    linear-gradient(180deg, rgba(20, 12, 6, 0.95) 0%, rgba(12, 7, 3, 0.95) 100%);
+  border-top: 1px solid rgba(0, 0, 0, 0.65);
+  border-bottom: 1px solid rgba(255, 222, 150, 0.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 222, 150, 0.06),
+    0 -2px 10px -4px rgba(0, 0, 0, 0.5);
+}
+
+.sayr-guide-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sayr-guide-label {
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.sayr-guide-maqam {
+  font-family: var(--font-display);
+  font-size: clamp(11px, 1.4vmin, 13px);
+  font-weight: 500;
+  color: var(--brass-glow);
+  text-shadow: 0 0 8px rgba(255, 221, 128, 0.2);
+  white-space: nowrap;
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sayr-guide-chips {
+  display: flex;
+  align-items: center;
+  gap: clamp(4px, 0.8vw, 8px);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black 8px, black calc(100% - 8px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, black 8px, black calc(100% - 8px), transparent 100%);
+  padding: 2px 8px;
+}
+.sayr-guide-chips::-webkit-scrollbar { display: none; }
+
+.sayr-guide-empty {
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-style: italic;
+  padding: 0 8px;
+}
+
+/* Sayr chip: ordered move pill */
+.sayr-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-family: var(--font-body);
+  background: linear-gradient(180deg, #2c1d10 0%, #1b1107 100%);
+  border: 1px solid rgba(110, 79, 28, 0.32);
+  border-radius: 999px;
+  padding: clamp(4px, 0.6vmin, 6px) clamp(10px, 1.4vw, 14px) clamp(4px, 0.6vmin, 6px) clamp(8px, 1.2vw, 12px);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.05);
+}
+.sayr-chip:hover {
+  border-color: rgba(184, 138, 46, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 222, 150, 0.1),
+    0 0 10px rgba(184, 138, 46, 0.22);
+}
+.sayr-chip:active {
+  transform: translateY(1px);
+}
+
+.sayr-chip-label {
+  font-size: clamp(10px, 1.2vmin, 12px);
+  font-weight: 500;
+  color: var(--ink-dim);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.sayr-chip:hover .sayr-chip-label {
+  color: var(--brass-lit);
+}
+
+/* Relationship tag: a compact pill within the chip */
+.sayr-chip-tag {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(110, 79, 28, 0.22);
+  border-radius: 999px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.sayr-chip:hover .sayr-chip-tag {
+  color: rgba(231, 194, 91, 0.55);
+  border-color: rgba(184, 138, 46, 0.3);
+}
+
+/* Adjust the preset rail bottom offset when sayr-guide is present (handled by
+   the sayr-guide bottom value above — no extra adjustment needed). */
+
+/* Toggle button (shared with trill, sound, now emphasis and sayr) */
+.controls .toggle {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  color: var(--ink-dim);
+  background: linear-gradient(180deg, #2c1d10, #1b1107);
+  border: 1px solid rgba(231, 194, 91, 0.22);
+  border-radius: 999px;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.controls .toggle:hover {
+  color: var(--brass-glow);
+  border-color: rgba(231, 194, 91, 0.5);
+}
+.controls .toggle.is-on {
+  color: var(--ink-engrave);
+  background: linear-gradient(180deg, var(--brass-lit), var(--brass-base));
+  border-color: var(--brass-base);
+  box-shadow: 0 0 12px rgba(231, 194, 91, 0.28);
+}
+
 /* Respect reduced-motion: drop the decorative loops/animations. */
 @media (prefers-reduced-motion: reduce) {
   .stage-cover .primary,
