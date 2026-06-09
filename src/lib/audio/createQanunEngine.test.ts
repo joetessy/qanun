@@ -499,7 +499,7 @@ describe('createQanunEngine — sampler construction', () => {
     // The urls object should match the exported sample map exactly.
     expect(opts.urls).toEqual(QANUN_SAMPLE_URLS)
     expect(opts.baseUrl).toBe(QANUN_SAMPLE_BASE_URL)
-    expect(Object.keys(opts.urls)).toHaveLength(17)
+    expect(Object.keys(opts.urls)).toHaveLength(18)
   })
 
   it('builds a Tone.Chorus for the sampler shimmer path', () => {

@@ -1,11 +1,11 @@
 # Audio Sample Credits
 
-## Versilian Community Sample Library (VCSL) — Dan Tranh & Bowed Psaltery
+## barisbozkurt — Turkish kanun (Freesound #211133)
 
-- **Source:** https://github.com/sgossner/VCSL
+- **Source:** https://freesound.org/people/barisbozkurt/sounds/211133/
+- **Title:** "kanun_moderate_Chromatic" by barisbozkurt
+- **Instrument:** Turkish kanun (plucked zither, trichord courses)
 - **License:** CC0 1.0 (public domain) — no attribution required; copy/modify/distribute/perform for any purpose, commercial or otherwise.
-- **Files used:**
-  - `qanun-B1.wav` through `qanun-B4.wav`, `qanun-Cs2.wav`–`qanun-Gs4.wav` — VCSL Dan Tranh / Normal, mf velocity layer, round-robin 1.
-  - `qanun-D5.wav` — VCSL Psaltery (Bowed and Plucked) / Pluck, rr1.
+- **Files used:** `qanun-F3.wav` through `qanun-Ds6.wav` — per-note slices of the CC0 recording, pitch-detected and named by Tone.js note name. 18 files spanning F3–Ds6, one every ~2 semitones.
 
-These plucked-zither samples (24-bit PCM, 44.1 kHz) serve as a stand-in for the qanun's triple-course timbre; the app pitch-shifts them via `Tone.Sampler` to cover all chromatic and microtonal notes in the instrument range.
+These files are sliced from a single CC0 chromatic kanun recording. The app pitch-shifts them via `Tone.Sampler` to cover all chromatic and microtonal notes in the instrument range.
