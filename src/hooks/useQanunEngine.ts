@@ -124,6 +124,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     const audio = audioRef.current
     const scheduleNext = (): void => {
       if (!runningRef.current || !video) return
+      // Re-arm the next frame; tick recurses through scheduleVideoFrame's callback.
+      // The ref write runs in a frame callback (not during render), so the
+      // immutability rule's render-mutation concern doesn't apply.
       // eslint-disable-next-line react-hooks/immutability
       frameHandleRef.current = scheduleVideoFrame({ video, callback: tick })
     }
@@ -238,10 +241,25 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     frameHandleRef.current?.cancel()
     frameHandleRef.current = null
     stopCamera({ video: videoRef.current })
+    // Reset gesture state, symmetric with start(), so a Stop→Start cycle doesn't
+    // inherit a stale One-Euro timestamp (which would spike the derivative and
+    // misfire on the first frame back).
+    pluckDetectorsRef.current.forEach((d) => d.reset())
+    rakeDetectorsRef.current.forEach((d) => d.reset())
+    mandalGestureRef.current.reset()
+    fingerFiltersRef.current.forEach((f) => f.reset())
     setStatus('idle')
   }, [videoRef])
 
-  useEffect(() => () => audioRef.current?.dispose(), [])
+  // Release renderer-side resources on unmount: the audio graph and the
+  // MediaPipe landmarker's WASM. Both are lazily rebuilt on the next start().
+  useEffect(
+    () => () => {
+      audioRef.current?.dispose()
+      landmarkerRef.current?.close()
+    },
+    []
+  )
 
   return {
     status,

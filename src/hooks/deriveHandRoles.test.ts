@@ -3,7 +3,7 @@ import { deriveHandRoles } from './deriveHandRoles'
 
 // Right hand plays only; left hand plays AND modulates (when in the mandal zone).
 describe('deriveHandRoles', () => {
-  it('assigns the right hand to play, the left to play', () => {
+  it('assigns both hands to play when neither is in the mandal zone', () => {
     const roles = deriveHandRoles({ rightHandIdx: 0, leftHandIdx: 1, leftHandX: 0.5 })
     expect(roles.playHands).toEqual([0, 1])
     expect(roles.mandalHandIdx).toBeNull()

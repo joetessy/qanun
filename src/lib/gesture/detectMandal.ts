@@ -49,11 +49,12 @@ export const createMandalGesture = ({
   let pinchClosed = false
 
   const update = ({
-    x: _x, // eslint-disable-line @typescript-eslint/no-unused-vars
     y,
     pinchDist,
     tNow
   }: {
+    // x is part of the interface (the hand's screen-x) but unused here — the
+    // mandal zone test lives in the caller (deriveHandRoles).
     x: number
     y: number
     pinchDist: number
