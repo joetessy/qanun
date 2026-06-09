@@ -15,7 +15,7 @@ export interface LowerJins {
 export const LOWER_JINS: readonly LowerJins[] = [
   { id: 'rast',     label: 'Rast',     homeDegree: 1, defaultScale: [0, 2, 3.5, 5, 7, 9, 10.5], upperOptions: ['rast', 'nahawand', 'hijaz', 'bayati'] },
   { id: 'bayati',   label: 'Bayati',   homeDegree: 2, defaultScale: [0, 2, 3.5, 5, 7, 9, 10],   upperOptions: ['nahawand', 'rast', 'hijaz'] },
-  { id: 'hijaz',    label: 'Hijaz',    homeDegree: 2, defaultScale: [0, 2, 3, 6, 7, 9, 10.5],   upperOptions: ['rast', 'nahawand', 'bayati'] },
+  { id: 'hijaz',    label: 'Hijaz',    homeDegree: 2, defaultScale: [0, 2, 3, 6, 7, 9, 10.5],   upperOptions: ['rast', 'nahawand', 'bayati', 'hijazkar'] },
   { id: 'nahawand', label: 'Nahawand', homeDegree: 1, defaultScale: [0, 2, 3, 5, 7, 8, 11],     upperOptions: ['hijaz', 'kurd', 'bayati', 'ajam'] },
   { id: 'kurd',     label: 'Kurd',     homeDegree: 2, defaultScale: [0, 2, 3, 5, 7, 9, 10],      upperOptions: ['nahawand', 'rast'] },
   { id: 'nikriz',   label: 'Nikriz',   homeDegree: 1, defaultScale: [0, 2, 3, 6, 7, 9, 10],      upperOptions: ['nahawand'] },
@@ -44,7 +44,8 @@ const SPECIAL_NAMES: Record<string, string> = {
   'rast|bayati': 'Maqam Nairuz',
   'bayati|hijaz': 'Maqam Bayati Shuri',
   'sikah|hijaz': 'Maqam Huzam',
-  'nahawand|ajam': 'Maqam Nahawand Murassaʿ'
+  'nahawand|ajam': 'Maqam Nahawand Murassaʿ',
+  'hijaz|hijazkar': 'Maqam Hijazkar'
 }
 
 export const maqamNameFor = (lowerId: string, upperId: string): string =>

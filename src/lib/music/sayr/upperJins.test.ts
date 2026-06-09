@@ -23,6 +23,10 @@ describe('applyUpperJins (home-aware)', () => {
     const bayati = [0, 2, 3.5, 5, 7, 9, 10.5]
     expect(applyUpperJins(bayati, 'hijaz', 2, 'bayati').slice(0, 5)).toEqual(bayati.slice(0, 5))
   })
+  it('Hijaz(home 2) + Hijazkar → Nikriz on the ghammāz + raised leading tone (C♯)', () => {
+    const hijaz = [0, 2, 3, 6, 7, 9, 10.5]
+    expect(applyUpperJins(hijaz, 'hijazkar', 2, 'hijaz')).toEqual([1, 2, 3, 6, 7, 9, 10])
+  })
 })
 
 describe('upperOptions', () => {
@@ -31,5 +35,12 @@ describe('upperOptions', () => {
     expect(opts.map((o) => o.id)).toEqual(['nahawand', 'rast', 'hijaz'])
     expect(opts[0].label).toBe('Nahawand')
     expect(opts.find((o) => o.id === 'nahawand')!.active).toBe(true) // A/B♭ on G = Nahawand
+  })
+  it('lights "Nikriz Hijazkar" on Hijaz when the state matches the Hijazkar collection', () => {
+    const opts = upperOptions('hijaz', [1, 2, 3, 6, 7, 9, 10], 2)
+    const hijazkar = opts.find((o) => o.id === 'hijazkar')!
+    expect(hijazkar).toBeDefined()
+    expect(hijazkar.label).toBe('Nikriz Hijazkar')
+    expect(hijazkar.active).toBe(true)
   })
 })

@@ -70,5 +70,9 @@ describe('maqamNameFor', () => {
     expect(maqamNameFor('bayati', 'hijaz')).toBe('Maqam Bayati Shuri')
     expect(maqamNameFor('bayati', 'rast')).toBe('Maqam Bayati')
     expect(maqamNameFor('ajam', 'ajam')).toBe('Maqam ʿAjam')
+    expect(maqamNameFor('hijaz', 'hijazkar')).toBe('Maqam Hijazkar')
+  })
+  it('Hijaz offers Hijazkar as a compound upper option', () => {
+    expect(LOWER_JINS.find((j) => j.id === 'hijaz')!.upperOptions).toContain('hijazkar')
   })
 })

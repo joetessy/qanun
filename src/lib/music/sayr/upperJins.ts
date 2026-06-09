@@ -21,6 +21,15 @@ export const applyUpperJins = (
   homeDegree: number,
   lowerId: string
 ): MandalState => {
+  if (upperId === 'hijazkar') {
+    // Maqam Hijazkar: Nikriz on the ghammāz + a raised leading tone a semitone
+    // below the home (the upper Hijaz wrapping the octave). A compound — it also
+    // sets the sub-tonic (degree 1), unlike a normal upper-jins.
+    let next = applyUpperJins(state, 'nikriz', homeDegree, lowerId) // sets A, B♭ above the ghammāz
+    // raised leading tone: a semitone below the home degree's pitch
+    next = setMandal(next, 1, offsetOf(state, homeDegree) - 1)
+    return next
+  }
   const ghammaz = ghammazFieldDegree(lowerId, homeDegree)
   if (ghammaz < 1 || ghammaz > DEGREE_COUNT) return state
   const gOffset = offsetOf(state, ghammaz)
@@ -44,6 +53,7 @@ export interface UpperJinsOption {
 const upperLabel = (id: string): string => {
   if (id === 'rast') return 'Upper Rast'
   if (id === 'ajam') return 'Upper ʿAjam'
+  if (id === 'hijazkar') return 'Nikriz Hijazkar'
   return jinsById(id).label
 }
 
