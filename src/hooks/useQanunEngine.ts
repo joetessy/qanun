@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as Tone from 'tone'
 import type { HandLandmarker } from '@mediapipe/tasks-vision'
 import type { MandalState, Course } from '../lib/music/types'
-import type { NormPoint, QanunReading, QanunStatus, RakeSensitivity } from '../types'
+import type { NormPoint, QanunReading, QanunStatus } from '../types'
 import { DEFAULT_RAST_STATE, cycleMandal } from '../lib/music/ajnas/MANDALS'
 import { MAQAM_PRESETS } from '../lib/music/MAQAM_PRESETS'
 import { buildField, DEFAULT_TONIC_MIDI } from '../lib/music/buildField'
@@ -14,8 +14,7 @@ import { emphasisNotes, type EmphasisNotes } from '../lib/music/sayr/emphasisNot
 import type { SayrMove } from '../lib/music/sayr/SAYR_NETWORKS'
 import { nearestCourse, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
 import { upperNeighborCourse } from '../lib/gesture/pointerPlay'
-import { createPluckDetector } from '../lib/gesture/detectPluck'
-import { createRakeDetector } from '../lib/gesture/detectRake'
+import { createPinchPlay } from '../lib/gesture/pinchPlay'
 import { createMandalGesture } from '../lib/gesture/detectMandal'
 import { createQanunEngine, type QanunEngine, type SoundSource } from '../lib/audio/createQanunEngine'
 import { createRecorder, type Recorder, type RecorderState } from '../lib/audio/createRecorder'
@@ -23,7 +22,6 @@ import { formatElapsed } from '../lib/audio/formatElapsed'
 import { createDrone, type DroneEngine } from '../lib/practice/createDrone'
 import { createMetronome, type MetronomeEngine } from '../lib/practice/createMetronome'
 import { createMidiOut, type MidiOutEngine, type MidiSupportState, type MidiOutputInfo } from '../lib/midi/createMidiOut'
-import { velocityCurve } from '../lib/audio/velocityCurve'
 import { createOneEuroFilter } from '../lib/oneEuro/createOneEuroFilter'
 import { findHandedness } from '../lib/vision/findHandedness'
 import { loadHandLandmarker } from '../lib/vision/loadHandLandmarker'
@@ -60,13 +58,11 @@ export interface UseQanunEngine {
   courses: Course[]
   mandalState: MandalState
   tonicMidi: number
-  rakeSensitivity: RakeSensitivity
   highlightIndex: number | null
   pluckedIndex: number | null
   start: () => Promise<void>
   stop: () => void
   setTonic: (midi: number) => void
-  setRakeSensitivity: (s: RakeSensitivity) => void
   cycleMandalDegree: (degree: number, direction: 1 | -1) => void
   setMandalState: (state: MandalState) => void
   setMaqamPreset: (id: string) => void
@@ -132,7 +128,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const [reading, setReading] = useState<QanunReading>(EMPTY_READING)
   const [tonicMidi, setTonicMidi] = useState(DEFAULT_TONIC_MIDI)
   const [mandalState, setMandalStateRaw] = useState<MandalState>(DEFAULT_RAST_STATE)
-  const [rakeSensitivity, setRakeSensitivityState] = useState<RakeSensitivity>('subtle')
   const [highlightIndex, setHighlightIndex] = useState<number | null>(null)
   const [pluckedIndex, setPluckedIndex] = useState<number | null>(null)
   const [courses, setCourses] = useState<Course[]>(() =>
@@ -192,12 +187,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // Tracks whether a pointer hold (rashsh) is currently active.
   const holdingRef = useRef(false)
 
-  // One detector set per role. Two playing hands → two pluck/rake detectors.
-  const pluckDetectorsRef = useRef([createPluckDetector(), createPluckDetector()])
-  const rakeDetectorsRef = useRef([
-    createRakeDetector({ sensitivity: 'subtle' }),
-    createRakeDetector({ sensitivity: 'subtle' })
-  ])
+  // One pinchPlay per role slot — handles pluck / sustain / glide / release.
+  const pinchPlayRef = useRef([createPinchPlay(), createPinchPlay()])
   const mandalGestureRef = useRef(createMandalGesture())
   const fingerFiltersRef = useRef([createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 }), createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 })])
 
@@ -243,11 +234,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     // Keep the drone in tune if it has been lazily created.
     droneRef.current?.setTonic(midi)
   }, [recompute])
-
-  const setRakeSensitivity = useCallback((s: RakeSensitivity): void => {
-    setRakeSensitivityState(s)
-    rakeDetectorsRef.current.forEach((d) => d.setSensitivity(s))
-  }, [])
 
   /** Lazily creates + starts the audio engine on first user interaction. */
   const ensureAudioEngine = useCallback(async (): Promise<void> => {
@@ -583,36 +569,48 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       })
       // Slot 0 is the primary playing hand — the string it hovers is highlighted.
       if (slot === 0) primaryCourse = course
-      // Pinch pluck (precise).
-      const pluck = pluckDetectorsRef.current[slot].update({
+      // Pinch-as-button: pluck on close edge, sustain when held, glide on course change.
+      const pinchEvts = pinchPlayRef.current[slot].update({
         pinchDist: pinchDistance({ a: tip, b: lm[THUMB_TIP] }),
         courseIndex: course,
         tNow
       })
-      if (pluck && field[pluck.courseIndex]) {
-        const c = pluck.courseIndex
-        if (trillEnabled) {
-          const neighborIdx = upperNeighborCourse(c, field.length)
-          audio.trill({
-            freqHz: field[c].freqHz,
-            neighborHz: field[neighborIdx].freqHz,
-            velocity: pluck.velocity
-          })
-        } else {
-          audio.pluck({ freqHz: field[c].freqHz, velocity: pluck.velocity })
-        }
-        emitMidi(field[c].freqHz, pluck.velocity)
-        lastPluckMidi = field[c].midi
-        pluckedCourse = c
-      }
-      // Rake (glissando).
-      const raked = rakeDetectorsRef.current[slot].update({ courseIndex: course, tNow })
-      for (const c of raked) {
-        if (field[c]) {
-          audio.pluck({ freqHz: field[c].freqHz, velocity: velocityCurve(0.7) })
-          emitMidi(field[c].freqHz, velocityCurve(0.7))
-          lastPluckMidi = field[c].midi
-          pluckedCourse = c
+      for (const ev of pinchEvts) {
+        if (ev.type === 'release') {
+          audio.holdStop()
+        } else if (ev.type === 'sustain') {
+          const c = ev.courseIndex
+          if (field[c]) {
+            audio.holdStart({ freqHz: field[c].freqHz, velocity: ev.velocity })
+            emitMidi(field[c].freqHz, ev.velocity)
+            lastPluckMidi = field[c].midi
+            pluckedCourse = c
+          }
+        } else if (ev.type === 'pluck') {
+          const c = ev.courseIndex
+          if (field[c]) {
+            if (trillEnabled) {
+              const neighborIdx = upperNeighborCourse(c, field.length)
+              audio.trill({
+                freqHz: field[c].freqHz,
+                neighborHz: field[neighborIdx].freqHz,
+                velocity: ev.velocity
+              })
+            } else {
+              audio.pluck({ freqHz: field[c].freqHz, velocity: ev.velocity })
+            }
+            emitMidi(field[c].freqHz, ev.velocity)
+            lastPluckMidi = field[c].midi
+            pluckedCourse = c
+          }
+        } else if (ev.type === 'glide') {
+          const c = ev.courseIndex
+          if (field[c]) {
+            audio.pluck({ freqHz: field[c].freqHz, velocity: ev.velocity })
+            emitMidi(field[c].freqHz, ev.velocity)
+            lastPluckMidi = field[c].midi
+            pluckedCourse = c
+          }
         }
       }
     })
@@ -643,10 +641,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       ctx.shadowColor = OVERLAY_SHADOW
       ctx.shadowBlur = OVERLAY_SHADOW_BLUR
       // Modulating (mandal) hand: a calmer brass ring.
+      // canvas shares the video's CSS scaleX(-1), so draw rings in raw (un-mirrored)
+      // coords to sit on the finger.
       if (mandalTip) {
-        drawFingerRing({ ctx, tip: mandalTip, width: w, height: h, mirror: true, color: MANDAL_RING_COLOR, radius: 13, lineWidth: 2 })
+        drawFingerRing({ ctx, tip: mandalTip, width: w, height: h, mirror: false, color: MANDAL_RING_COLOR, radius: 13, lineWidth: 2 })
       }
       // Playing hands: bright rings; a thicker, white ring on the frame a string sounds.
+      // mirror: false — canvas shares the video's CSS scaleX(-1), no double-flip needed.
       const pluckedThisFrame = pluckedCourse !== null
       playTips.forEach((tip, slot) => {
         const isPrimary = slot === 0
@@ -655,7 +656,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
           tip,
           width: w,
           height: h,
-          mirror: true,
+          mirror: false,
           color: isPrimary && pluckedThisFrame ? PLUCK_RING_COLOR : PLAY_RING_COLOR,
           radius: isPrimary && pluckedThisFrame ? 17 : 14,
           lineWidth: isPrimary && pluckedThisFrame ? 3 : 2.25
@@ -682,8 +683,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       const { width, height } = await startCamera({ video })
       canvas.width = width
       canvas.height = height
-      pluckDetectorsRef.current.forEach((d) => d.reset())
-      rakeDetectorsRef.current.forEach((d) => d.reset())
+      pinchPlayRef.current.forEach((d) => d.reset())
       mandalGestureRef.current.reset()
       fingerFiltersRef.current.forEach((f) => f.reset())
       frameCounterRef.current = 0
@@ -707,8 +707,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     // Reset gesture state, symmetric with start(), so a Stop→Start cycle doesn't
     // inherit a stale One-Euro timestamp (which would spike the derivative and
     // misfire on the first frame back).
-    pluckDetectorsRef.current.forEach((d) => d.reset())
-    rakeDetectorsRef.current.forEach((d) => d.reset())
+    pinchPlayRef.current.forEach((d) => d.reset())
     mandalGestureRef.current.reset()
     fingerFiltersRef.current.forEach((f) => f.reset())
     // Clear any lingering overlay ring and the string highlight/pluck glow.
@@ -755,13 +754,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     courses,
     mandalState,
     tonicMidi,
-    rakeSensitivity,
     highlightIndex,
     pluckedIndex,
     start,
     stop,
     setTonic,
-    setRakeSensitivity,
     cycleMandalDegree,
     setMandalState,
     setMaqamPreset,
