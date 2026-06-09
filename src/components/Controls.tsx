@@ -1,15 +1,11 @@
-import type { MandalState } from '../lib/music/types'
 import type { RecorderState } from '../lib/audio/createRecorder'
 import type { MidiSupportState, MidiOutputInfo } from '../lib/midi/createMidiOut'
 import { TypedSelect } from './TypedSelect'
-import { JINS_PAIRS, isPairActive, type JinsPair } from '../lib/music/sayr/jinsPairs'
 import { midiName } from '../lib/music/midiName'
 
 interface ControlsProps {
   tonicMidi: number
-  mandalState: MandalState
   onTonic: (midi: number) => void
-  onApplyPair: (pair: JinsPair) => void
   // P4a: recording
   recordingState: RecorderState
   recordingElapsedDisplay: string
@@ -57,9 +53,7 @@ const BEND_RANGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
 // P4b: opt-in MIDI section (off by default) — microtonal MIDI out.
 export const Controls = ({
   tonicMidi,
-  mandalState,
   onTonic,
-  onApplyPair,
   recordingState,
   recordingElapsedDisplay,
   onStartRecording,
@@ -92,19 +86,6 @@ export const Controls = ({
         onChange={(v) => onTonic(Number(v))}
       />
     </label>
-    <div className="quick-swaps">
-      {JINS_PAIRS.map((pair) => (
-        <button
-          key={pair.id}
-          className={`swap ${isPairActive(mandalState, pair) ? 'is-active' : ''}`}
-          onClick={() => onApplyPair(pair)}
-          title={`${pair.fromLabel} ↔ ${pair.toLabel}`}
-        >
-          {pair.fromLabel} ↔ {pair.toLabel}
-        </button>
-      ))}
-    </div>
-
     {/* P4a: Studio extras — all opt-in, off by default */}
     <div className="studio-section">
       <span className="studio-label">studio</span>

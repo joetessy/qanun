@@ -8,7 +8,6 @@ import { MAQAM_PRESETS } from '../lib/music/MAQAM_PRESETS'
 import { buildField, DEFAULT_TONIC_MIDI } from '../lib/music/buildField'
 import { identifyAjnas } from '../lib/music/identifyAjnas'
 import { degreeNoteLabel } from '../lib/music/degreeLabel'
-import { applyJinsPair, type JinsPair } from '../lib/music/sayr/jinsPairs'
 import { applyLowerJins, lowerJinsById, lowerJinsList, maqamNameFor } from '../lib/music/sayr/lowerJins'
 import { applyUpperJins, upperOptions, ghammazFieldDegree, type UpperJinsOption } from '../lib/music/sayr/upperJins'
 import { nearestCourse, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
@@ -66,7 +65,6 @@ export interface UseQanunEngine {
   setTonic: (midi: number) => void
   setMandalState: (state: MandalState) => void
   setMaqamPreset: (id: string) => void
-  applyPair: (pair: JinsPair) => void
   lowerJins: string
   upperJins: string
   homeDegree: number
@@ -224,10 +222,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const setMaqamPreset = useCallback((id: string): void => {
     const preset = MAQAM_PRESETS.find((p) => p.id === id)
     if (preset) setMandalAll(preset.mandalState)
-  }, [setMandalAll])
-
-  const applyPair = useCallback((pair: JinsPair): void => {
-    setMandalAll(applyJinsPair(mandalRef.current, pair))
   }, [setMandalAll])
 
   // Pick a lower jins: load its scale, re-anchor the home tonic to that jins's
@@ -811,7 +805,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setTonic,
     setMandalState,
     setMaqamPreset,
-    applyPair,
     lowerJins,
     upperJins,
     homeDegree,

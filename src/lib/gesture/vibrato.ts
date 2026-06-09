@@ -11,6 +11,7 @@ export interface VibratoOptions {
   maxRateHz?: number
   minWaveRateHz?: number  // below this estimated rate, treat motion as slow drift → no vibrato
   minCents?: number       // amplitude floor — wobbles quieter than this → no vibrato
+  minP2P?: number         // min peak-to-peak vertical travel (normalized) for a deliberate wave
 }
 
 export interface Vibrato {
@@ -23,14 +24,17 @@ const OFF: VibratoOut = { cents: 0, rateHz: 0 }
 export const createVibrato = (opts: VibratoOptions = {}): Vibrato => {
   const windowSec = opts.windowSec ?? 0.25
   const maxCents = opts.maxCents ?? 70
-  const ampToCents = opts.ampToCents ?? 1400 // 0.05 p2p → ~70 cents
+  const ampToCents = opts.ampToCents ?? 700 // 0.06 p2p → ~42 cents (gentle, scales up)
   const minRateHz = opts.minRateHz ?? 3
   const maxRateHz = opts.maxRateHz ?? 9
   // Below this *raw* (pre-clamp) estimated rate, the motion is slow vertical
   // drift — not a deliberate wave — so it produces no vibrato.
-  const minWaveRateHz = opts.minWaveRateHz ?? 4
+  const minWaveRateHz = opts.minWaveRateHz ?? 5.5
   // Amplitude floor: wobbles smaller than this many cents are micro-jitter.
   const minCents = opts.minCents ?? 2
+  // A deliberate vibrato wave needs real vertical travel — below this peak-to-peak
+  // (fraction of viewport height) it's incidental motion, not an intended wave.
+  const minP2P = opts.minP2P ?? 0.03
 
   let buf: { y: number; t: number }[] = []
 
@@ -50,6 +54,8 @@ export const createVibrato = (opts: VibratoOptions = {}): Vibrato => {
       if (sign !== 0) prevSign = sign
     }
     const peakToPeak = max - min
+    // Not enough vertical travel → incidental motion, not a deliberate wave.
+    if (peakToPeak < minP2P) return { cents: 0, rateHz: 0 }
     const cents = Math.min(maxCents, peakToPeak * ampToCents)
     const span = Math.max(1e-3, buf[buf.length - 1].t - buf[0].t)
     // Raw (pre-clamp) wave rate from sign-crossings. Slow drift crosses the

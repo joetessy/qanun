@@ -61,7 +61,6 @@ export const Qanun = () => {
           videoRef={videoRef}
           canvasRef={canvasRef}
           status={engine.status}
-          cover={<StageCover status={engine.status} errorMsg={engine.errorMsg} onStart={engine.start} />}
         />
 
         {/* Inlaid sound-hole rosettes — painted onto the wood beneath the strings. */}
@@ -88,6 +87,9 @@ export const Qanun = () => {
           onReleaseHold={engine.releaseHold}
           onVibrato={engine.onVibrato}
         />
+        {/* Play / start cover — a direct soundboard child so it sits ABOVE the
+            strings (z-index), keeping the play button clickable. Self-hides when running. */}
+        <StageCover status={engine.status} errorMsg={engine.errorMsg} onStart={engine.start} />
         {/* First-run onboarding guide — overlaid above everything, dismissible. */}
         {showOnboarding && <Onboarding onDismiss={dismissOnboarding} />}
       </div>
@@ -95,9 +97,7 @@ export const Qanun = () => {
       <div id="qanun-controls" className={`controls-drawer ${controlsOpen ? 'is-open' : ''}`} hidden={!controlsOpen}>
         <Controls
           tonicMidi={engine.tonicMidi}
-          mandalState={engine.mandalState}
           onTonic={engine.setTonic}
-          onApplyPair={engine.applyPair}
           recordingState={engine.recordingState}
           recordingElapsedDisplay={engine.recordingElapsedDisplay}
           onStartRecording={engine.startRecording}

@@ -260,30 +260,22 @@
 /* ── Triple-course wrapper: positions at exact course screen-x, holds 3 strings ─ */
 .string-field .course {
   position: absolute;
-  top: 3%;
-  bottom: 3%;
-  /* Wide enough for 3 strings + gap, centred on the course x. */
+  top: 0;
+  bottom: 0;
+  /* Wide enough for 3 strings + gap, centred on the course x. Every course is
+     identical — uniform length, width, and spacing (matches a real qanun). */
   width: 9px;
   transform: translateX(-50%);
   display: flex;
   justify-content: center;
-  gap: 1.5px;
+  gap: 2px;
   pointer-events: none;
 }
-
-/* Per-degree spread: lower courses (thicker pitch) get a touch more separation. */
-.string-field .course[data-degree='1'] { gap: 2.5px; }
-.string-field .course[data-degree='2'] { gap: 2.2px; }
-.string-field .course[data-degree='3'] { gap: 2px; }
-.string-field .course[data-degree='4'] { gap: 1.8px; }
-.string-field .course[data-degree='5'] { gap: 1.5px; }
-.string-field .course[data-degree='6'] { gap: 1.3px; }
-.string-field .course[data-degree='7'] { gap: 1px; }
 
 /* Each of the three wires — fine brass gradient, slight rounding at each end. */
 .string-field .course .str {
   flex-shrink: 0;
-  width: 1px;
+  width: 1.3px;
   height: 100%;
   border-radius: 1px;
   /* Brass wire: shadowed rim, bright specular centre. */
@@ -301,12 +293,6 @@
   transition: filter 0.12s ease-out, box-shadow 0.12s ease-out, opacity 0.12s;
 }
 
-/* Register-graded wire thickness: degree 1 (low) → fatter wires; 7 (high) → thinner.
-   All three wires within a course are identical (a real qanun course is 3 unison strings). */
-.string-field .course[data-degree='1'] .str { width: 1.6px; }
-.string-field .course[data-degree='2'] .str { width: 1.4px; }
-.string-field .course[data-degree='3'] .str { width: 1.2px; }
-.string-field .course[data-degree='4'] .str { width: 1.1px; }
 
 /* Home course (the maqam tonic): warmer, brighter — the "you are here" anchor. */
 .string-field .course.is-home .str {
@@ -360,7 +346,7 @@
 .stage-cover {
   position: absolute;
   inset: 0;
-  z-index: 10;
+  z-index: 25; /* above the strings (3) + rails (4) so the play button is clickable */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -450,7 +436,7 @@
   box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.08);
 }
 .controls-drawer.is-open {
-  max-height: 200px;
+  max-height: 380px;
   opacity: 1;
 }
 /* `hidden` is set in markup when closed; un-hide for the open transition. */
@@ -491,34 +477,122 @@
 .controls .ctrl select:hover { border-color: rgba(231, 194, 91, 0.5); }
 .controls .ctrl select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.controls .quick-swaps {
+/* ═══ STUDIO + MIDI — opt-in panels (record / drone / metronome / midi) ══════
+   Grouped walnut cards with brass accents, matching the jins chips + toggles. */
+.studio-section {
   display: flex;
-  gap: 10px;
-  margin-left: auto;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px 14px 13px;
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(44, 29, 16, 0.5), rgba(18, 11, 5, 0.42));
+  border: 1px solid rgba(231, 194, 91, 0.13);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 222, 150, 0.06),
+    0 2px 8px -4px rgba(0, 0, 0, 0.5);
 }
-
-.controls .swap {
+.studio-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--brass-lit);
+  opacity: 0.8;
+}
+.studio-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.studio-row-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  min-width: 40px;
+}
+.studio-btn {
   font-family: var(--font-body);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   color: var(--ink-dim);
   background: linear-gradient(180deg, #2c1d10, #1b1107);
   border: 1px solid rgba(231, 194, 91, 0.22);
   border-radius: 999px;
-  padding: 6px 16px;
+  padding: 5px 15px;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
-.controls .swap:hover {
-  color: var(--brass-glow);
-  border-color: rgba(231, 194, 91, 0.5);
+.studio-btn:hover { color: var(--brass-glow); border-color: rgba(231, 194, 91, 0.5); }
+.studio-btn.rec-start { color: #e4a3a3; border-color: rgba(196, 92, 92, 0.4); }
+.studio-btn.rec-start:hover {
+  color: #ffc6c6;
+  border-color: rgba(220, 110, 110, 0.7);
+  box-shadow: 0 0 12px rgba(196, 80, 80, 0.3);
 }
-.controls .swap.is-active {
+.studio-btn.rec-stop {
   color: var(--ink-engrave);
-  background: linear-gradient(180deg, var(--brass-lit), var(--brass-base));
-  border-color: var(--brass-base);
-  box-shadow: 0 0 14px rgba(231, 194, 91, 0.32);
+  background: linear-gradient(180deg, #d08b3a, #a8692a);
+  border-color: #c07f30;
+}
+.rec-elapsed {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--brass-glow);
+}
+.studio-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 92px;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--brass-base), rgba(110, 79, 28, 0.35));
+  cursor: pointer;
+}
+.studio-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff4c8, var(--brass-base));
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+.studio-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff4c8, var(--brass-base));
+}
+.studio-bpm {
+  width: 52px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--brass-lit);
+  background: linear-gradient(180deg, #1b1107, #140d06);
+  border: 1px solid rgba(231, 194, 91, 0.22);
+  border-radius: 5px;
+  padding: 4px 6px;
+  text-align: center;
+}
+.studio-hint {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+.studio-section select {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--brass-lit);
+  background: linear-gradient(180deg, #2c1d10, #1b1107);
+  border: 1px solid rgba(231, 194, 91, 0.25);
+  border-radius: 5px;
+  padding: 4px 8px;
+  cursor: pointer;
 }
 
 /* ═══ MAQAM PRESETS — the instrument's maqam rail ═══════════════════════════
