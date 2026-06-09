@@ -3,6 +3,7 @@ import type { HandLandmarker } from '@mediapipe/tasks-vision'
 import type { MandalState, Course } from '../lib/music/types'
 import type { NormPoint, QanunReading, QanunStatus, RakeSensitivity } from '../types'
 import { DEFAULT_RAST_STATE, cycleMandal } from '../lib/music/ajnas/MANDALS'
+import { MAQAM_PRESETS } from '../lib/music/MAQAM_PRESETS'
 import { buildField, DEFAULT_TONIC_MIDI } from '../lib/music/buildField'
 import { identifyAjnas } from '../lib/music/identifyAjnas'
 import { applyJinsPair, type JinsPair } from '../lib/music/sayr/jinsPairs'
@@ -56,6 +57,8 @@ export interface UseQanunEngine {
   setTonic: (midi: number) => void
   setRakeSensitivity: (s: RakeSensitivity) => void
   cycleMandalDegree: (degree: number, direction: 1 | -1) => void
+  setMandalState: (state: MandalState) => void
+  setMaqamPreset: (id: string) => void
   applyPair: (pair: JinsPair) => void
 }
 
@@ -72,7 +75,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [reading, setReading] = useState<QanunReading>(EMPTY_READING)
   const [tonicMidi, setTonicMidi] = useState(DEFAULT_TONIC_MIDI)
-  const [mandalState, setMandalState] = useState<MandalState>(DEFAULT_RAST_STATE)
+  const [mandalState, setMandalStateRaw] = useState<MandalState>(DEFAULT_RAST_STATE)
   const [rakeSensitivity, setRakeSensitivityState] = useState<RakeSensitivity>('subtle')
   const [highlightIndex, setHighlightIndex] = useState<number | null>(null)
   const [pluckedIndex, setPluckedIndex] = useState<number | null>(null)
@@ -111,12 +114,21 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
   const setMandalAll = useCallback((next: MandalState): void => {
     mandalRef.current = next
-    setMandalState(next)
+    setMandalStateRaw(next)
     recompute(next, tonicRef.current)
   }, [recompute])
 
   const cycleMandalDegree = useCallback((degree: number, direction: 1 | -1): void => {
     setMandalAll(cycleMandal(mandalRef.current, degree, direction))
+  }, [setMandalAll])
+
+  const setMandalState = useCallback((state: MandalState): void => {
+    setMandalAll(state)
+  }, [setMandalAll])
+
+  const setMaqamPreset = useCallback((id: string): void => {
+    const preset = MAQAM_PRESETS.find((p) => p.id === id)
+    if (preset) setMandalAll(preset.mandalState)
   }, [setMandalAll])
 
   const applyPair = useCallback((pair: JinsPair): void => {
@@ -358,6 +370,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setTonic,
     setRakeSensitivity,
     cycleMandalDegree,
+    setMandalState,
+    setMaqamPreset,
     applyPair
   }
 }
