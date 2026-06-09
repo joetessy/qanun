@@ -8,9 +8,11 @@ interface ControlsProps {
   tonicMidi: number
   rakeSensitivity: RakeSensitivity
   mandalState: MandalState
+  trillEnabled: boolean
   onTonic: (midi: number) => void
   onRakeSensitivity: (s: RakeSensitivity) => void
   onApplyPair: (pair: JinsPair) => void
+  onTrillEnabled: (b: boolean) => void
 }
 
 // 12 tonic choices, one per pitch class, anchored near the qanun's low register.
@@ -25,15 +27,18 @@ const RAKE_OPTIONS: ReadonlyArray<{ value: RakeSensitivity; label: string }> = [
   { value: 'full', label: 'rake: full' }
 ]
 
-// Progressive disclosure (spec §1): tonic + rake + the headline jins-pair
-// quick-swaps. Everything deeper (sayr guide, FX, MIDI) is later phases.
+// Progressive disclosure (spec §1): tonic + rake + trill ornament toggle +
+// the headline jins-pair quick-swaps. Everything deeper (sayr guide, FX, MIDI)
+// is later phases.
 export const Controls = ({
   tonicMidi,
   rakeSensitivity,
   mandalState,
+  trillEnabled,
   onTonic,
   onRakeSensitivity,
-  onApplyPair
+  onApplyPair,
+  onTrillEnabled
 }: ControlsProps) => (
   <div className="controls">
     <label className="ctrl">
@@ -47,6 +52,17 @@ export const Controls = ({
     <label className="ctrl">
       <span>rake</span>
       <TypedSelect value={rakeSensitivity} options={RAKE_OPTIONS} onChange={onRakeSensitivity} />
+    </label>
+    <label className="ctrl">
+      <span>trill</span>
+      <button
+        type="button"
+        className={`toggle ${trillEnabled ? 'is-on' : ''}`}
+        onClick={() => onTrillEnabled(!trillEnabled)}
+        aria-pressed={trillEnabled}
+      >
+        {trillEnabled ? 'on' : 'off'}
+      </button>
     </label>
     <div className="quick-swaps">
       {JINS_PAIRS.map((pair) => (

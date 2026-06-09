@@ -68,6 +68,10 @@ export const Qanun = () => {
           courses={engine.courses}
           highlightIndex={engine.highlightIndex}
           pluckedIndex={engine.pluckedIndex}
+          onPluckCourse={engine.pluckCourse}
+          onGlideCourse={engine.glideCourse}
+          onHoldCourse={engine.holdCourse}
+          onReleaseHold={engine.releaseHold}
         />
         <CameraInset enabled={engine.status === 'running'} />
       </div>
@@ -77,9 +81,11 @@ export const Qanun = () => {
           tonicMidi={engine.tonicMidi}
           rakeSensitivity={engine.rakeSensitivity}
           mandalState={engine.mandalState}
+          trillEnabled={engine.trillEnabled}
           onTonic={engine.setTonic}
           onRakeSensitivity={engine.setRakeSensitivity}
           onApplyPair={engine.applyPair}
+          onTrillEnabled={engine.setTrillEnabled}
         />
       </div>
     </div>
