@@ -1,5 +1,4 @@
 import type { MandalState } from '../lib/music/types'
-import type { RakeSensitivity } from '../types'
 import type { SoundSource } from '../lib/audio/createQanunEngine'
 import type { RecorderState } from '../lib/audio/createRecorder'
 import type { MidiSupportState, MidiOutputInfo } from '../lib/midi/createMidiOut'
@@ -9,7 +8,6 @@ import { midiName } from '../lib/music/midiName'
 
 interface ControlsProps {
   tonicMidi: number
-  rakeSensitivity: RakeSensitivity
   mandalState: MandalState
   trillEnabled: boolean
   soundSource: SoundSource
@@ -17,7 +15,6 @@ interface ControlsProps {
   showEmphasis: boolean
   showSayrGuide: boolean
   onTonic: (midi: number) => void
-  onRakeSensitivity: (s: RakeSensitivity) => void
   onApplyPair: (pair: JinsPair) => void
   onTrillEnabled: (b: boolean) => void
   onSoundSource: (s: SoundSource) => void
@@ -57,12 +54,6 @@ const TONICS = Array.from({ length: 12 }, (_, i) => ({
   label: midiName(45 + i)
 }))
 
-const RAKE_OPTIONS: ReadonlyArray<{ value: RakeSensitivity; label: string }> = [
-  { value: 'off', label: 'rake: off' },
-  { value: 'subtle', label: 'rake: subtle' },
-  { value: 'full', label: 'rake: full' }
-]
-
 const BEND_RANGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: '2', label: '±2 st' },
   { value: '12', label: '±12 st' },
@@ -70,13 +61,12 @@ const BEND_RANGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: '48', label: '±48 st' },
 ]
 
-// Progressive disclosure (spec §1): tonic + rake + trill ornament toggle +
+// Progressive disclosure (spec §1): tonic + trill ornament toggle +
 // sound-source toggle + sayr/emphasis toggles + the headline jins-pair quick-swaps.
 // P4a: opt-in studio section (off by default) — record/drone/metronome.
 // P4b: opt-in MIDI section (off by default) — microtonal MIDI out.
 export const Controls = ({
   tonicMidi,
-  rakeSensitivity,
   mandalState,
   trillEnabled,
   soundSource,
@@ -84,7 +74,6 @@ export const Controls = ({
   showEmphasis,
   showSayrGuide,
   onTonic,
-  onRakeSensitivity,
   onApplyPair,
   onTrillEnabled,
   onSoundSource,
@@ -121,10 +110,6 @@ export const Controls = ({
         options={TONICS}
         onChange={(v) => onTonic(Number(v))}
       />
-    </label>
-    <label className="ctrl">
-      <span>rake</span>
-      <TypedSelect value={rakeSensitivity} options={RAKE_OPTIONS} onChange={onRakeSensitivity} />
     </label>
     <label className="ctrl">
       <span>trill</span>

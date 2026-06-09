@@ -125,7 +125,6 @@ export const Qanun = () => {
       <div id="qanun-controls" className={`controls-drawer ${controlsOpen ? 'is-open' : ''}`} hidden={!controlsOpen}>
         <Controls
           tonicMidi={engine.tonicMidi}
-          rakeSensitivity={engine.rakeSensitivity}
           mandalState={engine.mandalState}
           trillEnabled={engine.trillEnabled}
           soundSource={engine.soundSource}
@@ -133,7 +132,6 @@ export const Qanun = () => {
           showEmphasis={engine.showEmphasis}
           showSayrGuide={engine.showSayrGuide}
           onTonic={engine.setTonic}
-          onRakeSensitivity={engine.setRakeSensitivity}
           onApplyPair={engine.applyPair}
           onTrillEnabled={engine.setTrillEnabled}
           onSoundSource={engine.setSoundSource}
