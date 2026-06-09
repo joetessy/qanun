@@ -115,4 +115,25 @@ describe('createPinchPlay', () => {
     expect(evts).toHaveLength(1)
     expect(evts[0]).toMatchObject({ type: 'pluck', courseIndex: 0, velocity: 0.4 })
   })
+
+  // Course-lock (glideDebounceSec): a transient lateral blip during sustain
+  // should NOT switch strings — only a course change that persists glides.
+  it('while sustaining, a 1-frame course blip that snaps back does NOT glide', () => {
+    const p = createPinchPlay({ holdDelaySec: 0.05, glideDebounceSec: 0.06 })
+    p.update({ pinchDist: 0.02, courseIndex: 5, tNow: 0 })       // pluck (close)
+    p.update({ pinchDist: 0.02, courseIndex: 5, tNow: 0.1 })     // sustain
+    const blip = p.update({ pinchDist: 0.02, courseIndex: 6, tNow: 0.11 }) // brief drift
+    const back = p.update({ pinchDist: 0.02, courseIndex: 5, tNow: 0.12 }) // snap back
+    expect(blip.some((e) => e.type === 'glide')).toBe(false)
+    expect(back.some((e) => e.type === 'glide')).toBe(false)
+  })
+
+  it('while sustaining, a course change that persists past the debounce DOES glide', () => {
+    const p = createPinchPlay({ holdDelaySec: 0.05, glideDebounceSec: 0.06 })
+    p.update({ pinchDist: 0.02, courseIndex: 5, tNow: 0 })
+    p.update({ pinchDist: 0.02, courseIndex: 5, tNow: 0.1 })
+    p.update({ pinchDist: 0.02, courseIndex: 6, tNow: 0.11 })   // drift starts
+    const glided = p.update({ pinchDist: 0.02, courseIndex: 6, tNow: 0.2 }) // persisted
+    expect(glided.some((e) => e.type === 'glide' && e.courseIndex === 6)).toBe(true)
+  })
 })

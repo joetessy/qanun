@@ -19,6 +19,10 @@ export interface PinchPlayOptions {
   minVelocity?: number
   glideVelocity?: number
   sustainVelocity?: number
+  // While sustaining, require a new course to persist this long before gliding,
+  // so a lateral wobble during vibrato doesn't switch strings. 0 = glide
+  // immediately (unchanged behaviour).
+  glideDebounceSec?: number
 }
 
 export interface PinchPlay {
@@ -36,6 +40,7 @@ export const createPinchPlay = (opts: PinchPlayOptions = {}): PinchPlay => {
   const minVelocity = opts.minVelocity ?? 0.4
   const glideVelocity = opts.glideVelocity ?? 0.55
   const sustainVelocity = opts.sustainVelocity ?? 0.6
+  const glideDebounceSec = opts.glideDebounceSec ?? 0
 
   let closed = false
   let course = 0
@@ -43,6 +48,10 @@ export const createPinchPlay = (opts: PinchPlayOptions = {}): PinchPlay => {
   let sustaining = false
   let prevDist: number | null = null
   let prevT: number | null = null
+  // Course-lock bookkeeping: the candidate course we've drifted to while
+  // sustaining, and when that drift began.
+  let pendingCourse: number | null = null
+  let pendingT = 0
 
   const update = ({
     pinchDist,
@@ -61,6 +70,7 @@ export const createPinchPlay = (opts: PinchPlayOptions = {}): PinchPlay => {
       course = courseIndex
       closeT = tNow
       sustaining = false
+      pendingCourse = null
       let velocity = minVelocity
       if (prevDist !== null && prevT !== null) {
         const dt = Math.max(1e-3, tNow - prevT)
@@ -74,21 +84,30 @@ export const createPinchPlay = (opts: PinchPlayOptions = {}): PinchPlay => {
       if (sustaining) events.push({ type: 'release' })
       closed = false
       sustaining = false
+      pendingCourse = null
     } else if (closed) {
       // Held — check for course change (glide) or sustain onset
       if (courseIndex !== course) {
-        // Finger moved to a new course
-        if (sustaining) {
-          events.push({ type: 'release' })
-          sustaining = false
+        if (sustaining && glideDebounceSec > 0) {
+          // Course-lock: require the new course to persist before gliding, so a
+          // lateral wobble during vibrato doesn't switch strings.
+          if (pendingCourse !== courseIndex) { pendingCourse = courseIndex; pendingT = tNow }
+          else if (tNow - pendingT >= glideDebounceSec) {
+            events.push({ type: 'release' }); sustaining = false
+            events.push({ type: 'glide', courseIndex, velocity: glideVelocity })
+            course = courseIndex; closeT = tNow; pendingCourse = null
+          }
+        } else {
+          if (sustaining) { events.push({ type: 'release' }); sustaining = false }
+          events.push({ type: 'glide', courseIndex, velocity: glideVelocity })
+          course = courseIndex; closeT = tNow
         }
-        events.push({ type: 'glide', courseIndex, velocity: glideVelocity })
-        course = courseIndex
-        closeT = tNow // reset hold timer on each glide
-      } else if (!sustaining && tNow - closeT >= holdDelaySec) {
-        // Held still long enough — start sustain
-        events.push({ type: 'sustain', courseIndex: course, velocity: sustainVelocity })
-        sustaining = true
+      } else {
+        pendingCourse = null // snapped back — cancel any pending glide
+        if (!sustaining && tNow - closeT >= holdDelaySec) {
+          events.push({ type: 'sustain', courseIndex: course, velocity: sustainVelocity })
+          sustaining = true
+        }
       }
     }
 
@@ -104,6 +123,8 @@ export const createPinchPlay = (opts: PinchPlayOptions = {}): PinchPlay => {
     sustaining = false
     prevDist = null
     prevT = null
+    pendingCourse = null
+    pendingT = 0
   }
 
   return { update, reset }
