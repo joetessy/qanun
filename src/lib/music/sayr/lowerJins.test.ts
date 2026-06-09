@@ -32,6 +32,24 @@ describe('LOWER_JINS table', () => {
   it('Rast does not offer ʿAjam as an upper', () => {
     expect(LOWER_JINS.find((j) => j.id === 'rast')!.upperOptions).not.toContain('ajam')
   })
+
+  // Lock every family's full default scale (offsets from the key). Kurd's
+  // degree-7 is B♭ (10) — standard Kurd, and required so its default upper
+  // (Nahawand on the ghammāz, which puts B♭ there) reads as active.
+  it('every family loads its exact default scale', () => {
+    const expected: Record<string, number[]> = {
+      rast:     [0, 2, 3.5, 5, 7, 9, 10.5],
+      bayati:   [0, 2, 3.5, 5, 7, 9, 10.5],
+      hijaz:    [0, 2, 3, 6, 7, 9, 10.5],
+      nahawand: [0, 2, 3, 5, 7, 8, 11],
+      kurd:     [0, 2, 3, 5, 7, 9, 10],
+      nikriz:   [0, 2, 3, 6, 7, 9, 10],
+      ajam:     [0, 2, 4, 5, 7, 9, 11],
+      saba:     [0, 2, 3.5, 5, 6, 8, 10],
+      sikah:    [0, 2, 3.5, 5, 7, 9, 10.5]
+    }
+    for (const j of LOWER_JINS) expect(j.defaultScale).toEqual(expected[j.id])
+  })
 })
 
 describe('applyLowerJins', () => {

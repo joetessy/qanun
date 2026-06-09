@@ -27,7 +27,7 @@ Modulation currently means "set the whole maqam, always rooted at the tonic C." 
 | hijaz | **D (2)** | `0 2 3 6 7 9 10.5` | retune (Hijaz on D; = Nikriz-on-C collection, home on D) |
 | ajam | C (1) | `0 2 4 5 7 9 11` | retune (major) |
 | **bayati** | **D (2)** | `0 2 3.5 5 7 9 10.5` | **no note change** (Rast collection, home→D) |
-| kurd | D (2) | `0 2 3 5 7 9 10.5` | only E½→E♭ |
+| kurd | D (2) | `0 2 3 5 7 9 10` | standard Kurd (E♭ + B♭; B♭ comes with its default Nahawand upper) |
 | saba | D (2) | `0 2 3.5 5 6 8 10` | retune (lowered 4th) |
 | **sikah** | **E½ (3)** | `0 2 3.5 5 7 9 10.5` | **no note change** (Rast collection, home→E½) |
 
