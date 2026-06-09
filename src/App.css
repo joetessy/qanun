@@ -1089,3 +1089,318 @@
   }
   .controls-drawer { transition: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TODO: A light theme could be explored in a future pass — the warm walnut
+   identity is intrinsic to the photoreal aesthetic so a light variant would
+   require a full re-skin (pale maple, oxidised-silver strings, etc.) rather
+   than a simple color-scheme flip.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ═══ ONBOARDING OVERLAY — engraved instruction card inlaid into the board ══ */
+
+/* Scrim: warm near-black that reads as the board going dark, not a foreign layer. */
+.onboarding-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(16px, 3vmin, 32px);
+  background: radial-gradient(
+    140% 140% at 50% 45%,
+    rgba(10, 6, 3, 0.65) 0%,
+    rgba(5, 3, 1, 0.82) 100%
+  );
+  backdrop-filter: blur(3px);
+  animation: onboarding-fade-in 0.32s ease-out both;
+}
+
+@keyframes onboarding-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Card: a raised walnut block with the same grain language as the rack/rail. */
+.onboarding-card {
+  position: relative;
+  width: min(440px, 100%);
+  overflow: hidden;
+  border-radius: 10px;
+  /* Walnut block: stripe grain + broad warm spotlight. */
+  background:
+    repeating-linear-gradient(2deg, rgba(0, 0, 0, 0.22) 0 3px, rgba(0, 0, 0, 0) 3px 8px),
+    repeating-linear-gradient(90deg,
+      rgba(0, 0, 0, 0.08) 0px,
+      rgba(0, 0, 0, 0) 30px,
+      rgba(120, 80, 40, 0.08) 64px,
+      rgba(0, 0, 0, 0) 100px
+    ),
+    linear-gradient(160deg, var(--wood-glow) 0%, var(--wood-warm) 38%, var(--wood-base) 72%, var(--wood-deep) 100%);
+  border: 1px solid rgba(110, 79, 28, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 222, 150, 0.18),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.55),
+    inset 0 0 40px 6px rgba(0, 0, 0, 0.45),
+    0 28px 70px -10px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 0 50px rgba(184, 138, 46, 0.08);
+  animation: onboarding-rise 0.38s cubic-bezier(0.18, 0.8, 0.36, 1) both;
+}
+
+@keyframes onboarding-rise {
+  from { transform: translateY(14px) scale(0.98); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* Grain noise film over the card — same technique as .soundboard::before */
+.onboarding-grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+  opacity: 0.045;
+  mix-blend-mode: overlay;
+}
+
+/* Header — narrow engraved-brass band at the top of the card. */
+.onboarding-head {
+  position: relative;
+  z-index: 1;
+  padding: clamp(12px, 2.2vmin, 18px) clamp(20px, 3vw, 28px) clamp(10px, 1.8vmin, 16px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.55);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.1));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 222, 150, 0.12),
+    0 1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.onboarding-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(22px, 2.8vw, 30px);
+  letter-spacing: 0.12em;
+  line-height: 1;
+  /* Engraved-brass gradient — mirrors the wordmark. */
+  background: linear-gradient(180deg, var(--brass-spec) 0%, var(--brass-lit) 45%, var(--brass-base) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 8px rgba(231, 194, 91, 0.18));
+}
+
+/* Steps list — parchment text on wood. */
+.onboarding-steps {
+  position: relative;
+  z-index: 1;
+  list-style: none;
+  margin: 0;
+  padding: clamp(10px, 2vmin, 18px) clamp(20px, 3vw, 28px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(10px, 1.8vmin, 16px);
+}
+
+.onboarding-step {
+  display: flex;
+  align-items: flex-start;
+  gap: clamp(12px, 2vw, 18px);
+}
+
+/* Engraved-brass medallion step number. */
+.step-num {
+  flex-shrink: 0;
+  width: clamp(22px, 3vmin, 28px);
+  height: clamp(22px, 3vmin, 28px);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: clamp(11px, 1.4vmin, 14px);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  /* Lit brass surface. */
+  background: linear-gradient(160deg, var(--brass-lit) 0%, var(--brass-base) 55%, var(--brass-shadow) 100%);
+  color: var(--ink-engrave);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 216, 0.55),
+    inset 0 -2px 4px rgba(110, 79, 28, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.45),
+    0 0 10px rgba(184, 138, 46, 0.15);
+  margin-top: 1px;
+}
+
+.step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.step-body strong {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(13px, 1.6vmin, 16px);
+  letter-spacing: 0.06em;
+  color: var(--brass-glow);
+  text-shadow: 0 0 10px rgba(255, 221, 128, 0.2);
+}
+
+.step-body span {
+  font-family: var(--font-body);
+  font-size: clamp(11px, 1.3vmin, 13px);
+  line-height: 1.55;
+  color: var(--ink-dim);
+}
+
+.step-body em {
+  font-style: italic;
+  color: var(--ink);
+}
+
+/* Footer — dismiss button + escape hint. */
+.onboarding-foot {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: clamp(10px, 1.8vmin, 16px) clamp(20px, 3vw, 28px) clamp(14px, 2.4vmin, 22px);
+  border-top: 1px solid rgba(0, 0, 0, 0.45);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.25));
+  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.07);
+}
+
+/* Dismiss button — exact brass-capsule treatment from .stage-cover .primary / .controls-toggle.is-open */
+.onboarding-dismiss {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-engrave);
+  background: radial-gradient(120% 120% at 50% 25%, var(--brass-spec) 0%, var(--brass-lit) 40%, var(--brass-base) 100%);
+  border: none;
+  border-radius: 999px;
+  padding: 9px 28px;
+  cursor: pointer;
+  box-shadow:
+    inset 0 2px 2px rgba(255, 248, 216, 0.65),
+    inset 0 -3px 6px rgba(110, 79, 28, 0.55),
+    0 6px 20px -4px rgba(0, 0, 0, 0.6),
+    0 0 22px rgba(231, 194, 91, 0.28);
+  transition: filter 0.14s, transform 0.1s, box-shadow 0.18s;
+}
+.onboarding-dismiss:hover {
+  filter: brightness(1.07);
+  box-shadow:
+    inset 0 2px 2px rgba(255, 248, 216, 0.75),
+    inset 0 -3px 6px rgba(110, 79, 28, 0.55),
+    0 8px 26px -4px rgba(0, 0, 0, 0.7),
+    0 0 36px rgba(231, 194, 91, 0.44);
+}
+.onboarding-dismiss:active { transform: translateY(1px) scale(0.99); }
+.onboarding-dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.onboarding-esc {
+  font-family: var(--font-body);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+  user-select: none;
+}
+
+/* "?" help button in the header — brass dot, always visible */
+.help-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink-dim);
+  background: linear-gradient(180deg, #2c1d10, #1b1107);
+  border: 1px solid rgba(231, 194, 91, 0.22);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.08);
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.help-btn:hover {
+  color: var(--brass-glow);
+  border-color: rgba(231, 194, 91, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 222, 150, 0.14),
+    0 0 10px rgba(231, 194, 91, 0.22);
+}
+.help-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Reduced-motion: no rise animation on the card. */
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-scrim { animation: none; }
+  .onboarding-card  { animation: none; }
+}
+
+/* ═══ RESPONSIVE PASS ════════════════════════════════════════════════════════
+   Ensure the layout stays usable at 1024–1366 px wide laptop viewports.
+   The mandal rack (min-width 132 px, 19 % of soundboard), string field,
+   header controls, and controls drawer must not overlap or clip.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* At 1024 px: compact the header gap + allow the readout to shrink. */
+@media (max-width: 1280px) {
+  .qanun-header {
+    gap: clamp(8px, 1.6vw, 20px);
+    padding-left: clamp(10px, 1.6vw, 20px);
+    padding-right: clamp(10px, 1.6vw, 20px);
+  }
+
+  /* Tighten HUD cells at narrower widths so it doesn't push the tune toggle off. */
+  .readout {
+    gap: clamp(6px, 1.2vw, 16px);
+    padding: 4px 10px;
+  }
+  .readout .cell + .cell {
+    padding-left: clamp(6px, 1.2vw, 16px);
+  }
+
+  /* Slightly smaller maqam preset chips so the rail doesn't scroll awkwardly. */
+  .preset-chip {
+    padding-left: clamp(7px, 1vw, 12px);
+    padding-right: clamp(7px, 1vw, 12px);
+  }
+}
+
+/* At 1024 px: tighten the controls drawer so it doesn't overflow. */
+@media (max-width: 1100px) {
+  .controls {
+    gap: clamp(8px, 1.4vw, 18px);
+    padding: 10px clamp(12px, 1.8vw, 22px);
+  }
+
+  /* Quick-swap buttons wrap naturally but don't overflow the drawer. */
+  .controls .quick-swaps {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Ensure the controls drawer can expand enough to show two rows of controls. */
+  .controls-drawer.is-open {
+    max-height: 280px;
+  }
+}
+
+/* Prevent the onboarding card from overflowing on short viewports. */
+@media (max-height: 600px) {
+  .onboarding-card {
+    max-height: 90vh;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(184, 138, 46, 0.3) transparent;
+  }
+}
