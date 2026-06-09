@@ -14,6 +14,7 @@ interface StringFieldProps {
   highlightIndices: number[]      // courses under a playing finger (both hands)
   pluckedIndices: number[]        // courses that just sounded (for feedback)
   homeDegree: number              // field degree the maqam tonic is anchored on (1/2/3)
+  ghammazDegree: number           // field degree of the ghammāz pivot (subtler highlight)
   // Pointer play
   onPluckCourse: (index: number) => void
   onGlideCourse: (index: number) => void
@@ -32,6 +33,7 @@ export const StringField = memo(({
   highlightIndices,
   pluckedIndices,
   homeDegree,
+  ghammazDegree,
   onPluckCourse,
   onGlideCourse,
   onHoldCourse,
@@ -153,6 +155,7 @@ export const StringField = memo(({
         const classes = [
           'course',
           c.degree === homeDegree ? 'is-home' : '',
+          c.degree === ghammazDegree && c.degree !== homeDegree ? 'is-ghammaz' : '',
           highlightIndices.includes(c.index) ? 'is-highlight' : '',
           pluckedIndices.includes(c.index) ? 'is-plucked' : ''
         ].filter(Boolean).join(' ')

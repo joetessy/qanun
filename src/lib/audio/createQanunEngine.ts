@@ -78,16 +78,6 @@ const RASHSH_HZ = 10
  */
 const RASHSH_INTERVAL = 1 / RASHSH_HZ
 
-/**
- * Alternation rate (Hz) for a two-string hold (holdAlternate). Deliberately
- * slower than the single-note rashsh (RASHSH_HZ) so the two pitches are
- * individually audible as a back-and-forth instead of blurring into a unison
- * tremolo at the SAME rate as the single-string rashsh (the user wants the same
- * tremolo speed), the loop alternating between the two held pitches.
- */
-const ALTERNATE_HZ = RASHSH_HZ
-const ALTERNATE_INTERVAL = 1 / ALTERNATE_HZ
-
 /** Trill attack spacing — same 7 Hz rhythm as rashsh, but finite. */
 const TRILL_HZ = 7
 const TRILL_INTERVAL = 1 / TRILL_HZ
@@ -219,9 +209,15 @@ export const createQanunEngine = ({
   let voiceIndex = -1
   let started = false
 
-  // ── rashsh state ────────────────────────────────────────────────────────────
+  // ── rashsh state — ONE continuous loop re-plucks the currently-held courses,
+  // rotating through them. Adding/removing a held note does NOT restart the loop,
+  // so a two-string trill always sounds the same regardless of when each finger
+  // landed (the alternation phase is continuous). ───────────────────────────────
   interface LoopHandle { start(t: number): void; stop(): void; dispose(): void }
-  let activeLoop: LoopHandle | null = null
+  let rashshLoop: LoopHandle | null = null
+  let heldFreqs: number[] = []
+  let heldVelocity = 0.6
+  let rashshTick = 0
 
   // Vibrato state lives in the Vibrato node (vibrato.depth/frequency), driven by
   // the gesture layer via setVibrato().
@@ -292,91 +288,66 @@ export const createQanunEngine = ({
   }
 
   /**
-   * Start rashsh sustain: repeatedly re-trigger the note at RASHSH_HZ (~10 Hz)
-   * with slight velocity jitter, until holdStop() is called.
-   * Only one hold is active at a time (calling again replaces the previous).
-   *
-   * `immediate` (default true): whether to fire an initial pluck attack.
-   * Pass `false` when the note was already attacked (e.g. pointer-down already
-   * called pluck()) to avoid a double-attack.
+   * Set the currently-held courses (rashsh sustain). ONE continuous loop rotates
+   * through `freqs`, one per tick at RASHSH_HZ:
+   *   • 1 held → re-plucks it ~10×/s (tremolo).
+   *   • 2 held → alternates (each ~5×/s) — a steady trill.
+   * The loop starts when the set becomes non-empty and stops when it empties; it
+   * is NOT restarted when the set merely changes, so the trill phase stays stable
+   * regardless of when each finger landed.
+   */
+  const setHeld = ({ freqs, velocity }: { freqs: number[]; velocity?: number }): void => {
+    heldFreqs = freqs.filter((f) => Number.isFinite(f) && f > 0)
+    if (velocity !== undefined) heldVelocity = velocity
+    if (heldFreqs.length > 0 && !rashshLoop) {
+      Tone.Transport.start()
+      rashshTick = 0
+      rashshLoop = new Tone.Loop((time: number) => {
+        if (heldFreqs.length === 0) return
+        const freqHz = heldFreqs[rashshTick % heldFreqs.length]
+        rashshTick++
+        // Slight velocity jitter so the tremolo isn't mechanical. Vibrato is
+        // applied independently by the Vibrato node in the output chain.
+        const jitter = (Math.random() * 2 - 1) * RASHSH_VELOCITY_JITTER
+        const v = clamp01(heldVelocity + jitter)
+        for (const freq of detunedFreqs(freqHz, [...COURSE_CENTS])) {
+          fireVoice(freq, velocityCurve(v), time)
+        }
+      }, RASHSH_INTERVAL)
+      rashshLoop.start(0)
+    } else if (heldFreqs.length === 0 && rashshLoop) {
+      rashshLoop.stop()
+      rashshLoop.dispose()
+      rashshLoop = null
+    }
+  }
+
+  /**
+   * Start a single-note rashsh hold. `immediate` (default true) fires an initial
+   * pluck; pass false when the note was already plucked (e.g. pointer-down).
    */
   const holdStart = ({ freqHz, velocity, immediate = true }: { freqHz: number; velocity: number; immediate?: boolean }): void => {
-    holdStop() // cancel any previous hold
     if (!Number.isFinite(freqHz) || freqHz <= 0) return
-
-    // Immediate first attack (skip when caller already plucked the note).
     if (immediate) pluck({ freqHz, velocity })
-
-    // Tone.Transport must be running for Tone.Loop to fire.
-    Tone.Transport.start()
-
-    activeLoop = new Tone.Loop((time: number) => {
-      // Re-pluck the full course with slight velocity jitter so the tremolo
-      // doesn't sound mechanical. Vibrato (if any) is applied independently by
-      // the Vibrato node in the output chain, so a ringing note bends without
-      // re-plucking.
-      const jitter = (Math.random() * 2 - 1) * RASHSH_VELOCITY_JITTER
-      const v = clamp01(velocity + jitter)
-      for (const freq of detunedFreqs(freqHz, [...COURSE_CENTS])) {
-        fireVoice(freq, velocityCurve(v), time)
-      }
-    }, RASHSH_INTERVAL)
-
-    activeLoop.start(0)
+    setHeld({ freqs: [freqHz], velocity })
   }
 
   /**
-   * Alternating two-string hold (rashsh trill between adjacent courses).
-   * Behaves like holdStart() but the rashsh loop cycles through `freqs` in
-   * order — one entry per tick (`freqs[tickCount % freqs.length]`), starting
-   * at `freqs[0]`. Callers pass `[higherFreqHz, lowerFreqHz]` so the higher
-   * note sounds first.
-   *
-   * Like holdStart(): cancels any previous hold (single active loop) and starts
-   * Tone.Transport. No initial `immediate` pluck — the caller has already
-   * plucked. Non-finite entries are skipped per-tick.
-   *
-   * Unlike holdStart's single-note rashsh (RASHSH_HZ ≈ 10 Hz), the alternation
-   * ticks at the slower ALTERNATE_HZ so each pitch sounds long enough to be
-   * heard as a distinct back-and-forth rather than a blurred unison.
+   * Hold multiple courses at once — the continuous loop rotates through them
+   * (caller passes [higher, lower] so the higher note sounds first). Same steady
+   * rate as a single-string hold; adding the 2nd note does NOT restart the loop,
+   * so the trill always sounds the same regardless of press timing.
    */
   const holdAlternate = ({ freqs, velocity }: { freqs: number[]; velocity: number }): void => {
-    holdStop() // single active loop
-    if (freqs.length === 0) return
-
-    // Tone.Transport must be running for Tone.Loop to fire.
-    Tone.Transport.start()
-
-    let tickCount = 0
-    activeLoop = new Tone.Loop((time: number) => {
-      const freqHz = freqs[tickCount % freqs.length]
-      tickCount++
-      if (!Number.isFinite(freqHz) || freqHz <= 0) return
-      // Same velocity jitter as holdStart's loop, cycling the frequency.
-      const jitter = (Math.random() * 2 - 1) * RASHSH_VELOCITY_JITTER
-      const v = clamp01(velocity + jitter)
-      for (const freq of detunedFreqs(freqHz, [...COURSE_CENTS])) {
-        fireVoice(freq, velocityCurve(v), time)
-      }
-      // ALTERNATE_INTERVAL (the calibratable alternation rate) is slower than
-      // the single-note rashsh so each of the two pitches sounds ~0.18 s and
-      // the two are individually audible as a clear back-and-forth.
-    }, ALTERNATE_INTERVAL)
-
-    activeLoop.start(0)
+    setHeld({ freqs, velocity })
   }
 
   /**
-   * Stop the active rashsh sustain loop (if any).
+   * Stop all rashsh sustain (release every held course). Vibrato depth is owned
+   * by setVibrato(), so this does NOT touch the Vibrato node.
    */
   const holdStop = (): void => {
-    if (activeLoop) {
-      activeLoop.stop()
-      activeLoop.dispose()
-      activeLoop = null
-    }
-    // Vibrato depth is owned entirely by setVibrato() (the gesture layer sets it
-    // to 0 when there's no wave), so holdStop() does NOT touch the Vibrato node.
+    setHeld({ freqs: [] })
   }
 
   /**

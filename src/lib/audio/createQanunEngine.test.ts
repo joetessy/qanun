@@ -450,16 +450,15 @@ describe('createQanunEngine — rashsh hold', () => {
     expect(loopStop).not.toHaveBeenCalled()
   })
 
-  it('calling holdStart() twice cancels the first loop before creating the second', () => {
+  it('calling holdStart() twice reuses the single continuous loop (no restart)', () => {
     const { ToneMock, loopStop, loopDispose } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     e.holdStart({ freqHz: 440, velocity: 0.7 })
-    e.holdStart({ freqHz: 330, velocity: 0.6 }) // should cancel previous
-    // First loop disposed before second was created.
-    expect(loopStop).toHaveBeenCalledTimes(1)
-    expect(loopDispose).toHaveBeenCalledTimes(1)
-    // Two Loop instances created.
-    expect(ToneMock.Loop).toHaveBeenCalledTimes(2)
+    e.holdStart({ freqHz: 330, velocity: 0.6 }) // updates the held note in place
+    // One continuous loop — not torn down + rebuilt — so the phase stays stable.
+    expect(ToneMock.Loop).toHaveBeenCalledTimes(1)
+    expect(loopStop).not.toHaveBeenCalled()
+    expect(loopDispose).not.toHaveBeenCalled()
   })
 
   it('dispose() stops an active hold loop', () => {
@@ -610,28 +609,26 @@ describe('createQanunEngine — holdAlternate', () => {
     expect(triggerAttack).toHaveBeenCalledTimes(3)
   })
 
-  it('cancels a previous hold before starting (single active loop)', () => {
+  it('reuses the running loop instead of restarting (stable trill phase)', () => {
     const { ToneMock, loopStop, loopDispose } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     e.holdStart({ freqHz: 440, velocity: 0.7 })
-    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
-    expect(loopStop).toHaveBeenCalledTimes(1)
-    expect(loopDispose).toHaveBeenCalledTimes(1)
-    expect(ToneMock.Loop).toHaveBeenCalledTimes(2)
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 }) // adds the 2nd note in place
+    // Same single loop — adding a string does NOT restart it, so the trill phase
+    // is independent of when each finger landed.
+    expect(ToneMock.Loop).toHaveBeenCalledTimes(1)
+    expect(loopStop).not.toHaveBeenCalled()
+    expect(loopDispose).not.toHaveBeenCalled()
   })
 
-  it('skips non-finite freqs per tick without throwing', () => {
+  it('filters out non-finite freqs (the loop only plays valid notes)', () => {
     const { ToneMock, triggerAttack } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
-    e.holdAlternate({ freqs: [NaN, 440], velocity: 0.7 })
+    e.holdAlternate({ freqs: [NaN, 440], velocity: 0.7 }) // NaN filtered → only 440 held
     const callback = ToneMock.Loop.mock.calls[0][0] as (t: number) => void
-    // Tick 0 → NaN → no attack.
     triggerAttack.mockClear()
     expect(() => callback(0)).not.toThrow()
-    expect(triggerAttack).not.toHaveBeenCalled()
-    // Tick 1 → 440 → 3 attacks.
-    triggerAttack.mockClear()
-    callback(0.1)
+    // Every tick plays the one valid note (triple-course = 3 attacks).
     expect(triggerAttack).toHaveBeenCalledTimes(3)
   })
 

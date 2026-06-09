@@ -69,6 +69,7 @@ export interface UseQanunEngine {
   upperJins: string
   homeDegree: number
   ghammazLabel: string | null
+  ghammazDegree: number
   setLowerJins: (id: string) => void
   setUpperJins: (id: string) => void
   upperJinsOptions: UpperJinsOption[]
@@ -189,7 +190,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     createPinchPlay({ glideDebounceSec: 0.07, closeThreshold: 0.03, openThreshold: 0.045 }),
     createPinchPlay({ glideDebounceSec: 0.07, closeThreshold: 0.03, openThreshold: 0.045 })
   ])
-  const fingerFiltersRef = useRef([createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 }), createOneEuroFilter({ minCutoff: 1.2, beta: 0.02 })])
+  // Higher minCutoff + beta than before → much less smoothing lag when the hand
+  // moves fast (beta is the speed coefficient; low beta was the "slow tracking").
+  const fingerFiltersRef = useRef([createOneEuroFilter({ minCutoff: 1.7, beta: 0.08 }), createOneEuroFilter({ minCutoff: 1.7, beta: 0.08 })])
   // Per-hand vibrato detectors — a deliberate vertical wave on either hand bends
   // the ringing note(s). Each slot's held course (null = none) is reconciled each
   // frame into a single or alternating rashsh; the key detects set changes.
@@ -796,7 +799,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
   // The scale degree the upper jins pivots on, relative to the maqam tonic
   // (5 for Rast, 4 for Bayati, 3 for Sikah) — shown in the switcher header.
-  const ghammazLabel = String(ghammazFieldDegree(lowerJins, homeDegree) - homeDegree + 1)
+  const ghammazDegree = ghammazFieldDegree(lowerJins, homeDegree)
+  const ghammazLabel = String(ghammazDegree - homeDegree + 1)
 
   // P4a: derive display string for recording elapsed time from stored frame count.
   const recordingElapsedDisplay = formatElapsed(recordingElapsedFrames, sampleRate)
@@ -819,6 +823,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     upperJins,
     homeDegree,
     ghammazLabel,
+    ghammazDegree,
     setLowerJins,
     setUpperJins,
     upperJinsOptions,

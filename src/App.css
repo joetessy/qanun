@@ -311,6 +311,20 @@
   opacity: 1;
 }
 /* Nearest course under a finger: lit and haloed across all three wires. */
+/* Ghammāz course — a calmer, cooler secondary highlight (the modulation pivot),
+   clearly a different colour from + dimmer than the warm home/tonic. */
+.string-field .course.is-ghammaz .str {
+  background: linear-gradient(
+    180deg,
+    #e6ead2 0%,
+    #b6c39a 42%,
+    #8a9a66 72%,
+    var(--brass-shadow) 100%
+  );
+  box-shadow: 0 0 4px 1px rgba(180, 200, 140, 0.28);
+  opacity: 0.95;
+}
+
 .string-field .course.is-highlight .str {
   filter: brightness(1.5) saturate(1.2);
   box-shadow:
