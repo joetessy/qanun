@@ -108,3 +108,49 @@
 .mandal-rack .lever .tick.on {
   background: #d4a030;
 }
+
+/* ── QanunHud ───────────────────────────────────────────────────────────────── */
+.readout {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  font-size: 13px;
+  color: #c8b87a;
+  letter-spacing: 0.02em;
+}
+
+.readout .cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.readout .cell.maqam .v {
+  font-size: 15px;
+  font-weight: 500;
+  color: #f0e0a0;
+}
+
+.readout .k {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6a5a30;
+}
+
+.readout .v {
+  color: #d0b870;
+}
+
+/* ── CameraInset ────────────────────────────────────────────────────────────── */
+.camera-inset {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 120px;
+  height: 90px;
+  border: 1px solid #3a3020;
+  border-radius: 4px;
+  background: #0b0a0880;
+  pointer-events: none;
+}
