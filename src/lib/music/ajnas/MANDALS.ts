@@ -9,15 +9,15 @@ export interface MandalDegree {
 }
 
 // The qanun mandal positions (docs/MUSIC-THEORY.md §5, spec §2.2), transcribed
-// verbatim. Degrees 1 and 5 are fixed pillars in P1. (A later sub-plan that
-// adds Sazkar / Nahawand Murassaʿ / Mukhalif gains offset 3 on degree 2 and
-// offset 6 on degree 5 — not needed for the P1 jins core.)
+// verbatim. Only degree 1 (the tonic) is a fixed pillar. Degree 5 is now
+// variable (positions 6 / 6.5 / 7 = G♭ / G½♭ / G) so that Hijaz and Bayati
+// upper-jins families rooted on the ghammāz can reach their altered 5th.
 export const MANDAL_DEGREES: readonly MandalDegree[] = [
-  { degree: 1, positions: [0],            fixed: true },
+  { degree: 1, positions: [0],            fixed: true  },
   { degree: 2, positions: [1, 1.5, 2],    fixed: false },
   { degree: 3, positions: [3, 3.5, 4],    fixed: false },
   { degree: 4, positions: [4, 5, 6],      fixed: false },
-  { degree: 5, positions: [7],            fixed: true },
+  { degree: 5, positions: [6, 6.5, 7],    fixed: false },
   { degree: 6, positions: [8, 8.5, 9],    fixed: false },
   { degree: 7, positions: [10, 10.5, 11], fixed: false }
 ]

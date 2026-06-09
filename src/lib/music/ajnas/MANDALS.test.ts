@@ -16,14 +16,14 @@ describe('MANDAL_DEGREES (docs/MUSIC-THEORY.md §5)', () => {
     expect(positionsForDegree(2)).toEqual([1, 1.5, 2])
     expect(positionsForDegree(3)).toEqual([3, 3.5, 4])
     expect(positionsForDegree(4)).toEqual([4, 5, 6])
-    expect(positionsForDegree(5)).toEqual([7])
+    expect(positionsForDegree(5)).toEqual([6, 6.5, 7])
     expect(positionsForDegree(6)).toEqual([8, 8.5, 9])
     expect(positionsForDegree(7)).toEqual([10, 10.5, 11])
   })
 
-  it('marks degrees 1 and 5 as fixed pillars', () => {
-    expect(MANDAL_DEGREES[0].fixed).toBe(true)
-    expect(MANDAL_DEGREES[4].fixed).toBe(true)
+  it('marks only degree 1 as a fixed pillar', () => {
+    expect(MANDAL_DEGREES[0].fixed).toBe(true)   // degree 1 — tonic, immovable
+    expect(MANDAL_DEGREES[4].fixed).toBe(false)  // degree 5 — now variable
     expect(MANDAL_DEGREES[1].fixed).toBe(false)
   })
 })
@@ -72,9 +72,15 @@ describe('cycleMandal', () => {
     const bottom = setMandal(DEFAULT_RAST_STATE, 2, 1)   // degree 2 lowest
     expect(offsetOf(cycleMandal(bottom, 2, -1), 2)).toBe(1)
   })
-  it('is a no-op on fixed pillar degrees 1 and 5', () => {
+  it('is a no-op only on fixed pillar degree 1', () => {
     expect(cycleMandal(DEFAULT_RAST_STATE, 1, 1)).toEqual(DEFAULT_RAST_STATE)
-    expect(cycleMandal(DEFAULT_RAST_STATE, 5, -1)).toEqual(DEFAULT_RAST_STATE)
+  })
+  it('cycles degree 5 (no longer a fixed pillar)', () => {
+    // DEFAULT_RAST_STATE has degree 5 = 7 (top of [6, 6.5, 7]); cycling down
+    // moves it to 6.5.
+    expect(offsetOf(cycleMandal(DEFAULT_RAST_STATE, 5, -1), 5)).toBe(6.5)
+    // Cycling up from the top is a clamped no-op.
+    expect(offsetOf(cycleMandal(DEFAULT_RAST_STATE, 5, 1), 5)).toBe(7)
   })
   it('snaps to the lowest position when cycling up from an off-grid offset', () => {
     const offGrid = setMandal(DEFAULT_RAST_STATE, 2, 0.7) // 0.7 ∉ [1, 1.5, 2]
