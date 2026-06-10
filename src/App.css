@@ -685,7 +685,7 @@
   flex-direction: column;
   justify-content: center;
   gap: clamp(2px, 0.5vmin, 6px);
-  overflow: hidden;
+  overflow: visible;
   padding-left: clamp(8px, 1.2vw, 18px);
 }
 
@@ -716,21 +716,18 @@
   user-select: none;
 }
 
-/* Chip row — fills its line; scrolls horizontally (right-edge fade) only if the
-   chips can't all fit at the current width. */
+/* Chip row — fills its line and wraps onto extra rows only if the chips can't
+   all fit at the current width (e.g. when zoomed in). Wrapping keeps every jins
+   visible at a glance and the header grows just enough to hold them — no hidden
+   chips behind a scroll fade. */
 .jins-chips {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: clamp(4px, 0.8vw, 8px);
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 18px), transparent 100%);
-  mask-image: linear-gradient(to right, black calc(100% - 18px), transparent 100%);
+  flex-wrap: wrap;
+  gap: clamp(3px, 0.5vmin, 5px) clamp(4px, 0.8vw, 8px);
 }
-.jins-chips::-webkit-scrollbar { display: none; }
 
 /* Individual jins chip — same compact pill as .preset-chip. */
 .jins-chip {
@@ -826,21 +823,16 @@
   text-transform: none;
 }
 
-/* Chip row — fills its line; scrolls horizontally (right-edge fade) only if the
-   chips can't all fit at the current width. */
+/* Chip row — fills its line and wraps onto extra rows only if the chips can't
+   all fit at the current width (mirrors the lower-jins rail). */
 .upper-jins-chips {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: clamp(4px, 0.8vw, 8px);
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 18px), transparent 100%);
-  mask-image: linear-gradient(to right, black calc(100% - 18px), transparent 100%);
+  flex-wrap: wrap;
+  gap: clamp(3px, 0.5vmin, 5px) clamp(4px, 0.8vw, 8px);
 }
-.upper-jins-chips::-webkit-scrollbar { display: none; }
 
 /* Individual upper-jins chip — same pill shape as .preset-chip but with a
    slightly warmer accent so it reads as a different axis of modulation. */
@@ -1154,6 +1146,28 @@
    The mandal rack (min-width 132 px, 19 % of soundboard), string field,
    header controls, and controls drawer must not overlap or clip.
    ═══════════════════════════════════════════════════════════════════════════ */
+
+/* When the top line gets cramped — laptops and any browser zoom — the jins bar
+   drops onto its own full-width row beneath the wordmark/readout line. With the
+   whole width to work in, both rails lay out in one or two tidy rows and every
+   jins stays visible, instead of being clipped by a scroll fade or stacked into
+   a tall column in the squeezed right-hand gap. Very wide monitors keep the
+   compact inline arrangement (the bar fits on single lines there). */
+@media (max-width: 1600px) {
+  .qanun-header {
+    flex-wrap: wrap;
+    row-gap: clamp(4px, 0.9vmin, 10px);
+  }
+  /* Nothing grows on the top line once the bar leaves it, so pin the help/tune
+     controls to the right edge. */
+  .help-btn { margin-left: auto; }
+  .jins-bar {
+    order: 1;
+    flex-basis: 100%;
+    width: 100%;
+    padding-left: 0;
+  }
+}
 
 /* At 1024 px: compact the header gap + allow the readout to shrink. */
 @media (max-width: 1280px) {

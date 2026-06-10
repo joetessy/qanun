@@ -1,0 +1,12 @@
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Qanun">
+  <style>
+    .q { stroke: #b8841f; }
+    @media (prefers-color-scheme: dark) { .q { stroke: #e7c25b; } }
+  </style>
+  <g class="q" fill="none" stroke-linejoin="round" stroke-linecap="round">
+    <!-- Trapezoidal soundboard (the qanun's defining silhouette) -->
+    <path d="M4.5 9 L27.5 14.5 L27.5 23 L4.5 23 Z" stroke-width="2"/>
+    <!-- Strings of graduated length, fanning across the board -->
+    <path d="M8 9.84 V23 M12 10.79 V23 M16 11.75 V23 M20 12.70 V23 M24 13.66 V23" stroke-width="1.4"/>
+  </g>
+</svg>
