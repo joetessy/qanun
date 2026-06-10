@@ -55,6 +55,7 @@ export interface QanunEngine {
   holdStart: (args: { freqHz: number; velocity: number; immediate?: boolean }) => void
   holdAlternate: (args: { freqs: number[]; velocity: number }) => void
   holdStop: () => void
+  setTremoloHz: (hz: number) => void
   setReverbEnabled: (enabled: boolean) => void
   setReverbWet: (wet: number) => void
   setReverbSize: (size: ReverbSize) => void
@@ -76,24 +77,32 @@ const COURSE_CENTS = [-4, 0, 4] as const
 /** Voices per note (= COURSE_CENTS.length). */
 const VOICES_PER_NOTE = COURSE_CENTS.length
 
-/** Rashsh tremolo rate in Hz (~9 picks/s — a brisk Arabic tremolo, eased a
- *  touch from 10 so each strike's attack reads more clearly). */
-const RASHSH_HZ = 9
+/** Default rashsh tremolo rate in Hz (~10 picks/s — a brisk Arabic tremolo).
+ *  Runtime-tunable via setTremoloHz (the tune drawer's tremolo slider); both
+ *  hold shapes — single-note rashsh and the two-note trill — ride this one
+ *  shared pulse, so retuning it never changes their relationship. */
+export const DEFAULT_TREMOLO_HZ = 10
+
+/** setTremoloHz clamp. Below ~6 Hz the re-strikes read as separate plucks, not
+ *  a tremolo; above ~16 Hz strikes start to fuse on the ~1.5 s ring (the trill
+ *  pair blurs toward a continuous dyad — see TRILL_PULSE_MULT). */
+export const TREMOLO_HZ_MIN = 6
+export const TREMOLO_HZ_MAX = 16
 
 /**
  * Two-note trill pulse multiplier. The alternation ticks at the SAME pulse as
- * the single-string trill (1× RASHSH_HZ): one pluck-weight note per tick,
+ * the single-string trill (1× the rashsh rate): one pluck-weight note per tick,
  * hi-lo-hi-lo — a played trill figure, the same thing as alternating fast
  * manual plucks between the two strings (the reference sound). Tuned by ear
  * across both failure modes:
- *   - 2× (each string at the full 9 Hz rashsh rate) lands 18 attacks/s, far
+ *   - 2× (each string at the full rashsh rate) doubles the attacks/s, far
  *     faster than the ~1.5 s ring decays on either string — the pair fuses into
  *     a continuous octave dyad and reads as UNISON, not alternation.
  *   - 1× with the old soft single-voice strikes read as a sparse, quiet seesaw —
  *     but that was the strike weight, not the rate (fixed below: each tick now
  *     blooms at near-pluck velocity).
- * If 9 notes/s ever feels sluggish, ~1.33 (12 Hz) is the next stop — keep each
- * note discrete enough to parse before reaching for 2×.
+ * The base rate itself is the user's to tune (setTremoloHz) — keep each note
+ * discrete enough to parse before ever reaching for 2×.
  */
 const TRILL_PULSE_MULT = 1
 
@@ -269,6 +278,11 @@ export const createQanunEngine = ({
   let heldFreqs: number[] = []   // [one] = single rashsh, [hi, lo] = trill
   let heldVelocity = 0.6
   let holdTick = 0               // alternation cursor; resets ONLY on a held-COUNT change
+  let tremoloHz = DEFAULT_TREMOLO_HZ // shared hold pulse, user-tunable via setTremoloHz
+
+  /** The hold clock's rate for the CURRENT held count (trill may run a multiple). */
+  const holdRateHz = (): number =>
+    heldFreqs.length >= 2 ? tremoloHz * TRILL_PULSE_MULT : tremoloHz
 
   // ── internal helpers ────────────────────────────────────────────────────────
 
@@ -388,7 +402,7 @@ export const createQanunEngine = ({
     // Retuning the RUNNING clock's frequency preserves tick continuity (that is
     // what Tone's TickSignal is for), so a mid-hold rate change can't stutter
     // the grid the way a stop/start would.
-    const rateHz = valid.length >= 2 ? RASHSH_HZ * TRILL_PULSE_MULT : RASHSH_HZ
+    const rateHz = holdRateHz()
     if (holdLoop) {
       holdLoop.frequency.value = rateHz
       return
@@ -450,6 +464,18 @@ export const createQanunEngine = ({
     setHeld({ freqs: [] })
   }
 
+  /**
+   * Retune the shared tremolo pulse (both hold shapes ride it — see
+   * DEFAULT_TREMOLO_HZ). Clamped to TREMOLO_HZ_MIN..MAX. A running hold clock
+   * retunes IN PLACE (tick-continuous, like a pitch slide), so dragging the
+   * slider mid-tremolo can't stutter or restart the strike grid.
+   */
+  const setTremoloHz = (hz: number): void => {
+    if (!Number.isFinite(hz)) return
+    tremoloHz = Math.min(TREMOLO_HZ_MAX, Math.max(TREMOLO_HZ_MIN, hz))
+    if (holdLoop) holdLoop.frequency.value = holdRateHz()
+  }
+
   const applyReverbWet = (): void => {
     reverb.wet.rampTo(reverbEnabled ? clamp01(reverbWet) : 0, FX_WET_RAMP)
   }
@@ -504,6 +530,7 @@ export const createQanunEngine = ({
     holdStart,
     holdAlternate,
     holdStop,
+    setTremoloHz,
     setReverbEnabled,
     setReverbWet,
     setReverbSize,

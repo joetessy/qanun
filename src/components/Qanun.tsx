@@ -105,6 +105,8 @@ export const Qanun = () => {
           onTonic={engine.setTonic}
           detuneCents={engine.detuneCents}
           onDetuneCents={engine.setDetuneCents}
+          tremoloHz={engine.tremoloHz}
+          onTremoloHz={engine.setTremoloHz}
           recordingState={engine.recordingState}
           recordingElapsedDisplay={engine.recordingElapsedDisplay}
           onStartRecording={engine.startRecording}

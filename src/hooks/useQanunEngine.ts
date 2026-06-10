@@ -12,7 +12,7 @@ import { applyUpperJins, upperOptions, ghammazFieldDegree, type UpperJinsOption 
 import { courseWithHysteresis, coursesCrossed, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
 import { createPinchPlay } from '../lib/gesture/pinchPlay'
 import { resolveActiveFinger, type ActiveFinger } from '../lib/gesture/activeFinger'
-import { createQanunEngine, type QanunEngine } from '../lib/audio/createQanunEngine'
+import { createQanunEngine, DEFAULT_TREMOLO_HZ, type QanunEngine } from '../lib/audio/createQanunEngine'
 import { createRecorder, type Recorder, type RecorderState } from '../lib/audio/createRecorder'
 import { formatElapsed } from '../lib/audio/formatElapsed'
 import { createDrone, type DroneEngine } from '../lib/practice/createDrone'
@@ -124,6 +124,9 @@ export interface UseQanunEngine {
   glideCourse: (index: number) => void
   holdCourse: (index: number) => void
   releaseHold: () => void
+  // Tremolo pulse (Hz), shared by single- and two-note holds
+  tremoloHz: number
+  setTremoloHz: (hz: number) => void
   // P4a: recording
   recordingState: RecorderState
   recordingElapsedDisplay: string
@@ -185,6 +188,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // P4a: recording state (idle by default — recorder is lazily created).
   const [recordingState, setRecordingState] = useState<RecorderState>('idle')
   const [recordingElapsedFrames, setRecordingElapsedFrames] = useState(0)
+
+  // Tremolo pulse (Hz) — one rate shared by the single-note rashsh and the
+  // two-note trill. Ref mirrors state so the lazily-created engine can pick up
+  // a value chosen before first interaction.
+  const [tremoloHz, setTremoloHzState] = useState(DEFAULT_TREMOLO_HZ)
+  const tremoloHzRef = useRef(DEFAULT_TREMOLO_HZ)
 
   // P4a: drone state (off by default).
   const [droneEnabled, setDroneEnabledState] = useState(false)
@@ -372,6 +381,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     if (!audioRef.current) {
       audioRef.current = createQanunEngine({ polyphony: 16 })
       setSampleRate(audioRef.current.getSampleRate())
+      // The slider may have moved before first interaction — read the ref, not
+      // state, so this callback's identity never churns with the value.
+      audioRef.current.setTremoloHz(tremoloHzRef.current)
     }
     if (!audioRef.current.isStarted) await audioRef.current.start()
   }, [])
@@ -470,6 +482,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const setDroneGain = useCallback((v: number): void => {
     setDroneGainState(v)
     droneRef.current?.setGain(v)
+  }, [])
+
+  /** Retune the tremolo pulse — a running hold retunes in place, no restart. */
+  const setTremoloHz = useCallback((hz: number): void => {
+    setTremoloHzState(hz)
+    tremoloHzRef.current = hz
+    audioRef.current?.setTremoloHz(hz)
   }, [])
 
   // ── P4a: metronome helpers ──────────────────────────────────────────────────
@@ -1057,6 +1076,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     startRecording,
     stopRecording,
     cancelRecording,
+    tremoloHz,
+    setTremoloHz,
     // P4a: drone
     droneEnabled,
     setDroneEnabled,

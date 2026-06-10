@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createQanunEngine, makeSoftClipCurve } from './createQanunEngine'
+import {
+  createQanunEngine,
+  makeSoftClipCurve,
+  DEFAULT_TREMOLO_HZ,
+  TREMOLO_HZ_MIN,
+  TREMOLO_HZ_MAX
+} from './createQanunEngine'
 import { QANUN_SAMPLE_URLS, QANUN_SAMPLE_BASE_URL } from './qanunSamples'
 
 // ─── mock factory ────────────────────────────────────────────────────────────
@@ -488,8 +494,9 @@ describe('createQanunEngine — rashsh hold', () => {
     // Clock constructor receives (callback, frequency in Hz).
     const [callback, frequency] = ToneMock.Clock.mock.calls[0]
     expect(typeof callback).toBe('function')
-    // The rashsh rate is a fixed 9 Hz, independent of the Transport BPM.
-    expect(frequency).toBe(9)
+    // The rashsh rate is a fixed Hz (the shared tremolo pulse), independent of
+    // the Transport BPM.
+    expect(frequency).toBe(DEFAULT_TREMOLO_HZ)
 
     expect(loopStart).toHaveBeenCalledTimes(1)
   })
@@ -567,6 +574,48 @@ describe('createQanunEngine — rashsh hold', () => {
 
 })
 
+// ─── setTremoloHz (user-tunable shared hold pulse) ───────────────────────────
+
+describe('createQanunEngine — setTremoloHz', () => {
+  it('retunes a RUNNING hold clock in place (no restart, no new clock)', () => {
+    const { ToneMock, loopStop, loopDispose } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.holdStart({ freqHz: 440, velocity: 0.7, immediate: false })
+    const clock = ToneMock.Clock.mock.results[0].value as { frequency: { value: number } }
+    e.setTremoloHz(12)
+    // The live TickSignal is retuned — the grid never stops or stutters.
+    expect(clock.frequency.value).toBe(12)
+    expect(loopStop).not.toHaveBeenCalled()
+    expect(loopDispose).not.toHaveBeenCalled()
+    expect(ToneMock.Clock).toHaveBeenCalledTimes(1)
+  })
+
+  it('applies to holds started after the change (single rashsh and trill alike)', () => {
+    const { ToneMock } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.setTremoloHz(12)
+    e.holdStart({ freqHz: 440, velocity: 0.7, immediate: false })
+    expect(ToneMock.Clock.mock.calls[0][1]).toBe(12)
+    e.holdStop()
+    // Both hold shapes ride the SAME pulse — the trill alternates at it too.
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+    expect(ToneMock.Clock.mock.calls[1][1]).toBe(12)
+  })
+
+  it('clamps to the playable range and ignores non-finite input', () => {
+    const { ToneMock } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    e.holdStart({ freqHz: 440, velocity: 0.7, immediate: false })
+    const clock = ToneMock.Clock.mock.results[0].value as { frequency: { value: number } }
+    e.setTremoloHz(1000)
+    expect(clock.frequency.value).toBe(TREMOLO_HZ_MAX)
+    e.setTremoloHz(0)
+    expect(clock.frequency.value).toBe(TREMOLO_HZ_MIN)
+    e.setTremoloHz(NaN)
+    expect(clock.frequency.value).toBe(TREMOLO_HZ_MIN) // unchanged
+  })
+})
+
 // ─── holdAlternate (two-string alternating hold) ─────────────────────────────
 
 describe('createQanunEngine — holdAlternate', () => {
@@ -583,12 +632,12 @@ describe('createQanunEngine — holdAlternate', () => {
     expect(ToneMock.Clock).toHaveBeenCalledTimes(1)
     const [callback, frequency] = ToneMock.Clock.mock.calls[0]
     expect(typeof callback).toBe('function')
-    // The alternation ticks at the SAME 9 Hz pulse as the single-string trill:
+    // The alternation ticks at the SAME pulse as the single-string trill:
     // one pluck-weight note per tick, hi-lo-hi-lo, so each note is a distinct
-    // event (like fast manual alternate plucking). At 2× (18 attacks/s) the
-    // strikes land faster than the ~1.5 s ring decays on either string, and the
-    // pair fuses into a continuous octave dyad — it reads as unison, not a trill.
-    expect(frequency).toBe(9)
+    // event (like fast manual alternate plucking). At 2× the strikes land
+    // faster than the ~1.5 s ring decays on either string, and the pair fuses
+    // into a continuous octave dyad — it reads as unison, not a trill.
+    expect(frequency).toBe(DEFAULT_TREMOLO_HZ)
     expect(loopStart).toHaveBeenCalledTimes(1)
     // No initial pluck — the caller already plucked.
     expect(triggerAttack).not.toHaveBeenCalled()

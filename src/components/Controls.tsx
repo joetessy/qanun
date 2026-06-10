@@ -5,6 +5,7 @@ import { TypedSelect } from './TypedSelect'
 import { midiName } from '../lib/music/midiName'
 import { DETUNE_LIMIT_CENTS } from '../lib/music/buildField'
 import { formatCents } from '../lib/ui/formatCents'
+import { DEFAULT_TREMOLO_HZ, TREMOLO_HZ_MIN, TREMOLO_HZ_MAX } from '../lib/audio/createQanunEngine'
 
 interface ControlsProps {
   tonicMidi: number
@@ -12,6 +13,9 @@ interface ControlsProps {
   // Global fine-tune (cents), −DETUNE_LIMIT_CENTS…+DETUNE_LIMIT_CENTS.
   detuneCents: number
   onDetuneCents: (cents: number) => void
+  // Tremolo pulse (Hz), shared by single- and two-note holds.
+  tremoloHz: number
+  onTremoloHz: (hz: number) => void
   // P4a: recording
   recordingState: RecorderState
   recordingElapsedDisplay: string
@@ -63,6 +67,8 @@ export const Controls = memo(({
   onTonic,
   detuneCents,
   onDetuneCents,
+  tremoloHz,
+  onTremoloHz,
   recordingState,
   recordingElapsedDisplay,
   onStartRecording,
@@ -118,6 +124,32 @@ export const Controls = memo(({
         aria-label={`fine tune ${formatCents(detuneCents)}, click to reset`}
       >
         {formatCents(detuneCents)}
+      </button>
+    </div>
+    {/* Tremolo pulse: one rate for both hold shapes (single-note rashsh and the
+        two-note trill — they alternate at the same pulse, so their relationship
+        never changes). Click the readout to reset to the default. */}
+    <div className="ctrl">
+      <span>trem</span>
+      <input
+        type="range"
+        className="studio-slider"
+        min={TREMOLO_HZ_MIN}
+        max={TREMOLO_HZ_MAX}
+        step={0.5}
+        value={tremoloHz}
+        onChange={(e) => onTremoloHz(Number(e.target.value))}
+        aria-label="tremolo speed in strikes per second"
+        title={`tremolo ${tremoloHz} strikes/s`}
+      />
+      <button
+        type="button"
+        className="detune-readout"
+        onClick={() => onTremoloHz(DEFAULT_TREMOLO_HZ)}
+        title={`reset tremolo to ${DEFAULT_TREMOLO_HZ}/s`}
+        aria-label={`tremolo ${tremoloHz} strikes per second, click to reset`}
+      >
+        {tremoloHz}/s
       </button>
     </div>
     {/* P4a: Studio extras — all opt-in, off by default */}
