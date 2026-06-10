@@ -674,10 +674,10 @@
 }
 
 /* ═══ JINS BAR — in the header, two stacked rows ═════════════════════════════
-   Wedged between the readout and the header buttons. Lower jins on the first line,
-   upper jins on the second, so every option is visible at once (the header grows
-   to fit). Each row scrolls horizontally on its own only as a narrow-screen
-   fallback. */
+   Wedged between the readout and the header buttons. Upper jins on the first
+   line, lower jins on the second — mirroring the keyboard rows (1–5 above
+   Q–O) — so every option is visible at once (the header grows to fit). Each
+   row scrolls horizontally on its own only as a narrow-screen fallback. */
 .jins-bar {
   flex: 1 1 auto;
   min-width: 0;
@@ -689,9 +689,9 @@
   padding-left: clamp(8px, 1.2vw, 18px);
 }
 
-/* ═══ LOWER-JINS SELECTOR — the family rail (first jins-bar row) ═════════════
+/* ═══ LOWER-JINS SELECTOR — the family rail (second jins-bar row) ════════════
    Picking a family re-anchors the home tonic. Each chip carries a dim keycap
-   (1–9) mirroring the hook. */
+   (Q–O) mirroring the hook. */
 .jins-selector {
   flex: 0 0 auto;
   min-width: 0;
@@ -788,8 +788,8 @@
   opacity: 0.65;
 }
 
-/* ═══ UPPER-JINS SWITCHER — ghammāz family chip group (second jins-bar row) ══
-   Sits on the line below the lower-jins rail; a warmer accent marks it as a
+/* ═══ UPPER-JINS SWITCHER — ghammāz family chip group (first jins-bar row) ═══
+   Sits on the line above the lower-jins rail; a warmer accent marks it as a
    different axis of modulation. */
 .upper-jins-switcher {
   flex: 0 0 auto;

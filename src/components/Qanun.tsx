@@ -36,16 +36,17 @@ export const Qanun = () => {
       <header className="qanun-header">
         <span className="wordmark">qanun</span>
         <QanunHud reading={engine.reading} />
-        {/* Jins controls inline in the header — lower (1–9) + upper (Q–T) jins on
-            one scrollable strip, so they take no extra row and never cover the
-            strings (and stay clickable before the camera starts). */}
+        {/* Jins controls inline in the header — upper jins (1–5) on the first
+            line, lower jins (Q–O) beneath, mirroring the keyboard rows. One
+            strip so they take no extra room and never cover the strings (and
+            stay clickable before the camera starts). */}
         <div className="jins-bar">
-          <LowerJinsSelector lowerJins={engine.lowerJins} onSelect={engine.setLowerJins} />
           <UpperJinsSwitcher
             options={engine.upperJinsOptions}
             ghammazLabel={engine.ghammazLabel}
             onSelect={engine.setUpperJins}
           />
+          <LowerJinsSelector lowerJins={engine.lowerJins} onSelect={engine.setLowerJins} />
         </div>
         <button
           type="button"

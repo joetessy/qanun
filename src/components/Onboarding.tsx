@@ -60,8 +60,8 @@ export const Onboarding = ({ onDismiss }: OnboardingProps) => {
             <div className="step-body">
               <strong>choose a maqam</strong>
               <span>
-                Pick a <em>lower jins</em> (the chips, or keys <em>1&ndash;9</em>) to
-                set the home note, then an <em>upper jins</em> (keys <em>Q&ndash;T</em>)
+                Pick a <em>lower jins</em> (the chips, or keys <em>Q&ndash;O</em>) to
+                set the home note, then an <em>upper jins</em> (keys <em>1&ndash;5</em>)
                 to modulate on the ghammāz. The readout names the maqam you build.
                 Open <em>tune</em> for the key, recording, drone, metronome &amp; MIDI.
               </span>

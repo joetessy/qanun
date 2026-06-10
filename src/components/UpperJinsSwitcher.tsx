@@ -7,7 +7,7 @@ interface UpperJinsSwitcherProps {
   onSelect: (id: string) => void
 }
 
-const KEYS = ['Q', 'W', 'E', 'R', 'T']
+const KEYS = ['1', '2', '3', '4', '5']
 
 // memo: re-renders only when the jins selection changes (options is memoized in
 // the hook), not on every per-pluck engine state push.

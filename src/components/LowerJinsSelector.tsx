@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { lowerJinsList } from '../lib/music/sayr/lowerJins'
 
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+const KEYS = ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O']
 
 interface LowerJinsSelectorProps {
   lowerJins: string
@@ -10,7 +10,7 @@ interface LowerJinsSelectorProps {
 
 // The lower-jins rail — replaces the old maqam-preset rail. Picking a family
 // re-anchors the home tonic to that jins's conventional degree (Bayati→D, etc.).
-// Keys 1–9 select the families in order (mirrored in the hook). memo: prop-stable
+// Keys Q–O select the families in order (mirrored in the hook). memo: prop-stable
 // while the parent re-renders per pluck.
 export const LowerJinsSelector = memo(({ lowerJins, onSelect }: LowerJinsSelectorProps) => (
   <div className="jins-selector" role="group" aria-label="Lower jins">

@@ -68,8 +68,20 @@ const OVERLAY_SHADOW = 'rgba(0, 0, 0, 0.55)'
 const PINCH_CLOSE_RATIO = 0.6
 const PINCH_OPEN_RATIO = 0.78
 
-// Velocity for each string a strum sweeps past (single-voice, see bloom:false).
-const STRUM_VELOCITY = 0.6
+// Fallback velocity for sweep strikes, pluck-comparable (the pointer pluck uses
+// 0.7). In practice every sweep inherits the velocity of the pinch close that
+// initiated it (see strumVelocityRef) — this only covers the theoretical first
+// strike before any close-edge pluck has seeded the slot.
+const STRUM_FALLBACK_VELOCITY = 0.7
+// Sweep strikes detected in ONE frame land simultaneously (a real sweep spreads
+// its plucks in time), so a flick crossing many string centres in a single
+// frame stacks energy the limiter then has to crush — audible pumping, not
+// clipping (the master soft-clip already makes clipping impossible). Up to this
+// many crossings per frame play at full pluck weight; past it each strike's
+// velocity is scaled by sqrt(free/N) so the frame's summed energy stays near a
+// fast manual burst. Timbre is untouched — every strike keeps the full
+// triple-course bloom.
+const STRUM_BURST_FREE_CROSSINGS = 3
 // After a pluck fires, suppress the strum briefly while the pinch settles. The
 // cursor is the THUMB (which barely moves during a close), so this is only a
 // safety net against residual thumb wobble at the pinch — not the old gate
@@ -93,6 +105,9 @@ export interface UseQanunEngine {
   detuneCents: number
   highlightIndices: number[]
   pluckedIndices: number[]
+  // True while a hand is tracked (with a short grace window) — the drawn thumb
+  // ring is the cursor, so the UI hides the OS pointer while this is on.
+  handTracking: boolean
   start: () => Promise<void>
   stop: () => void
   setTonic: (midi: number) => void
@@ -241,6 +256,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // Per-slot timestamp (seconds) before which the strum is suppressed — set when a
   // pluck fires, so the pinch-curl that follows doesn't strum (see STRUM_SETTLE_SEC).
   const strumEnableAtRef = useRef<number[]>([0, 0])
+  // Per-slot velocity for sweep strikes — inherited from the pinch close that
+  // initiated the sweep, so a strummed string sounds exactly like the pluck
+  // that started the gesture (hard pinch → hard sweep, gentle → gentle).
+  const strumVelocityRef = useRef<number[]>([STRUM_FALLBACK_VELOCITY, STRUM_FALLBACK_VELOCITY])
   // Higher minCutoff + beta than before → much less smoothing lag when the hand
   // moves fast (beta is the speed coefficient; low beta was the "slow tracking").
   const fingerFiltersRef = useRef([createOneEuroFilter({ minCutoff: 1.7, beta: 0.08 }), createOneEuroFilter({ minCutoff: 1.7, beta: 0.08 })])
@@ -327,9 +346,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // 1 2 3 4 5 pick the upper jins from the current lower jins's options. Ignored
   // while typing in a form field or when a modifier is held.
   useEffect(() => {
-    // Number row picks the lower jins (9 families); Q W E R T pick the upper jins.
-    const LOWER_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
-    const UPPER_KEYS = ['q', 'w', 'e', 'r', 't']
+    // Letter row picks the lower jins (9 families); 1 2 3 4 5 pick the upper jins.
+    const LOWER_KEYS = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o']
+    const UPPER_KEYS = ['1', '2', '3', '4', '5']
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const t = e.target as HTMLElement | null
@@ -538,11 +557,14 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
   const POINTER_VELOCITY = 0.7
 
-  // Pointer pluck and glide are identical but for the triple-course bloom: a
-  // deliberate pluck blooms (3 voices); a glide step fires a single voice so a
-  // fast drag across strings can't slam the master chain. One helper, two
-  // thin wrappers, so the highlight/glow/MIDI bookkeeping lives in one place.
-  const soundCourse = useCallback((index: number, bloom: boolean): void => {
+  // Pointer pluck and glide are the SAME strike — full triple-course bloom at
+  // POINTER_VELOCITY — so dragging across strings sounds exactly like plucking
+  // each one (a single-voice glide read thin and lifeless next to a pluck). A
+  // drag fires at most one strike per pointermove crossing, and the master
+  // limiter + soft-clip brick-wall the sum, so there's no burst to guard
+  // against here. One helper, two thin wrappers, so the highlight/glow/MIDI
+  // bookkeeping lives in one place.
+  const soundCourse = useCallback((index: number): void => {
     void ensureAudioEngine().then(() => {
       const audio = audioRef.current
       const field = coursesRef.current
@@ -554,13 +576,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       lastHoverKeyRef.current = String(index)
       lastPluckedKeyRef.current = String(index)
       pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
-      audio.pluck({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY, bloom })
+      audio.pluck({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY, bloom: true })
       emitMidi(field[index].freqHz, POINTER_VELOCITY)
     })
   }, [ensureAudioEngine, emitMidi])
 
-  const pluckCourse = useCallback((index: number): void => soundCourse(index, true), [soundCourse])
-  const glideCourse = useCallback((index: number): void => soundCourse(index, false), [soundCourse])
+  const pluckCourse = useCallback((index: number): void => soundCourse(index), [soundCourse])
+  const glideCourse = useCallback((index: number): void => soundCourse(index), [soundCourse])
 
   const holdCourse = useCallback((index: number): void => {
     void ensureAudioEngine().then(() => {
@@ -655,6 +677,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         activeFingerRef.current[slot] = 'none'
         strumPrevXRef.current[slot] = null
         strumEnableAtRef.current[slot] = 0
+        strumVelocityRef.current[slot] = STRUM_FALLBACK_VELOCITY
         lastCourseRef.current[slot] = null
         indexPlayRef.current[slot].reset()
         continue
@@ -727,20 +750,34 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
             emitMidi(field[ev.courseIndex].freqHz, ev.velocity)
             lastPluckMidi = field[ev.courseIndex].midi
             pluckedCourses.push(ev.courseIndex)
+            strumVelocityRef.current[slot] = ev.velocity // the sweep inherits this pluck's weight
             strumPrevXRef.current[slot] = fieldPos // baseline so the close note isn't re-strummed
             strumEnableAtRef.current[slot] = tNow + STRUM_SETTLE_SEC // let the pinch curl settle first
           }
         }
-        // Strum: re-pluck every string centre the finger sweeps past since the last
-        // frame — INCLUDING the same string on the way back. Single-voice
-        // (bloom:false) so a fast sweep can't slam the master chain. Suppressed
-        // until the post-pluck settle window passes (the curl is absorbed below).
+        // Strum: re-pluck every string centre the finger sweeps past since the
+        // last frame — INCLUDING the same string on the way back. Each strike is
+        // the SAME event as a deliberate pluck: full triple-course bloom at the
+        // initiating pinch's velocity, so a sweep sounds as present as plucking
+        // each string by hand (the old single-voice/fixed-0.6 strikes read thin
+        // and lifeless next to a pluck). The master limiter + soft-clip make the
+        // sum clip-proof; the only guard left is the single-frame burst scale
+        // (see STRUM_BURST_FREE_CROSSINGS). Suppressed until the post-pluck
+        // settle window passes (the curl is absorbed below).
         const prevX = strumPrevXRef.current[slot]
         if (prevX !== null && tNow >= strumEnableAtRef.current[slot]) {
-          for (const c of coursesCrossed({ prevX, curX: fieldPos, courseCount: field.length, fieldLeft: PLAY_FIELD_LEFT, fieldRight: PLAY_FIELD_RIGHT })) {
+          const crossed = coursesCrossed({ prevX, curX: fieldPos, courseCount: field.length, fieldLeft: PLAY_FIELD_LEFT, fieldRight: PLAY_FIELD_RIGHT })
+          // Equal-energy taming for one-frame bursts only: N simultaneous
+          // strikes sum ~N× the power of one, so past the free allowance each
+          // velocity scales by sqrt(free/N). Per-strike timbre is never thinned.
+          const burstScale = crossed.length > STRUM_BURST_FREE_CROSSINGS
+            ? Math.sqrt(STRUM_BURST_FREE_CROSSINGS / crossed.length)
+            : 1
+          const strumVelocity = strumVelocityRef.current[slot] * burstScale
+          for (const c of crossed) {
             if (field[c]) {
-              audio.pluck({ freqHz: field[c].freqHz, velocity: STRUM_VELOCITY, bloom: false })
-              emitMidi(field[c].freqHz, STRUM_VELOCITY)
+              audio.pluck({ freqHz: field[c].freqHz, velocity: strumVelocity, bloom: true })
+              emitMidi(field[c].freqHz, strumVelocity)
               lastPluckMidi = field[c].midi
               pluckedCourses.push(c)
             }
@@ -901,6 +938,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     activeFingerRef.current = ['none', 'none']
     strumPrevXRef.current = [null, null]
     strumEnableAtRef.current = [0, 0]
+    strumVelocityRef.current = [STRUM_FALLBACK_VELOCITY, STRUM_FALLBACK_VELOCITY]
     lastCourseRef.current = [null, null]
     fingerFiltersRef.current.forEach((f) => f.reset())
     sustainCourseRef.current = [null, null]
