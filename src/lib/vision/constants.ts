@@ -1,5 +1,8 @@
 // MediaPipe Hand Landmarker indices.
 export const THUMB_TIP = 4
+// Thumb IP joint — the knuckle one segment below the tip; extrapolating past
+// the tip along IP→tip lands the cursor on the visual nail tip (see extrapolateTip).
+export const THUMB_IP = 3
 export const INDEX_TIP = 8
 // Middle fingertip — pinching it to the thumb engages tremolo mode (a distinct
 // gesture from the thumb–index pluck, so the two never collide).
