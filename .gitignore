@@ -20,9 +20,11 @@ build/
 *.log
 npm-debug.log*
 
-# Claude workflow docs (skill specs/plans + handoff) — kept local, untracked
+# internal docs — kept local, untracked
 docs/superpowers/
 docs/HANDOFF.md
+docs/MUSIC-THEORY.md
+docs/research/
 
 # Vite dep pre-bundle cache
 .vite/

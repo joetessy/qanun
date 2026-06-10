@@ -48,13 +48,8 @@ The HUD readout shows the inferred maqam name and the home note, e.g. **"Maqam B
 
 - The **tonic control** in the drawer (the "tune" button) sets the key — moving "C / Rast" up or down in pitch.
 
-## Docs
+## Credits
 
-- **[docs/HANDOFF.md](docs/HANDOFF.md)** — current state, how to play, architecture, module map, caveats. **Start here.**
-- [docs/MUSIC-THEORY.md](docs/MUSIC-THEORY.md) — the maqam/jins/sayr knowledge base.
-- `docs/superpowers/specs/` — the design specs (v1 + the v2 interaction/sound rework).
-- `docs/research/` — ajnas/sayr references and sample-sourcing notes.
+**Sound** — Sampled from a CC0/public-domain Turkish-kanun recording (Bozkurt, Freesound #211133); see [public/samples/qanun/NOTICE.md](public/samples/qanun/NOTICE.md). A Karplus-Strong synth voice is the fallback.
 
-## Sound credits
-
-Sampled from a **CC0 / public-domain** Turkish-kanun recording (Bozkurt, Freesound #211133); see [public/samples/qanun/NOTICE.md](public/samples/qanun/NOTICE.md). A Karplus-Strong synth voice is the fallback.
+**Theory** — Maqam knowledge drawn from [maqamworld.com](https://www.maqamworld.com) and *Inside Arabic Music* by Johnny Farraj & Sami Abu Shumays (Oxford University Press, 2019).
