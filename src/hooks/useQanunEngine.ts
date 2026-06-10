@@ -37,6 +37,11 @@ import { projectPoint } from '../lib/draw/projectPoint'
 const FIELD_WINDOW = { leadingTones: FIELD_LEADING_TONES, reachAboveTonic: FIELD_REACH_ABOVE_TONIC } as const
 // Frames a freshly plucked string stays lit before the highlight clears.
 const PLUCK_GLOW_FRAMES = 6
+// Frames the "a hand is being tracked" flag stays true after the last frame a
+// hand was actually seen. The flag hides the OS mouse cursor (the thumb ring is
+// the cursor during hand play); the grace bridges single-frame MediaPipe
+// dropouts so the mouse cursor doesn't blink back on mid-play (~0.2 s at 60 fps).
+const TRACK_GRACE_FRAMES = 12
 // Velocity for a sustained (rashsh) note when the per-frame reconcile (re)starts
 // it. Lower than a pluck: a rashsh re-strikes continuously, so a softer per-strike
 // level leaves headroom and keeps sustained play (esp. with vibrato) from
@@ -155,6 +160,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const [homeDegree, setHomeDegreeState] = useState(1)
   const [highlightIndices, setHighlightIndices] = useState<number[]>([])
   const [pluckedIndices, setPluckedIndices] = useState<number[]>([])
+  // True while a hand is actively tracked (its thumb-ring cursor is on screen).
+  // Drives hiding the OS mouse cursor over the play field — see TRACK_GRACE_FRAMES.
+  const [handTracking, setHandTracking] = useState(false)
   const [courses, setCourses] = useState<Course[]>(() =>
     buildField({ tonicMidi: DEFAULT_TONIC_MIDI, mandalState: DEFAULT_RAST_STATE, ...FIELD_WINDOW })
   )
@@ -210,8 +218,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const frameCounterRef = useRef(0)
   // Frame index at which the current pluck glow expires (cleared in tick).
   const pluckClearRef = useRef(0)
-  // Tracks whether a pointer hold (rashsh) is currently active.
-  const holdingRef = useRef(false)
+  // Course held by an active pointer (mouse/touch) rashsh, null when none. The
+  // tick loop merges it into the per-frame hover set so the camera loop doesn't
+  // stomp the held string's highlight the moment no hand hovers it.
+  const holdingRef = useRef<number | null>(null)
 
   // INDEX pinch = melodic PLUCK only (tremolo is the middle finger's job; the
   // strum below handles movement while closed). Thresholds are PALM-WIDTH
@@ -244,6 +254,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // lit courses actually changes (otherwise React re-renders 84 string spans every frame).
   const lastHoverKeyRef = useRef('')
   const lastPluckedKeyRef = useRef('')
+  // Hand-tracking cursor guard: handGraceRef counts down from TRACK_GRACE_FRAMES
+  // after the last frame a hand was seen; lastHandTrackingRef debounces the
+  // setState so it only fires on a true on/off transition.
+  const handGraceRef = useRef(0)
+  const lastHandTrackingRef = useRef(false)
 
   const recompute = useCallback((next: MandalState, nextTonic: number): void => {
     const detune = detuneCentsRef.current
@@ -554,7 +569,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       if (!audio || !field[index]) return
       setHighlightIndices([index])
       lastHoverKeyRef.current = String(index)
-      holdingRef.current = true
+      holdingRef.current = index
       // Pass immediate:false because pluckCourse() already attacked ~150 ms
       // earlier on pointer-down; we only want to start the rashsh loop. Use the
       // softer sustain level (the pluck already gave the louder attack).
@@ -570,8 +585,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setPluckedIndices([])
     lastHoverKeyRef.current = ''
     lastPluckedKeyRef.current = ''
-    if (!holdingRef.current) return
-    holdingRef.current = false
+    if (holdingRef.current === null) return
+    holdingRef.current = null
     audioRef.current?.holdStop()
   }, [])
 
@@ -737,8 +752,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       }
 
       // MIDDLE = tremolo: while it's the active pinch, hold the hand's current
-      // course (the reconcile below turns it into a rashsh; two held → octave
-      // double-tremolo). Moving the hand slides the tremolo across strings.
+      // course (the reconcile below turns it into a rashsh; two held → the
+      // alternating two-note trill). Moving the hand slides the tremolo across strings.
       if (active === 'middle' && field[course]) {
         sustainCourseRef.current[slot] = course
         pluckedCourses.push(course)
@@ -770,6 +785,20 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     }
 
     frameCounterRef.current += 1
+
+    // --- Hand-tracking cursor flag ---
+    // A drawn thumb ring (one per detected hand) IS the cursor during hand play,
+    // so the OS mouse cursor is hidden whenever a hand is tracked. Refresh the
+    // grace on any detected hand and decay it otherwise; flip the React flag only
+    // on a true transition so this doesn't re-render every frame.
+    if (playTips.length > 0) handGraceRef.current = TRACK_GRACE_FRAMES
+    else if (handGraceRef.current > 0) handGraceRef.current -= 1
+    const tracking = handGraceRef.current > 0
+    if (tracking !== lastHandTrackingRef.current) {
+      lastHandTrackingRef.current = tracking
+      setHandTracking(tracking)
+    }
+
     // Push the HUD's "last" cell only on an actual change — the updater returns
     // the SAME object when nothing changed, so React skips the re-render (the
     // whole Qanun tree would otherwise re-render at frame rate during tremolo).
@@ -779,6 +808,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     }
 
     // --- String highlight / pluck feedback (state for StringField) ---
+    // A pointer (mouse/touch) hold keeps its string lit: hover state is rebuilt
+    // per-frame from detected hands, so without merging the held course the
+    // first hand-free frame would stomp the highlight holdCourse() just set.
+    const pointerHeld = holdingRef.current
+    if (pointerHeld !== null && !hoverCourses.includes(pointerHeld)) {
+      hoverCourses.push(pointerHeld)
+    }
     const hoverKey = hoverCourses.slice().sort((a, b) => a - b).join(',')
     if (hoverKey !== lastHoverKeyRef.current) {
       lastHoverKeyRef.current = hoverKey
@@ -871,8 +907,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     lastHoldKeyRef.current = ''
     lastHoverKeyRef.current = ''
     lastPluckedKeyRef.current = ''
+    // Any pointer hold dies with the session too (stop() calls holdStop).
+    holdingRef.current = null
+    handGraceRef.current = 0
+    lastHandTrackingRef.current = false
     setHighlightIndices([])
     setPluckedIndices([])
+    setHandTracking(false)
   }, [])
 
   const start = useCallback(async (): Promise<void> => {
@@ -955,6 +996,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     detuneCents,
     highlightIndices,
     pluckedIndices,
+    handTracking,
     start,
     stop,
     setTonic,

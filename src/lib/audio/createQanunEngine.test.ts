@@ -555,16 +555,19 @@ describe('createQanunEngine — holdAlternate', () => {
     expect(typeof (e as unknown as Record<string, unknown>).holdAlternate).toBe('function')
   })
 
-  it('creates a Tone.Clock at the fixed rashsh rate, no immediate attack', () => {
+  it('creates a Tone.Clock at the single-trill rashsh pulse, no immediate attack', () => {
     const { ToneMock, loopStart, triggerAttack } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
     expect(ToneMock.Clock).toHaveBeenCalledTimes(1)
     const [callback, frequency] = ToneMock.Clock.mock.calls[0]
     expect(typeof callback).toBe('function')
-    // The trill is two interleaved "hands": the alternation ticks at TWICE the
-    // 9 Hz rashsh pulse so EACH string is struck at the full single-string rate.
-    expect(frequency).toBe(18)
+    // The alternation ticks at the SAME 9 Hz pulse as the single-string trill:
+    // one pluck-weight note per tick, hi-lo-hi-lo, so each note is a distinct
+    // event (like fast manual alternate plucking). At 2× (18 attacks/s) the
+    // strikes land faster than the ~1.5 s ring decays on either string, and the
+    // pair fuses into a continuous octave dyad — it reads as unison, not a trill.
+    expect(frequency).toBe(9)
     expect(loopStart).toHaveBeenCalledTimes(1)
     // No initial pluck — the caller already plucked.
     expect(triggerAttack).not.toHaveBeenCalled()
@@ -598,17 +601,22 @@ describe('createQanunEngine — holdAlternate', () => {
     expect(freqs.some((f) => Math.abs(f - 660) < 1)).toBe(true)
   })
 
-  it('strikes a SINGLE voice per trill tick (no triple-course bloom)', () => {
+  it('blooms each trill tick to the triple-course cluster (like a pluck)', () => {
     const { ToneMock, triggerAttack } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
     e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
     const callback = ToneMock.Clock.mock.calls[0][0] as (t: number) => void
     triggerAttack.mockClear()
     callback(0)
-    // One voice per strike (a pluck still blooms to 3) — the trill line
-    // stays lean and can't pile voices up.
-    expect(triggerAttack).toHaveBeenCalledTimes(1)
-    expect(triggerAttack.mock.calls[0][0] as number).toBeCloseTo(660, 0)
+    // Each strike fires the full 3-voice triple-course bloom (a click/pluck does
+    // the same) — that body + shimmer is what makes the trill read like fast
+    // plucking instead of a thin, quiet seesaw. All three sit around the active
+    // note (660), detuned by COURSE_CENTS, with one exactly on pitch.
+    expect(triggerAttack).toHaveBeenCalledTimes(3)
+    const freqs = triggerAttack.mock.calls.map((c) => c[0] as number)
+    expect(freqs.findIndex((f) => Math.abs(f - 660) < 0.01)).toBeGreaterThanOrEqual(0)
+    expect(freqs.every((f) => Math.abs(f - 660) < 3)).toBe(true) // whole cluster hugs 660
+    expect(freqs.some((f) => Math.abs(f - 440) < 1)).toBe(false) // the low string is silent this tick
   })
 
   it('1→2 swaps engines: the rashsh loop stops and the dedicated trill loop starts', () => {
@@ -690,9 +698,10 @@ describe('createQanunEngine — holdAlternate', () => {
     const callback = ToneMock.Clock.mock.calls[0][0] as (t: number) => void
     voiceGainRampTo.mockClear()
     callback(0); callback(0.1); callback(0.2) // hi, lo, hi
-    // One gate move per tick — always a strike level (> 0), never a close (0).
+    // Three gate moves per tick (the triple-course bloom), always a strike level
+    // (> 0), never a close (0) — the unstruck octave keeps ringing untouched.
     const levels = voiceGainRampTo.mock.calls.map((c) => c[0] as number)
-    expect(levels).toHaveLength(3)
+    expect(levels).toHaveLength(9) // 3 ticks × 3-voice bloom
     expect(levels.every((l) => l > 0)).toBe(true)
   })
 
@@ -719,13 +728,15 @@ describe('createQanunEngine — holdAlternate', () => {
     samplerTriggerAttack.mockClear()
     triggerAttack.mockClear()
     callback(0)
-    expect(samplerTriggerAttack).toHaveBeenCalledTimes(1)  // sampled strike
+    expect(samplerTriggerAttack).toHaveBeenCalledTimes(3)  // sampled strike, bloomed
     expect(triggerAttack).not.toHaveBeenCalled()           // not the synth fallback
-    expect(samplerTriggerAttack.mock.calls[0][0] as number).toBeCloseTo(660, 0)
+    const hiFreqs = samplerTriggerAttack.mock.calls.map((c) => c[0] as number)
+    expect(hiFreqs.some((f) => Math.abs(f - 660) < 1)).toBe(true)
     // And it alternates on the sampled voice too.
     samplerTriggerAttack.mockClear()
     callback(0.1)
-    expect(samplerTriggerAttack.mock.calls[0][0] as number).toBeCloseTo(440, 0)
+    const loFreqs = samplerTriggerAttack.mock.calls.map((c) => c[0] as number)
+    expect(loFreqs.some((f) => Math.abs(f - 440) < 1)).toBe(true)
   })
 
   it('falls back to the synth while the sampler is still loading', () => {
@@ -736,7 +747,7 @@ describe('createQanunEngine — holdAlternate', () => {
     samplerTriggerAttack.mockClear()
     triggerAttack.mockClear()
     callback(0)
-    expect(triggerAttack).toHaveBeenCalledTimes(1)         // synth fallback
+    expect(triggerAttack).toHaveBeenCalledTimes(3)         // synth fallback, bloomed
     expect(samplerTriggerAttack).not.toHaveBeenCalled()
   })
 
@@ -750,7 +761,7 @@ describe('createQanunEngine — holdAlternate', () => {
     samplerTriggerAttack.mockClear()
     triggerAttack.mockClear()
     callback(0)
-    expect(triggerAttack).toHaveBeenCalledTimes(1)
+    expect(triggerAttack).toHaveBeenCalledTimes(3)
     expect(samplerTriggerAttack).not.toHaveBeenCalled()
   })
 

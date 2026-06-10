@@ -80,21 +80,31 @@ const VOICES_PER_NOTE = COURSE_CENTS.length
 const RASHSH_HZ = 9
 
 /**
- * Two-note trill pulse multiplier. A real qanun octave tremolo is TWO hands each
- * tremolo-ing their own string, interleaved — so each string is struck at the
- * full single-string rashsh rate and the combined alternation ticks at twice
- * that. (Splitting one rashsh pulse across two strings — the old behaviour —
- * halves each string's rate and reads as a slow seesaw, not a tremolo.)
+ * Two-note trill pulse multiplier. The alternation ticks at the SAME pulse as
+ * the single-string trill (1× RASHSH_HZ): one pluck-weight note per tick,
+ * hi-lo-hi-lo — a played trill figure, the same thing as alternating fast
+ * manual plucks between the two strings (the reference sound). Tuned by ear
+ * across both failure modes:
+ *   - 2× (each string at the full 9 Hz rashsh rate) lands 18 attacks/s, far
+ *     faster than the ~1.5 s ring decays on either string — the pair fuses into
+ *     a continuous octave dyad and reads as UNISON, not alternation.
+ *   - 1× with the old soft single-voice strikes read as a sparse, quiet seesaw —
+ *     but that was the strike weight, not the rate (fixed below: each tick now
+ *     blooms at near-pluck velocity).
+ * If 9 notes/s ever feels sluggish, ~1.33 (12 Hz) is the next stop — keep each
+ * note discrete enough to parse before reaching for 2×.
  */
-const TRILL_PULSE_MULT = 2
+const TRILL_PULSE_MULT = 1
 
 /**
- * Per-strike velocity scale for the two-note trill. The interleaved pulse lays
- * down twice the strike density of a single rashsh, so each strike sits a touch
- * softer to keep the summed level near the single-string tremolo — otherwise
- * the master limiter squashes the very attacks that make it percussive.
+ * Per-strike velocity scale for the two-note trill. Pushed ABOVE 1 so each
+ * (bloomed) strike lands near a real pluck's level rather than the soft
+ * SUSTAIN_VELOCITY a single-note rashsh sits at — the two-note trill kept reading
+ * as "much quieter than the pluck" otherwise. The master limiter + soft-clip
+ * brick-wall any summed peaks, so a hot per-strike level buys presence without
+ * letting the octave dyad runaway. Effective velocity ≈ SUSTAIN_VELOCITY × this.
  */
-const TRILL_VELOCITY_SCALE = 0.85
+const TRILL_VELOCITY_SCALE = 1.2
 
 /**
  * Forward-only timing slop per trill strike (seconds). Two real hands never
@@ -248,10 +258,11 @@ export const createQanunEngine = ({
   let heldVelocity = 0.6
   let rashshTick = 0
 
-  // ── two-note trill — alternating attacks, hi→lo→hi→lo, on the same pulse.
-  // Nothing is cut: each string rings out naturally until struck again, like two
-  // real strings plucked in turn. Strikes route through fireVoice, sharing the
-  // main sampler (Karplus-Strong fallback while samples load). ──
+  // ── two-note trill — alternating attacks, hi→lo→hi→lo, one pluck-weight note
+  // per tick at the single-trill pulse. Nothing is cut: each string rings out
+  // naturally until struck again, like two real strings plucked in turn. Strikes
+  // bloom through fireVoice (triple-course, like a pluck), sharing the main
+  // sampler (Karplus-Strong fallback while loading). ──
   let trillLoop: ClockHandle | null = null
   let trillFreqs: [number, number] = [0, 0]
   let trillVelocity = 0.6
@@ -368,14 +379,17 @@ export const createQanunEngine = ({
   }
 
   /**
-   * Start (or retune) the two-note trill — modelled as two interleaved hands:
-   * alternating attacks hi, lo, hi, lo, always leading with the high note, at
-   * TWICE the rashsh pulse so EACH string is struck at the full single-string
-   * tremolo rate (matching what one hand does on one string). Each tick strikes
-   * ONE voice, slightly softened (TRILL_VELOCITY_SCALE) and humanized by a few
-   * ms (TRILL_TIME_JITTER_SEC); nothing is silenced, so both strings ring out
-   * naturally until their next strike. Calling again while running just retunes
-   * (slide) without restarting the loop, so the phase never stutters.
+   * Start (or retune) the two-note trill — a played trill figure: alternating
+   * pluck-weight notes hi, lo, hi, lo, always leading with the high note, at the
+   * single-trill pulse (RASHSH_HZ × TRILL_PULSE_MULT — see that constant for why
+   * faster fuses into unison). Each tick fires the full triple-course BLOOM
+   * (3 detuned voices, exactly like a pluck) at near-pluck velocity
+   * (TRILL_VELOCITY_SCALE) with a few ms of humanization (TRILL_TIME_JITTER_SEC)
+   * — so every note lands with a pluck's body and shimmer, the same event as the
+   * fast manual alternation it's meant to automate. Nothing is silenced: both
+   * strings ring out naturally until their next strike. Calling again while
+   * running just retunes (slide) without restarting the loop, so the phase never
+   * stutters.
    */
   const startTrill = (hiHz: number, loHz: number, velocity: number): void => {
     trillFreqs = [hiHz, loHz]
@@ -387,9 +401,14 @@ export const createQanunEngine = ({
       trillTick++
       const jitter = (Math.random() * 2 - 1) * RASHSH_VELOCITY_JITTER
       const v = clamp01(trillVelocity * TRILL_VELOCITY_SCALE + jitter)
+      const gainValue = velocityCurve(v)
       // Forward-only slop — two hands never interleave on a perfect grid.
       const t = time + Math.random() * TRILL_TIME_JITTER_SEC
-      fireVoice(trillFreqs[idx], velocityCurve(v), t)
+      // Bloom each strike to the triple-course cluster (same as a pluck) for body
+      // and the qanun's chorused shimmer.
+      for (const freq of detunedFreqs(trillFreqs[idx], COURSE_CENTS)) {
+        fireVoice(freq, gainValue, t)
+      }
     }, RASHSH_HZ * TRILL_PULSE_MULT)
     trillLoop.start()
   }

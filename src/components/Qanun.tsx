@@ -67,7 +67,7 @@ export const Qanun = () => {
         </button>
       </header>
 
-      <div className="soundboard">
+      <div className={`soundboard${engine.handTracking ? ' is-tracking' : ''}`}>
         <Stage
           videoRef={videoRef}
           canvasRef={canvasRef}
