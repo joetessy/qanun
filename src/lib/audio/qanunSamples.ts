@@ -11,6 +11,16 @@
  *
  * Tone.Sampler pitch-shifts the nearest sample automatically, so quarter-tones
  * (Arabic microtonal notes) are handled for free.
+ *
+ * ONSET ALIGNMENT (constraint for any future sample swap): every file must put
+ * its pluck transient within ~30 ms of the file start. The raw slices carried
+ * 0–360 ms of inter-note bleed/room tone before the attack (slicing artifacts of
+ * the continuous source recording), and Tone.Sampler has no per-sample start
+ * offset — so that variable dead time became per-string LATENCY. At the 9 Hz
+ * tremolo (111 ms between strikes) a 50–350 ms skew between two alternating
+ * notes audibly flams or even fuses them into unison, differently per string
+ * pair. The shipped files are trimmed (attack − 15 ms pre-roll, 5 ms fade-in);
+ * re-run the same trim on any replacement samples.
  */
 export const QANUN_SAMPLE_BASE_URL = '/samples/qanun/'
 

@@ -34,11 +34,12 @@ if (import.meta.hot) import.meta.hot.accept(() => window.location.reload())
 //   • Longer ring: resonance ↑ to 0.97, dampening 3500 Hz for warmer tone.
 //   • Body reverb on by default (wet ≈ 0.28).
 //   • Rashsh hold: a continuous loop re-strikes a single held course at ~9 Hz.
-//   • Two-note trill: two interleaved "hands" — alternating attacks hi-lo-hi-lo
-//     at TWICE the rashsh pulse, so each string is struck at the full
-//     single-string tremolo rate; each string rings out naturally until struck
-//     again. Strikes route through fireVoice, so they share the main sampler
-//     (with the Karplus-Strong fallback while samples load).
+//   • Two-note trill: alternating attacks hi-lo-hi-lo on the SAME persistent
+//     clock as the single rashsh (one steady strike grid — see the hold state
+//     block for why sharing the clock is what keeps transitions clean); each
+//     string rings out naturally until struck again. Strikes route through
+//     fireVoice, so they share the main sampler (with the Karplus-Strong
+//     fallback while samples load).
 export type SoundSource = 'sample' | 'synth'
 
 export interface QanunEngineOptions {
@@ -97,19 +98,21 @@ const RASHSH_HZ = 9
 const TRILL_PULSE_MULT = 1
 
 /**
- * Per-strike velocity scale for the two-note trill. Pushed ABOVE 1 so each
- * (bloomed) strike lands near a real pluck's level rather than the soft
- * SUSTAIN_VELOCITY a single-note rashsh sits at — the two-note trill kept reading
- * as "much quieter than the pluck" otherwise. The master limiter + soft-clip
- * brick-wall any summed peaks, so a hot per-strike level buys presence without
- * letting the octave dyad runaway. Effective velocity ≈ SUSTAIN_VELOCITY × this.
+ * Per-strike velocity scale for EVERY hold strike — single-note rashsh and the
+ * two-note trill alike. Pushed ABOVE 1 so each bloomed strike lands near a real
+ * pluck's level rather than the soft SUSTAIN_VELOCITY the hold is issued at —
+ * both tremolo shapes kept reading as "much quieter than the pluck" otherwise.
+ * The master limiter + soft-clip brick-wall any summed peaks, so a hot
+ * per-strike level buys presence without letting the sum run away.
+ * Effective velocity ≈ SUSTAIN_VELOCITY × this.
  */
-const TRILL_VELOCITY_SCALE = 1.2
+const HOLD_VELOCITY_SCALE = 1.2
 
 /**
- * Forward-only timing slop per trill strike (seconds). Two real hands never
- * interleave on a perfect grid; a few ms of humanization keeps the alternation
- * from sounding mechanical. Strictly positive so nothing schedules in the past.
+ * Forward-only timing slop per hold strike (seconds). Real tremolo strikes —
+ * one hand re-picking a string or two alternating — never land on a perfect
+ * grid; a few ms of humanization keeps both shapes from sounding mechanical.
+ * Strictly positive so nothing schedules in the past.
  */
 const TRILL_TIME_JITTER_SEC = 0.006
 
@@ -248,25 +251,24 @@ export const createQanunEngine = ({
   let voiceIndex = -1
   let started = false
 
-  // ── rashsh state — ONE continuous loop re-plucks the held course (single-note
-  // tremolo). Two simultaneous holds route to the alternating trill loop below.
-  // Both run on their own Tone.Clock (NOT the Transport) so the tremolo rate
-  // stays a fixed Hz, independent of the metronome's Transport BPM. ──
-  interface ClockHandle { start(): void; stop(): void; dispose(): void }
-  let rashshLoop: ClockHandle | null = null
-  let heldFreqs: number[] = []
+  // ── hold (sustain) state — ONE continuous Tone.Clock drives BOTH sustain
+  // shapes: one held course → single-note rashsh re-strikes; two held → the
+  // alternating two-note trill (hi-lo-hi-lo). The single shared clock is the
+  // point, not a convenience: the old separate rashsh/trill clocks tore one
+  // loop down and started the other on every 1↔2 transition, and a fresh
+  // Tone.Clock fires its first tick AT start — so the trill's opening strike
+  // landed anywhere from 0–111 ms after the rashsh's last one, decided purely
+  // by when the second finger happened to pinch. Entries read as flams or
+  // near-unison, and pinch-detection flapping ({A} ↔ {A,B}) multiplied the
+  // double-fires. One persistent clock keeps every strike on the same steady
+  // grid; transitions only change WHAT the next tick plays. Runs on its own
+  // Tone.Clock (NOT the Transport) so the tremolo rate stays a fixed Hz,
+  // independent of the metronome's Transport BPM. ──
+  interface ClockHandle { start(): void; stop(): void; dispose(): void; frequency: { value: number } }
+  let holdLoop: ClockHandle | null = null
+  let heldFreqs: number[] = []   // [one] = single rashsh, [hi, lo] = trill
   let heldVelocity = 0.6
-  let rashshTick = 0
-
-  // ── two-note trill — alternating attacks, hi→lo→hi→lo, one pluck-weight note
-  // per tick at the single-trill pulse. Nothing is cut: each string rings out
-  // naturally until struck again, like two real strings plucked in turn. Strikes
-  // bloom through fireVoice (triple-course, like a pluck), sharing the main
-  // sampler (Karplus-Strong fallback while loading). ──
-  let trillLoop: ClockHandle | null = null
-  let trillFreqs: [number, number] = [0, 0]
-  let trillVelocity = 0.6
-  let trillTick = 0
+  let holdTick = 0               // alternation cursor; resets ONLY on a held-COUNT change
 
   // ── internal helpers ────────────────────────────────────────────────────────
 
@@ -328,9 +330,12 @@ export const createQanunEngine = ({
     freqHz: number
     velocity: number
     time?: number
-    // Triple-course bloom (3 detuned voices). Pass false for glide steps so a
-    // fast drag across many strings fires 1 voice each instead of 3 — keeps the
-    // burst from slamming the master chain (anti-clipping).
+    // Triple-course bloom (3 detuned voices) — the default for EVERY melodic
+    // strike, strum/glide sweeps included: a single-voice sweep step read thin
+    // next to a pluck, and the master limiter + soft-clip already make the sum
+    // clip-proof. false fires 1 un-detuned voice; no melodic caller passes it
+    // today (the rashsh loop strikes single voices directly), kept as the
+    // engine's plain-strike option.
     bloom?: boolean
   }): void => {
     if (!Number.isFinite(freqHz) || freqHz <= 0) return
@@ -342,124 +347,106 @@ export const createQanunEngine = ({
   }
 
   /**
-   * Single-note rashsh sustain: ONE continuous loop re-plucks the held note at
-   * RASHSH_HZ (the 16th-note tremolo pulse). Two simultaneous holds are routed to
-   * the dedicated gain-gated trill engine below (startTrill), never here.
+   * Reconcile the sustain to the given held set — the single engine behind
+   * holdStart/holdAlternate/holdStop. 0 freqs tears the clock down; otherwise
+   * ONE persistent clock keeps ticking and every tick reads the CURRENT set:
+   *   1 freq  → rashsh: the held note re-struck every tick.
+   *   2 freqs → trill: alternating strikes, hi-lo-hi-lo.
+   * Either way each tick is the SAME strike as a pluck — the full triple-course
+   * BLOOM (3 detuned voices) at near-pluck velocity (HOLD_VELOCITY_SCALE) with
+   * a few ms of humanization (TRILL_TIME_JITTER_SEC) — so every note lands with
+   * a pluck's body and shimmer, single-note tremolo included.
+   * The alternation cursor resets ONLY when the held COUNT changes (a note
+   * added/removed), so the next tick deterministically leads with freqs[0] —
+   * the higher note, by the callers' ordering — no matter which finger pinched
+   * first or where the old phase stood. A pitch slide with the same count keeps
+   * the phase, so a jittering held course can't restart the figure. And because
+   * the clock itself never restarts mid-hold, 1↔2 transitions stay on the same
+   * strike grid: no flam against the previous shape's last strike, no swallowed
+   * or doubled notes. Nothing is silenced: every struck string rings out
+   * naturally until its next strike (the teardown leaves gates open too).
    */
   const setHeld = ({ freqs, velocity }: { freqs: number[]; velocity?: number }): void => {
-    heldFreqs = freqs.filter((f) => Number.isFinite(f) && f > 0)
+    const valid = freqs.filter((f) => Number.isFinite(f) && f > 0)
     if (velocity !== undefined) heldVelocity = velocity
 
-    if (heldFreqs.length === 0) {
-      // Nothing held — tear the loop down.
-      if (rashshLoop) {
-        rashshLoop.stop()
-        rashshLoop.dispose()
-        rashshLoop = null
+    if (valid.length === 0) {
+      // Nothing held — tear the loop down; the last strikes ring out naturally.
+      heldFreqs = []
+      if (holdLoop) {
+        holdLoop.stop()
+        holdLoop.dispose()
+        holdLoop = null
       }
       return
     }
 
-    if (!rashshLoop) {
-      rashshTick = 0
-      rashshLoop = new Tone.Clock((time: number) => {
-        if (heldFreqs.length === 0) return
-        const freqHz = heldFreqs[rashshTick % heldFreqs.length]
-        rashshTick++
-        // Slight velocity jitter so the tremolo isn't mechanical.
-        const jitter = (Math.random() * 2 - 1) * RASHSH_VELOCITY_JITTER
-        const v = clamp01(heldVelocity + jitter)
-        // Single voice per strike (not the triple-course bloom): a note re-struck
-        // ~10×/s rings ~1.5 s, so blooming would stack dozens of copies and slam
-        // the master soft-clip.
-        fireVoice(freqHz, velocityCurve(v), time)
-      }, RASHSH_HZ)
-      rashshLoop.start()
-    }
-  }
+    if (valid.length !== heldFreqs.length) holdTick = 0 // count change → next tick leads with freqs[0]
+    heldFreqs = valid
 
-  /**
-   * Start (or retune) the two-note trill — a played trill figure: alternating
-   * pluck-weight notes hi, lo, hi, lo, always leading with the high note, at the
-   * single-trill pulse (RASHSH_HZ × TRILL_PULSE_MULT — see that constant for why
-   * faster fuses into unison). Each tick fires the full triple-course BLOOM
-   * (3 detuned voices, exactly like a pluck) at near-pluck velocity
-   * (TRILL_VELOCITY_SCALE) with a few ms of humanization (TRILL_TIME_JITTER_SEC)
-   * — so every note lands with a pluck's body and shimmer, the same event as the
-   * fast manual alternation it's meant to automate. Nothing is silenced: both
-   * strings ring out naturally until their next strike. Calling again while
-   * running just retunes (slide) without restarting the loop, so the phase never
-   * stutters.
-   */
-  const startTrill = (hiHz: number, loHz: number, velocity: number): void => {
-    trillFreqs = [hiHz, loHz]
-    trillVelocity = velocity
-    if (trillLoop) return
-    trillTick = 0
-    trillLoop = new Tone.Clock((time: number) => {
-      const idx = trillTick % 2
-      trillTick++
+    // The trill may pulse at a multiple of the single rashsh (TRILL_PULSE_MULT).
+    // Retuning the RUNNING clock's frequency preserves tick continuity (that is
+    // what Tone's TickSignal is for), so a mid-hold rate change can't stutter
+    // the grid the way a stop/start would.
+    const rateHz = valid.length >= 2 ? RASHSH_HZ * TRILL_PULSE_MULT : RASHSH_HZ
+    if (holdLoop) {
+      holdLoop.frequency.value = rateHz
+      return
+    }
+
+    holdLoop = new Tone.Clock((time: number) => {
+      const struck = heldFreqs
+      if (struck.length === 0) return
+      const idx = holdTick % struck.length
+      holdTick++
+      // Slight velocity jitter so the tremolo isn't mechanical.
       const jitter = (Math.random() * 2 - 1) * RASHSH_VELOCITY_JITTER
-      const v = clamp01(trillVelocity * TRILL_VELOCITY_SCALE + jitter)
+      // Every hold strike — single rashsh or trill alternation — is the SAME
+      // event as a pluck: the full triple-course bloom at near-pluck velocity.
+      // (The voice budget is identical to the trill's 9 ticks/s × 3 voices,
+      // which the limiter + soft-clip already absorb; thinning the single-note
+      // strike to one voice only made one-finger tremolo read soft and distant
+      // next to a pluck.)
+      const v = clamp01(heldVelocity * HOLD_VELOCITY_SCALE + jitter)
       const gainValue = velocityCurve(v)
-      // Forward-only slop — two hands never interleave on a perfect grid.
+      // Forward-only slop — real strikes never land on a perfect grid.
       const t = time + Math.random() * TRILL_TIME_JITTER_SEC
-      // Bloom each strike to the triple-course cluster (same as a pluck) for body
-      // and the qanun's chorused shimmer.
-      for (const freq of detunedFreqs(trillFreqs[idx], COURSE_CENTS)) {
+      for (const freq of detunedFreqs(struck[idx], COURSE_CENTS)) {
         fireVoice(freq, gainValue, t)
       }
-    }, RASHSH_HZ * TRILL_PULSE_MULT)
-    trillLoop.start()
-  }
-
-  /**
-   * Stop the two-note trill. The gates are left open on purpose: like real
-   * strings, the last struck notes ring out naturally after release (matching
-   * how the single-note rashsh ends).
-   */
-  const stopTrill = (): void => {
-    if (trillLoop) {
-      trillLoop.stop()
-      trillLoop.dispose()
-      trillLoop = null
-    }
+    }, rateHz)
+    holdLoop.start() // a fresh Tone.Clock fires its first tick AT start — the hold sounds immediately
   }
 
   /**
    * Start a single-note rashsh hold. `immediate` (default true) fires an initial
    * pluck; pass false when the note was already plucked (e.g. pointer-down).
+   * Dropping from a two-note trill to one held note rides the same shared
+   * clock, so the surviving note keeps the trill's strike grid.
    */
   const holdStart = ({ freqHz, velocity, immediate = true }: { freqHz: number; velocity: number; immediate?: boolean }): void => {
     if (!Number.isFinite(freqHz) || freqHz <= 0) return
-    stopTrill() // e.g. dropping from a two-note trill back to one held note
     if (immediate) pluck({ freqHz, velocity })
     setHeld({ freqs: [freqHz], velocity })
   }
 
   /**
-   * Hold two courses at once → the dedicated alternating trill (caller passes
-   * [higher, lower], and the trill always leads with the higher). With only one
-   * valid note this falls back to the single rashsh; with none it stops all.
+   * Hold two courses at once → the alternating trill (caller passes
+   * [higher, lower]; whenever the pair forms, the alternation re-leads with the
+   * higher note). Rides the SAME persistent clock as the single rashsh, so the
+   * trill sounds identical no matter which finger pinched first or how the two
+   * pinches were timed. With only one valid note this IS the single rashsh;
+   * with none it stops the hold. 3+ valid notes keep the top two of the
+   * caller's higher-first ordering.
    */
   const holdAlternate = ({ freqs, velocity }: { freqs: number[]; velocity: number }): void => {
-    const valid = freqs.filter((f) => Number.isFinite(f) && f > 0)
-    if (valid.length >= 2) {
-      setHeld({ freqs: [] }) // the single rashsh yields to the trill engine
-      startTrill(valid[0], valid[1], velocity)
-    } else if (valid.length === 1) {
-      stopTrill()
-      setHeld({ freqs: valid, velocity })
-    } else {
-      holdStop()
-    }
+    setHeld({ freqs: freqs.filter((f) => Number.isFinite(f) && f > 0).slice(0, 2), velocity })
   }
 
   /**
-   * Stop all sustain — the single rashsh AND the two-note trill.
+   * Stop all sustain — the single rashsh and the two-note trill share one clock.
    */
   const holdStop = (): void => {
-    stopTrill()
     setHeld({ freqs: [] })
   }
 

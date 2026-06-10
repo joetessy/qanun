@@ -77,12 +77,15 @@ const makeMockTone = () => {
       dispose: chorusDispose
     })),
     // Tone.Clock mock: captures the callback so tests can inspect it. The
-    // rashsh/trill loops run on a Clock (NOT the Transport) so their rate is
-    // fixed Hz, independent of the metronome's Transport BPM.
-    Clock: vi.fn().mockImplementation(() => ({
+    // single shared hold loop (rashsh + trill) runs on a Clock (NOT the
+    // Transport) so its rate is fixed Hz, independent of the metronome's
+    // Transport BPM. `frequency.value` mirrors Tone's retunable TickSignal —
+    // the engine retunes the RUNNING clock instead of restarting it.
+    Clock: vi.fn().mockImplementation((_cb: (t: number) => void, frequency: number) => ({
       start: loopStart,
       stop: loopStop,
-      dispose: loopDispose
+      dispose: loopDispose,
+      frequency: { value: frequency }
     }))
   }
 
@@ -360,8 +363,10 @@ describe('createQanunEngine — triple-course pluck', () => {
     expect(triggerAttack).not.toHaveBeenCalled()
   })
 
-  // Anti-clipping: glide steps pass bloom:false so a fast drag fires 1 voice per
-  // string instead of 3, keeping the master chain from being slammed.
+  // bloom:false is the engine's plain single-voice strike. The play paths no
+  // longer pass it — strum/glide sweeps bloom exactly like a pluck (the master
+  // limiter + soft-clip make the sum clip-proof) — but the option stays pinned
+  // so a caller wanting an un-detuned single strike keeps getting one.
   it('pluck({ bloom: false }) fires a single voice at the exact frequency', () => {
     const { ToneMock, triggerAttack } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
@@ -508,6 +513,22 @@ describe('createQanunEngine — rashsh hold', () => {
     expect(loopStart).toHaveBeenCalledTimes(1)
   })
 
+  it('blooms each single-note rashsh tick to the triple-course cluster (like a pluck)', () => {
+    const { ToneMock, triggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdStart({ freqHz: 440, velocity: 0.7, immediate: false })
+    const callback = ToneMock.Clock.mock.calls[0][0] as (t: number) => void
+    triggerAttack.mockClear()
+    callback(0)
+    // A one-finger tremolo strike is the SAME event as a pluck (and as a trill
+    // tick): the full 3-voice bloom hugging the held note. The old single-voice
+    // strike is what made a held single note read soft and distant.
+    expect(triggerAttack).toHaveBeenCalledTimes(3)
+    const freqs = triggerAttack.mock.calls.map((c) => c[0] as number)
+    expect(freqs.findIndex((f) => Math.abs(f - 440) < 0.01)).toBeGreaterThanOrEqual(0)
+    expect(freqs.every((f) => Math.abs(f - 440) < 3)).toBe(true)
+  })
+
   it('holdStop() stops and disposes the active loop', () => {
     const { ToneMock, loopStop, loopDispose } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
@@ -619,57 +640,108 @@ describe('createQanunEngine — holdAlternate', () => {
     expect(freqs.some((f) => Math.abs(f - 440) < 1)).toBe(false) // the low string is silent this tick
   })
 
-  it('1→2 swaps engines: the rashsh loop stops and the dedicated trill loop starts', () => {
-    const { ToneMock, loopStop, loopDispose } = makeMockTone()
-    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
-    e.holdStart({ freqHz: 440, velocity: 0.7 })
+  // 1↔2 transitions must stay on ONE persistent clock. The old design tore the
+  // rashsh loop down and started a separate trill clock — and a fresh Tone.Clock
+  // fires its first tick AT start, so the trill's opening strike landed 0–111 ms
+  // after the rashsh's last one depending on WHEN the second finger pinched:
+  // entries read as flams or near-unison. Sharing the clock removes that timing
+  // dependency entirely.
+  it('1→2 rides the same clock: no teardown, no second clock, no immediate re-fire', () => {
+    const { ToneMock, loopStop, loopDispose, loopStart, triggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdStart({ freqHz: 440, velocity: 0.7, immediate: false })
     expect(ToneMock.Clock).toHaveBeenCalledTimes(1) // single rashsh
+    triggerAttack.mockClear()
     e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
-    // The rashsh loop is stopped; the trill engine gets its own loop.
-    expect(loopStop).toHaveBeenCalledTimes(1)
-    expect(loopDispose).toHaveBeenCalledTimes(1)
-    expect(ToneMock.Clock).toHaveBeenCalledTimes(2)
-    // Sliding while trilling retunes in place — no new loop, no restart.
+    // Same clock keeps running — nothing stopped, nothing new started, and no
+    // out-of-grid strike fired at the transition itself.
+    expect(loopStop).not.toHaveBeenCalled()
+    expect(loopDispose).not.toHaveBeenCalled()
+    expect(ToneMock.Clock).toHaveBeenCalledTimes(1)
+    expect(loopStart).toHaveBeenCalledTimes(1)
+    expect(triggerAttack).not.toHaveBeenCalled()
+    // Sliding while trilling retunes in place — still the same loop.
     e.holdAlternate({ freqs: [660, 450], velocity: 0.7 })
-    expect(ToneMock.Clock).toHaveBeenCalledTimes(2)
-    expect(loopStop).toHaveBeenCalledTimes(1)
+    expect(ToneMock.Clock).toHaveBeenCalledTimes(1)
   })
 
   // The two-note trill must sound IDENTICAL regardless of when each finger landed:
-  // it starts fresh and always LEADS with the higher note (freqs[0]), no matter
-  // what internal phase the prior single-note loop had reached.
+  // on the count change it re-leads with the higher note (freqs[0]), no matter
+  // what internal phase the single-note hold had reached.
   it('the trill always leads with the higher note, regardless of prior single-note phase', () => {
     const { ToneMock, triggerAttack } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
-    // Hold the LOWER note alone; run its loop to an odd internal phase.
+    // Hold the LOWER note alone; run the shared loop to an odd internal phase.
     e.holdStart({ freqHz: 440, velocity: 0.7, immediate: false })
-    const rashshCb = ToneMock.Clock.mock.calls[0][0] as (t: number) => void
-    rashshCb(0)   // tick 0
-    rashshCb(0.1) // tick 1
-    rashshCb(0.2) // tick 2 → internal counter now odd
-    // Add the HIGHER note → the dedicated trill loop starts fresh, leading high.
+    const cb = ToneMock.Clock.mock.calls[0][0] as (t: number) => void
+    cb(0)   // tick 0
+    cb(0.1) // tick 1
+    cb(0.2) // tick 2 → internal counter now odd
+    // Add the HIGHER note → same clock, but the alternation re-leads high.
     e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
-    const trillCb = ToneMock.Clock.mock.calls[1][0] as (t: number) => void
     triggerAttack.mockClear()
-    trillCb(0.3) // first trill tick
+    cb(0.3) // first two-note tick
     const freqs = triggerAttack.mock.calls.map((c) => c[0] as number)
     expect(freqs.some((f) => Math.abs(f - 660) < 1)).toBe(true)  // higher leads
     expect(freqs.some((f) => Math.abs(f - 440) < 1)).toBe(false) // not the lower
   })
 
-  // Lifting one finger of a trill returns cleanly to the single-note tremolo.
-  it('2→1 swaps back: the trill stops and a fresh single rashsh plays the survivor', () => {
+  // ...and the mirror ordering: when the HIGHER note was held first, the pair
+  // still leads high — which finger pinched first cannot change the figure.
+  it('the trill leads with the higher note when the higher note was held first too', () => {
+    const { ToneMock, triggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdStart({ freqHz: 660, velocity: 0.7, immediate: false })
+    const cb = ToneMock.Clock.mock.calls[0][0] as (t: number) => void
+    cb(0); cb(0.1); cb(0.2) // odd internal phase again
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+    triggerAttack.mockClear()
+    cb(0.3)
+    const freqs = triggerAttack.mock.calls.map((c) => c[0] as number)
+    expect(freqs.some((f) => Math.abs(f - 660) < 1)).toBe(true)
+    expect(freqs.some((f) => Math.abs(f - 440) < 1)).toBe(false)
+  })
+
+  // Lifting one finger of a trill returns cleanly to the single-note tremolo —
+  // on the SAME grid (the surviving note simply takes every tick).
+  it('2→1 rides the same clock: the survivor takes the next tick as a single rashsh', () => {
     const { ToneMock, loopStop, triggerAttack } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
-    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })         // trill loop (#1)
+    e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+    const cb = ToneMock.Clock.mock.calls[0][0] as (t: number) => void
+    cb(0) // hi strikes once
     e.holdStart({ freqHz: 440, velocity: 0.7, immediate: false }) // one finger lifted
-    expect(loopStop).toHaveBeenCalledTimes(1)                     // trill stopped
-    expect(ToneMock.Clock).toHaveBeenCalledTimes(2)                // rashsh loop (#2)
-    expect(ToneMock.Clock.mock.calls[1][1] as number).toBe(9)
-    const cb = ToneMock.Clock.mock.calls[1][0] as (t: number) => void
+    expect(loopStop).not.toHaveBeenCalled()         // grid never restarts
+    expect(ToneMock.Clock).toHaveBeenCalledTimes(1) // still the one shared clock
     triggerAttack.mockClear()
-    cb(0)
-    expect(triggerAttack.mock.calls[0][0] as number).toBeCloseTo(440, 0)
+    cb(0.1)
+    // The survivor's strike is the same bloomed event as any other hold tick
+    // (3-voice cluster hugging the held note) — only the alternation stopped.
+    expect(triggerAttack).toHaveBeenCalledTimes(3)
+    const survivorFreqs = triggerAttack.mock.calls.map((c) => c[0] as number)
+    expect(survivorFreqs.every((f) => Math.abs(f - 440) < 3)).toBe(true)
+    expect(survivorFreqs.some((f) => Math.abs(f - 660) < 1)).toBe(false)
+  })
+
+  // Pinch-detection flapping ({A} ↔ {A,B} on alternating frames) was the worst
+  // real-world failure: every flap used to restart a clock and double-fire both
+  // notes nearly simultaneously — "tremolo in unison". Flaps must neither add
+  // strikes nor touch the clock.
+  it('hold-set flapping never restarts the clock or fires transition strikes', () => {
+    const { ToneMock, loopStop, loopDispose, loopStart, triggerAttack, samplerTriggerAttack } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock, 16))
+    e.holdStart({ freqHz: 440, velocity: 0.7, immediate: false })
+    for (let i = 0; i < 5; i++) {
+      e.holdAlternate({ freqs: [660, 440], velocity: 0.7 })
+      e.holdStart({ freqHz: 440, velocity: 0.7, immediate: false })
+    }
+    expect(ToneMock.Clock).toHaveBeenCalledTimes(1)
+    expect(loopStart).toHaveBeenCalledTimes(1)
+    expect(loopStop).not.toHaveBeenCalled()
+    expect(loopDispose).not.toHaveBeenCalled()
+    // Strikes come ONLY from clock ticks — the flapping itself stays silent.
+    expect(triggerAttack).not.toHaveBeenCalled()
+    expect(samplerTriggerAttack).not.toHaveBeenCalled()
   })
 
   // Phase resets only on a COUNT change (note added/removed), not when a held
@@ -784,8 +856,8 @@ describe('createQanunEngine — holdAlternate', () => {
     const callback = ToneMock.Clock.mock.calls[0][0] as (t: number) => void
     triggerAttack.mockClear()
     expect(() => callback(0)).not.toThrow()
-    // Every tick plays the one valid note (single-voice rashsh = 1 attack).
-    expect(triggerAttack).toHaveBeenCalledTimes(1)
+    // Every tick plays the one valid note (one bloomed strike = 3 attacks).
+    expect(triggerAttack).toHaveBeenCalledTimes(3)
   })
 
   it('empty freqs is a no-op (no loop created)', () => {
