@@ -25,7 +25,7 @@ import { pinchDistance } from '../lib/vision/pinchDistance'
 import { scheduleVideoFrame, type FrameHandle } from '../lib/vision/scheduleVideoFrame'
 import { startCamera } from '../lib/vision/startCamera'
 import { stopCamera } from '../lib/vision/stopCamera'
-import { INDEX_TIP, THUMB_TIP, THUMB_IP, MIDDLE_TIP, INDEX_MCP, PINKY_MCP } from '../lib/vision/constants'
+import { INDEX_TIP, INDEX_DIP, THUMB_TIP, THUMB_IP, MIDDLE_TIP, MIDDLE_DIP, INDEX_MCP, PINKY_MCP } from '../lib/vision/constants'
 import { extrapolateTip } from '../lib/vision/extrapolateTip'
 import { projectPoint } from '../lib/draw/projectPoint'
 
@@ -625,7 +625,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     // Fingertips to draw this frame, collected during detection and rendered
     // AFTER the audio path so canvas work never delays a pluck. `mode` mirrors
     // the live active-finger state so the lit ring matches the audio.
-    const playTips: { indexTip: NormPoint; middleTip: NormPoint; thumbPoint: NormPoint; mode: ActiveFinger }[] = []
+    const playTips: { indexPoint: NormPoint; middlePoint: NormPoint; thumbPoint: NormPoint; mode: ActiveFinger }[] = []
 
     // --- Playing hands ---
     let lastPluckMidi: number | null = null
@@ -653,6 +653,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       // pluck). Extrapolated past the pad-centre landmark to the visual nail tip;
       // this same point feeds the overlay, so the dot and the cursor agree.
       const thumbPoint = extrapolateTip({ tip: thumbTip, ip: lm[THUMB_IP] })
+      // Index/middle state dots are likewise extrapolated to the visual
+      // fingertips — DRAWING ONLY; the pinch ratios below keep the raw
+      // landmarks the thresholds were tuned against.
+      const indexPoint = extrapolateTip({ tip: indexTip, ip: lm[INDEX_DIP] })
+      const middlePoint = extrapolateTip({ tip: middleTip, ip: lm[MIDDLE_DIP] })
       // Distance-invariant pinch ratios: each thumb↔fingertip gap ÷ palm width
       // (index-knuckle ↔ pinky-knuckle), which scales the same way with camera
       // distance — so a pinch reads the same near or far.
@@ -739,7 +744,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
       // Overlay: the thumb cursor ring + small index/middle state dots; the
       // active mode colours the thumb (white = pluck, cyan = tremolo).
-      playTips.push({ indexTip, middleTip, thumbPoint, mode: active })
+      playTips.push({ indexPoint, middlePoint, thumbPoint, mode: active })
     }
 
     // --- Reconcile the sustained hold to the set of held courses ---
@@ -823,21 +828,21 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         }
         ctx.globalAlpha = 1
       }
-      playTips.forEach(({ indexTip, middleTip, thumbPoint, mode }) => {
+      playTips.forEach(({ indexPoint, middlePoint, thumbPoint, mode }) => {
         // Small, FIXED-size ring (no longer scales with hand distance): the ring is
         // purely visual — selection always uses the thumb cursor — so a ring that
         // balloons when the hand is near the camera only obscures which string
         // you're on. A steady small ring reads as a precise pointer. Sized to the
         // canvas resolution only.
         const radius = Math.max(5, Math.min(10, w * 0.008))
-        const dotRadius = Math.max(3, radius * 0.45)
+        const dotRadius = Math.max(2, radius * 0.3)
         // THUMB = the cursor: the prominent ring, carrying the mode colour.
         const thumbColor = mode === 'index' ? PLUCK_RING_COLOR : mode === 'middle' ? TRILL_RING_COLOR : PLAY_RING_COLOR
         drawCircle(thumbPoint, radius, thumbColor, mode !== 'none', mode === 'middle')
-        // Index/middle are no longer pointers — small pinch-state dots; the
-        // finger currently engaging lights in its mode colour.
-        drawCircle(indexTip, dotRadius, mode === 'index' ? PLUCK_RING_COLOR : PLAY_RING_COLOR, mode === 'index', false)
-        drawCircle(middleTip, dotRadius, mode === 'middle' ? TRILL_RING_COLOR : PLAY_RING_COLOR, mode === 'middle', mode === 'middle')
+        // Index/middle are no longer pointers — tiny pinch-state dots at the
+        // visual fingertips; the finger currently engaging lights in its mode colour.
+        drawCircle(indexPoint, dotRadius, mode === 'index' ? PLUCK_RING_COLOR : PLAY_RING_COLOR, mode === 'index', false)
+        drawCircle(middlePoint, dotRadius, mode === 'middle' ? TRILL_RING_COLOR : PLAY_RING_COLOR, mode === 'middle', mode === 'middle')
       })
       // Reset shadow so the next frame's clearRect / draws aren't haloed twice.
       ctx.shadowColor = 'rgba(0, 0, 0, 0)'

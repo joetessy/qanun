@@ -7,6 +7,10 @@ export const INDEX_TIP = 8
 // Middle fingertip — pinching it to the thumb engages tremolo mode (a distinct
 // gesture from the thumb–index pluck, so the two never collide).
 export const MIDDLE_TIP = 12
+// DIP joints (one segment below each tip) — used to extrapolate the drawn
+// state dots out to the visual fingertips, same as the thumb cursor.
+export const INDEX_DIP = 7
+export const MIDDLE_DIP = 11
 // Knuckles (MCP joints) of the index and pinky — their separation is the palm
 // width, a stable hand-size reference used to make the pinch distance-invariant
 // (a pinch reads the same near or far from the camera).
