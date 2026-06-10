@@ -15,6 +15,9 @@ export default defineConfig({
   base: '/',
   plugins: [react()],
   worker: { format: 'es' },
+  // Honor an externally assigned port (preview/CI harnesses set PORT); normal
+  // `npm run dev` leaves PORT unset and keeps Vite's default 5173.
+  server: process.env.PORT ? { port: Number(process.env.PORT), strictPort: true } : undefined,
   build: {
     rollupOptions: {
       output: {

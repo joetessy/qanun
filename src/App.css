@@ -345,6 +345,24 @@
   opacity: 1;
 }
 
+/* Hovered TONIC: without this rule the gentle hover shadow above (later in
+   source, equal specificity) would REPLACE the home glow — making the tonic
+   read dimmer under the finger than at rest. The combined state must outshine
+   the resting anchor: a wider, hotter halo + a stronger lift. */
+.string-field .course.is-home.is-highlight .str {
+  filter: brightness(1.3) saturate(1.1);
+  box-shadow:
+    0 0 6px 2px rgba(255, 226, 130, 0.65),
+    0 0 14px 4px rgba(231, 194, 91, 0.32),
+    0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* Hovered ghammāz: same override problem as the tonic — keep its cool glow,
+   amplified, instead of falling back to the warm hover shadow. */
+.string-field .course.is-ghammaz.is-highlight .str {
+  box-shadow: 0 0 6px 2px rgba(180, 200, 140, 0.5);
+}
+
 /* A struck course: bright flash across all three wires. The .is-plucked class
    lives ~6 frames; the pulse is tuned to read fully within that window. */
 .string-field .course.is-plucked .str {
