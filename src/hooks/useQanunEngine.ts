@@ -681,6 +681,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       // above), then the One-Euro filter smooths the 1-D scalar.
       const yVis = Math.min(1, Math.max(0, (thumbPoint.y - cropYFrac) / visibleYFrac))
       const fieldPos = fingerFiltersRef.current[slot].filter({ x: 1 - yVis, tNow })
+      // The drawn ring rides the FILTERED selection position (x stays raw): the
+      // cursor you see is exactly the y the course snap reads, so the ring and
+      // the string highlight can never disagree (the raw landmark showed filter
+      // lag as apparent imprecision near boundaries).
+      const thumbRing = { x: thumbPoint.x, y: cropYFrac + (1 - fieldPos) * visibleYFrac }
       // Snap with hysteresis: hold the previous string until the finger crosses far
       // enough into a neighbour, so a hand hovering near a boundary doesn't flicker.
       const course = courseWithHysteresis({
@@ -744,7 +749,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
       // Overlay: the thumb cursor ring + small index/middle state dots; the
       // active mode colours the thumb (white = pluck, cyan = tremolo).
-      playTips.push({ indexPoint, middlePoint, thumbPoint, mode: active })
+      playTips.push({ indexPoint, middlePoint, thumbPoint: thumbRing, mode: active })
     }
 
     // --- Reconcile the sustained hold to the set of held courses ---

@@ -32,8 +32,12 @@ export const nearestCourse = ({ x, courseCount, fieldLeft, fieldRight }: Nearest
 // Default deadzone for hysteretic selection: the finger must travel this fraction
 // of a cell PAST the boundary (i.e. into the neighbour) before the held string
 // changes. Kills the boundary flicker that plain snap-to-nearest suffers on noisy
-// hand-tracking input, without adding any smoothing lag.
-export const COURSE_HYSTERESIS_MARGIN = 0.35
+// hand-tracking input, without adding any smoothing lag. Modest on purpose: the
+// cursor is the (filtered) THUMB now — far steadier than the old index-tip
+// cursor this was 0.35 for — and a wide margin reads as a stale selection when
+// the strings sit close together (the thumb visibly nearest string B while the
+// app still holds A).
+export const COURSE_HYSTERESIS_MARGIN = 0.15
 
 export interface CourseHysteresisArgs extends NearestCourseArgs {
   prevCourse: number | null // the course held last frame (null = nothing held yet)
