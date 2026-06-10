@@ -44,16 +44,14 @@ const PLUCK_GLOW_FRAMES = 6
 const SUSTAIN_VELOCITY = 0.5
 
 // Overlay palette — warm bone-white rings with a soft dark halo so they read
-// over the bright wood soundboard. The playing hand reads brighter than the
-// modulating hand (mirrors the theremin overlay idiom).
+// over the bright wood soundboard. The THUMB is the cursor and wears the
+// prominent ring in the active mode's colour; the index/middle tips wear small
+// pinch-state dots.
 const PLAY_RING_COLOR = 'rgba(255, 244, 214, 0.92)'
 const PLUCK_RING_COLOR = 'rgba(255, 255, 255, 1)'
-// Trill/sustain (rashsh) engaged on this finger — a cool cyan that reads clearly
-// distinct from the warm pluck/hover rings, with a gentle pulse (see drawTip).
+// Trill/sustain (rashsh) engaged — a cool cyan that reads clearly distinct from
+// the warm pluck/hover rings, with a gentle pulse (see drawCircle).
 const TRILL_RING_COLOR = 'rgba(125, 226, 232, 0.96)'
-// Small dot on each thumb tip — shows the thumb (the finger that meets the index
-// or middle to pinch), so you can see the pinch closing.
-const THUMB_DOT_COLOR = 'rgba(255, 244, 214, 0.95)'
 const OVERLAY_SHADOW = 'rgba(0, 0, 0, 0.55)'
 
 // Pinch detection is DISTANCE-INVARIANT: the thumb↔fingertip gap is measured
@@ -791,13 +789,14 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       lastPluckedKeyRef.current = ''
     }
 
-    // --- Overlay drawing (persistent fingertip circles) ---
-    // Both the index and middle fingertips of every present hand always wear a
-    // small circle (sized to the fingertip via hand size, so it tracks distance).
-    // The ACTIVE finger lights up: white = pluck (index), cyan + gentle pulse =
-    // tremolo (middle); idle fingers stay a calm bone-white outline. The canvas
-    // shares the video's CSS scaleX(-1), so we draw in raw coords. Strictly after
-    // the audio path so canvas work never delays a pluck.
+    // --- Overlay drawing (thumb cursor + pinch-state dots) ---
+    // The THUMB is the cursor, so it wears the prominent ring and carries the
+    // mode colour: white = pluck (index pinch), cyan + gentle pulse = tremolo
+    // (middle pinch), bone-white = idle/aiming. The index and middle tips wear
+    // small dots that just show the pinch state — the engaging finger's dot
+    // lights in its mode colour. The canvas shares the video's CSS scaleX(-1),
+    // so we draw in raw coords. Strictly after the audio path so canvas work
+    // never delays a pluck.
     const ctx = canvas.getContext('2d')
     if (ctx) {
       const w = canvas.width
@@ -826,19 +825,19 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       }
       playTips.forEach(({ indexTip, middleTip, thumbPoint, mode }) => {
         // Small, FIXED-size ring (no longer scales with hand distance): the ring is
-        // purely visual — selection always uses the fingertip centre — so a ring
-        // that balloons when the hand is near the camera only obscures which string
+        // purely visual — selection always uses the thumb cursor — so a ring that
+        // balloons when the hand is near the camera only obscures which string
         // you're on. A steady small ring reads as a precise pointer. Sized to the
         // canvas resolution only.
         const radius = Math.max(5, Math.min(10, w * 0.008))
-        drawCircle(indexTip, radius, mode === 'index' ? PLUCK_RING_COLOR : PLAY_RING_COLOR, mode === 'index', false)
-        drawCircle(middleTip, radius, mode === 'middle' ? TRILL_RING_COLOR : PLAY_RING_COLOR, mode === 'middle', mode === 'middle')
-        // Thumb dot — the finger that meets index/middle to pinch.
-        const thumb = projectPoint({ p: thumbPoint, width: w, height: h, mirror: false })
-        ctx.fillStyle = THUMB_DOT_COLOR
-        ctx.beginPath()
-        ctx.arc(thumb.x, thumb.y, Math.max(3, radius * 0.45), 0, Math.PI * 2)
-        ctx.fill()
+        const dotRadius = Math.max(3, radius * 0.45)
+        // THUMB = the cursor: the prominent ring, carrying the mode colour.
+        const thumbColor = mode === 'index' ? PLUCK_RING_COLOR : mode === 'middle' ? TRILL_RING_COLOR : PLAY_RING_COLOR
+        drawCircle(thumbPoint, radius, thumbColor, mode !== 'none', mode === 'middle')
+        // Index/middle are no longer pointers — small pinch-state dots; the
+        // finger currently engaging lights in its mode colour.
+        drawCircle(indexTip, dotRadius, mode === 'index' ? PLUCK_RING_COLOR : PLAY_RING_COLOR, mode === 'index', false)
+        drawCircle(middleTip, dotRadius, mode === 'middle' ? TRILL_RING_COLOR : PLAY_RING_COLOR, mode === 'middle', mode === 'middle')
       })
       // Reset shadow so the next frame's clearRect / draws aren't haloed twice.
       ctx.shadowColor = 'rgba(0, 0, 0, 0)'
