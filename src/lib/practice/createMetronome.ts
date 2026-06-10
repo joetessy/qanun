@@ -1,5 +1,5 @@
 import * as ToneNamespace from 'tone'
-import { BPM_MAX, BPM_MIN, tapTempoBpm } from './tapTempo'
+import { BPM_MAX, BPM_MIN, clamp, tapTempoBpm } from './tapTempo'
 
 // Frequencies of the synthesised fallback click (used when no .wav files are
 // loaded). Higher pitch = downbeat, lower = offbeat. Plenty distinguishable
@@ -9,9 +9,6 @@ const CLICK_LO_HZ = 1200
 const CLICK_DECAY_S = 0.03
 // 4/4 only in v1 — beat 1 of every group of 4 is the downbeat.
 const BEATS_PER_BAR = 4
-
-const clamp = (value: number, lo: number, hi: number): number =>
-  Math.min(hi, Math.max(lo, value))
 
 export interface ClickInfo {
   time: number
@@ -76,7 +73,10 @@ export const createMetronome = ({
     env.gain.setValueAtTime(1, time)
     env.gain.exponentialRampToValueAtTime(0.001, time + CLICK_DECAY_S)
     osc.stop(time + CLICK_DECAY_S + 0.01)
-    // Dispose after the click is over to avoid leaking nodes.
+    // Dispose only after the SCHEDULED click has finished sounding: the
+    // Transport invokes this callback up to lookAhead (~0.1 s) BEFORE `time`,
+    // so a timeout measured from now would tear the nodes down mid-click.
+    const leadS = Math.max(0, time - Tone.getContext().currentTime)
     setTimeout(() => {
       try {
         osc.dispose()
@@ -84,7 +84,7 @@ export const createMetronome = ({
       } catch {
         // Already disposed.
       }
-    }, (CLICK_DECAY_S + 0.05) * 1000)
+    }, (leadS + CLICK_DECAY_S + 0.05) * 1000)
   }
 
   const tickCallback = (time: number): void => {
@@ -124,8 +124,8 @@ export const createMetronome = ({
         transport.clear(scheduledId)
         scheduledId = null
       }
-      // Do NOT stop the global transport — the rashsh sustain loop runs on it too,
-      // so stopping here would cut off a held note. Just unschedule + fade out.
+      // Do NOT stop the global transport — it's shared app-wide state, not the
+      // metronome's to own. Just unschedule + fade out.
       gain.gain.rampTo(0, gainRamp)
     }
   }
@@ -145,10 +145,9 @@ export const createMetronome = ({
       transport.clear(scheduledId)
       scheduledId = null
     }
-    if (enabled) {
-      transport.stop()
-      enabled = false
-    }
+    // Same invariant as setEnabled(false): never stop the shared Transport —
+    // unscheduling + disposing the gain already silences the metronome.
+    enabled = false
     gain.dispose()
   }
 

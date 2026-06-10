@@ -29,6 +29,42 @@ export const nearestCourse = ({ x, courseCount, fieldLeft, fieldRight }: Nearest
   return Math.min(courseCount - 1, Math.max(0, raw))
 }
 
+// Default deadzone for hysteretic selection: the finger must travel this fraction
+// of a cell PAST the boundary (i.e. into the neighbour) before the held string
+// changes. Kills the boundary flicker that plain snap-to-nearest suffers on noisy
+// hand-tracking input, without adding any smoothing lag.
+export const COURSE_HYSTERESIS_MARGIN = 0.35
+
+export interface CourseHysteresisArgs extends NearestCourseArgs {
+  prevCourse: number | null // the course held last frame (null = nothing held yet)
+  margin?: number
+}
+
+/**
+ * Snap-to-nearest with hysteresis: keep `prevCourse` until the finger moves more
+ * than (0.5 + margin) cells from that course's centre — i.e. more than `margin`
+ * of a cell into a neighbour. A large jump (finger well past an adjacent string)
+ * still snaps straight to the true nearest. A null or out-of-range `prevCourse`
+ * (e.g. the field just shrank) degrades to plain nearestCourse.
+ */
+export const courseWithHysteresis = ({
+  x,
+  prevCourse,
+  courseCount,
+  fieldLeft,
+  fieldRight,
+  margin = COURSE_HYSTERESIS_MARGIN
+}: CourseHysteresisArgs): number => {
+  const nearest = nearestCourse({ x, courseCount, fieldLeft, fieldRight })
+  if (prevCourse === null || prevCourse < 0 || prevCourse >= courseCount || nearest === prevCourse) {
+    return nearest
+  }
+  const cell = (fieldRight - fieldLeft) / courseCount
+  const prevCentre = courseScreenX(prevCourse, courseCount, fieldLeft, fieldRight)
+  const offsetCells = Math.abs(x - prevCentre) / cell
+  return offsetCells > 0.5 + margin ? nearest : prevCourse
+}
+
 export interface CoursesCrossedArgs {
   prevX: number
   curX: number

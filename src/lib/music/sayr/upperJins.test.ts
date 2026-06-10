@@ -30,17 +30,27 @@ describe('applyUpperJins (home-aware)', () => {
 })
 
 describe('upperOptions', () => {
-  it('returns the lower jins upper list with the active one flagged', () => {
-    const opts = upperOptions('bayati', [0, 2, 3.5, 5, 7, 9, 10], 2)
+  it('returns the lower jins upper list with the selected one flagged', () => {
+    const opts = upperOptions('bayati', 'nahawand')
     expect(opts.map((o) => o.id)).toEqual(['nahawand', 'rast', 'hijaz'])
     expect(opts[0].label).toBe('Nahawand')
-    expect(opts.find((o) => o.id === 'nahawand')!.active).toBe(true) // A/B♭ on G = Nahawand
+    expect(opts.find((o) => o.id === 'nahawand')!.active).toBe(true)
   })
-  it('lights "Nikriz Hijazkar" on Hijaz when the state matches the Hijazkar collection', () => {
-    const opts = upperOptions('hijaz', [1, 2, 3, 6, 7, 9, 10], 2)
+  it('lights "Nikriz Hijazkar" on Hijaz when it is the selected upper', () => {
+    const opts = upperOptions('hijaz', 'hijazkar')
     const hijazkar = opts.find((o) => o.id === 'hijazkar')!
     expect(hijazkar).toBeDefined()
     expect(hijazkar.label).toBe('Nikriz Hijazkar')
     expect(hijazkar.active).toBe(true)
+  })
+  it('does NOT also light Nahawand when Hijazkar is the selected upper (regression)', () => {
+    const opts = upperOptions('hijaz', 'hijazkar')
+    expect(opts.find((o) => o.id === 'nahawand')!.active).toBe(false)
+  })
+  it('defaults to Hijaz as the lit secondary jins for Saba (regression)', () => {
+    // Saba's first upperOption is the default the engine selects; it must light.
+    const opts = upperOptions('saba', 'hijaz')
+    expect(opts[0].id).toBe('hijaz')
+    expect(opts.find((o) => o.id === 'hijaz')!.active).toBe(true)
   })
 })

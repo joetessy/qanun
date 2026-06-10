@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { RecorderState } from '../lib/audio/createRecorder'
 import type { MidiSupportState, MidiOutputInfo } from '../lib/midi/createMidiOut'
 import { TypedSelect } from './TypedSelect'
@@ -52,11 +53,12 @@ const BEND_RANGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: '48', label: '±48 st' },
 ]
 
-// Progressive disclosure (spec §1): tonic + trill ornament toggle +
-// sound-source toggle + sayr/emphasis toggles + the headline jins-pair quick-swaps.
+// Progressive disclosure (spec §1): tonic + fine-tune.
 // P4a: opt-in studio section (off by default) — record/drone/metronome.
 // P4b: opt-in MIDI section (off by default) — microtonal MIDI out.
-export const Controls = ({
+// memo: the drawer stays mounted (hidden) while the engine pushes per-pluck
+// state, so without it the ~60-element tree re-renders on every pluck.
+export const Controls = memo(({
   tonicMidi,
   onTonic,
   detuneCents,
@@ -249,4 +251,4 @@ export const Controls = ({
       )}
     </div>
   </div>
-)
+))

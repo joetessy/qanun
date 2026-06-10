@@ -46,9 +46,7 @@ The HUD readout shows the inferred maqam name and the home note, e.g. **"Maqam B
 
 ### Fine-tuning
 
-- The **per-degree mandal panel** (left rack) lets you raise or lower individual degrees by a semitone or quarter-tone for manual fine-tuning.
 - The **tonic control** in the drawer (the "tune" button) sets the key — moving "C / Rast" up or down in pitch.
-- The **jins-pair quick-swaps** in the drawer apply common modulation moves in one tap.
 
 ## Docs
 

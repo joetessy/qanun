@@ -93,4 +93,37 @@ describe('buildField', () => {
     const field = buildField({ tonicMidi: 48, mandalState: DEFAULT_RAST_STATE, detuneCents: 37 })
     expect(field[7].freqHz).toBeCloseTo(midiToFreq(48) * Math.pow(2, 37 / 1200), 6)
   })
+
+  // ── windowed field (leadingTones below + reachAboveTonic above the tonic) ─────
+  it('keeps the full grid when the window params are omitted', () => {
+    const field = buildField({ tonicMidi: 48, mandalState: DEFAULT_RAST_STATE })
+    expect(field).toHaveLength(7 * FIELD_OCTAVES)
+  })
+
+  it('keeps only N leading tones below the tonic and reindexes 0..n-1', () => {
+    // Full grid has a whole octave (7) below the tonic; keeping 2 drops the lowest 5.
+    const field = buildField({ tonicMidi: 48, mandalState: DEFAULT_RAST_STATE, leadingTones: 2 })
+    expect(field).toHaveLength(7 * FIELD_OCTAVES - 5)
+    field.forEach((c, i) => expect(c.index).toBe(i))
+    // Lowest string is now degree 6, octave -1 (A2 = MIDI 45) — a leading tone.
+    expect(field[0]).toMatchObject({ degree: 6, octave: -1, midi: 45, index: 0 })
+    // The tonic (C3 = 48) now sits two strings up.
+    expect(field[2]).toMatchObject({ degree: 1, octave: 0, midi: 48 })
+  })
+
+  it('trims the top to a given reach above the tonic', () => {
+    // 2 leading tones + tonic + 15 steps up (3 tonics across 2 octaves, +1 tone) = 18.
+    const field = buildField({ tonicMidi: 48, mandalState: DEFAULT_RAST_STATE, leadingTones: 2, reachAboveTonic: 15 })
+    expect(field).toHaveLength(18)
+    expect(field[0]).toMatchObject({ degree: 6, octave: -1, midi: 45 })   // A2 (bottom)
+    expect(field[2]).toMatchObject({ degree: 1, octave: 0, midi: 48 })    // C3 (tonic)
+    // Top = 15 steps above the tonic = degree 2, octave 2 (D5 = MIDI 74).
+    expect(field[field.length - 1]).toMatchObject({ degree: 2, octave: 2, midi: 74 })
+  })
+
+  it('preserves detune within the window', () => {
+    const field = buildField({ tonicMidi: 48, mandalState: DEFAULT_RAST_STATE, leadingTones: 2, reachAboveTonic: 15, detuneCents: 100 })
+    expect(field[2].midi).toBe(48)                          // tonic label untouched
+    expect(field[2].freqHz).toBeCloseTo(midiToFreq(49), 6)  // …sounds a semitone up
+  })
 })

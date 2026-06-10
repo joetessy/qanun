@@ -11,12 +11,9 @@ export type ReverbSize = 'small' | 'medium' | 'hall'
 
 export type QanunStatus = 'idle' | 'loading' | 'running' | 'error'
 
-// Live readout pushed to the HUD a few times a second.
+// Live readout pushed to the HUD (maqam name, home note, last plucked note).
 export interface QanunReading {
   maqamName: string
-  lowerJins: string | null
-  upperJins: string | null
-  tonicMidi: number
   homeNote: string
   lastPluckMidi: number | null
 }

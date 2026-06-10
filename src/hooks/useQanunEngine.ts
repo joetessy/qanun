@@ -1,16 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Tone from 'tone'
 import type { HandLandmarker } from '@mediapipe/tasks-vision'
 import type { MandalState, Course } from '../lib/music/types'
 import type { NormPoint, QanunReading, QanunStatus } from '../types'
 import { DEFAULT_RAST_STATE, offsetOf } from '../lib/music/ajnas/MANDALS'
-import { MAQAM_PRESETS } from '../lib/music/MAQAM_PRESETS'
-import { buildField, DEFAULT_TONIC_MIDI, DETUNE_LIMIT_CENTS } from '../lib/music/buildField'
+import { buildField, DEFAULT_TONIC_MIDI, DETUNE_LIMIT_CENTS, FIELD_LEADING_TONES, FIELD_REACH_ABOVE_TONIC } from '../lib/music/buildField'
 import { identifyAjnas } from '../lib/music/identifyAjnas'
 import { degreeNoteLabel } from '../lib/music/degreeLabel'
 import { applyLowerJins, lowerJinsById, lowerJinsList, maqamNameFor } from '../lib/music/sayr/lowerJins'
 import { applyUpperJins, upperOptions, ghammazFieldDegree, type UpperJinsOption } from '../lib/music/sayr/upperJins'
-import { nearestCourse, coursesCrossed, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
+import { courseWithHysteresis, coursesCrossed, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
 import { createPinchPlay } from '../lib/gesture/pinchPlay'
 import { resolveActiveFinger, type ActiveFinger } from '../lib/gesture/activeFinger'
 import { createQanunEngine, type QanunEngine } from '../lib/audio/createQanunEngine'
@@ -28,9 +27,13 @@ import { startCamera } from '../lib/vision/startCamera'
 import { stopCamera } from '../lib/vision/stopCamera'
 import { INDEX_TIP, THUMB_TIP, MIDDLE_TIP, INDEX_MCP, PINKY_MCP } from '../lib/vision/constants'
 import { projectPoint } from '../lib/draw/projectPoint'
-import { deriveHandRoles } from './deriveHandRoles'
 
-const READING_PUSH_EVERY_N_FRAMES = 4
+// The playable string window — trims the raw octave grid to 2 leading tones below
+// the tonic + 3 full octaves + 1 tone above it (25 strings; top is one tone past
+// the third-octave tonic). buildField grows its raw grid to fit the requested
+// reach. Shared by every buildField call so the field shape can't drift between
+// init and recompute.
+const FIELD_WINDOW = { leadingTones: FIELD_LEADING_TONES, reachAboveTonic: FIELD_REACH_ABOVE_TONIC } as const
 // Frames a freshly plucked string stays lit before the highlight clears.
 const PLUCK_GLOW_FRAMES = 6
 // Velocity for a sustained (rashsh) note when the per-frame reconcile (re)starts
@@ -63,6 +66,12 @@ const PINCH_OPEN_RATIO = 0.78
 
 // Velocity for each string a strum sweeps past (single-voice, see bloom:false).
 const STRUM_VELOCITY = 0.6
+// After a pluck fires, suppress the strum for this long while the pinch settles.
+// With horizontal strings the selection axis is vertical, so the finger's downward
+// curl INTO the pinch sweeps across string lines — without this gate that curl
+// would strum a handful of extra strings on every clean pluck. The baseline still
+// advances during the window, so the curl distance is absorbed, not played.
+const STRUM_SETTLE_SEC = 0.13
 const OVERLAY_SHADOW_BLUR = 6
 
 export interface UseQanunEngineArgs {
@@ -84,8 +93,6 @@ export interface UseQanunEngine {
   stop: () => void
   setTonic: (midi: number) => void
   setDetuneCents: (cents: number) => void
-  setMandalState: (state: MandalState) => void
-  setMaqamPreset: (id: string) => void
   lowerJins: string
   upperJins: string
   homeDegree: number
@@ -128,9 +135,6 @@ export interface UseQanunEngine {
 
 const EMPTY_READING: QanunReading = {
   maqamName: 'Maqam Rast',
-  lowerJins: 'rast',
-  upperJins: 'rast',
-  tonicMidi: DEFAULT_TONIC_MIDI,
   homeNote: 'C',
   lastPluckMidi: null
 }
@@ -153,7 +157,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const [highlightIndices, setHighlightIndices] = useState<number[]>([])
   const [pluckedIndices, setPluckedIndices] = useState<number[]>([])
   const [courses, setCourses] = useState<Course[]>(() =>
-    buildField({ tonicMidi: DEFAULT_TONIC_MIDI, mandalState: DEFAULT_RAST_STATE })
+    buildField({ tonicMidi: DEFAULT_TONIC_MIDI, mandalState: DEFAULT_RAST_STATE, ...FIELD_WINDOW })
   )
 
   // P4a: recording state (idle by default — recorder is lazily created).
@@ -179,6 +183,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const [midiOutputId, setMidiOutputIdState] = useState<string | null>(null)
   const [midiBendRange, setMidiBendRangeState] = useState(2)
   const midiRef = useRef<MidiOutEngine | null>(null)
+  // Mirrors midiEnabled for the frame loop: tick re-arms itself with the closure
+  // it was started with, so reading the STATE there would pin the value from
+  // start time — a mid-session MIDI toggle would silently not take effect.
+  const midiEnabledRef = useRef(false)
 
   // Hot refs (read inside the frame loop without re-subscribing).
   const tonicRef = useRef(DEFAULT_TONIC_MIDI)
@@ -206,14 +214,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // Tracks whether a pointer hold (rashsh) is currently active.
   const holdingRef = useRef(false)
 
-  // INDEX pinch = melodic PLUCK/GLIDE only. holdDelaySec Infinity → it never
-  // sustains (tremolo is the middle finger's job now), so a held/gliding index is
-  // always clean melodic play. glideDebounceSec 0 keeps gliss responsive.
-  // Thresholds are PALM-WIDTH RATIOS, not raw image distances (the tick feeds a
-  // normalized gap), so a pluck fires on real finger contact at any distance.
+  // INDEX pinch = melodic PLUCK only (tremolo is the middle finger's job; the
+  // strum below handles movement while closed). Thresholds are PALM-WIDTH
+  // RATIOS, not raw image distances (the tick feeds a normalized gap), so a
+  // pluck fires on real finger contact at any distance.
   const indexPlayRef = useRef([
-    createPinchPlay({ glideDebounceSec: 0, holdDelaySec: Infinity, closeThreshold: PINCH_CLOSE_RATIO, openThreshold: PINCH_OPEN_RATIO }),
-    createPinchPlay({ glideDebounceSec: 0, holdDelaySec: Infinity, closeThreshold: PINCH_CLOSE_RATIO, openThreshold: PINCH_OPEN_RATIO })
+    createPinchPlay({ closeThreshold: PINCH_CLOSE_RATIO, openThreshold: PINCH_OPEN_RATIO }),
+    createPinchPlay({ closeThreshold: PINCH_CLOSE_RATIO, openThreshold: PINCH_OPEN_RATIO })
   ])
   // Which finger (if any) is pinching the thumb, per slot. Drives the index↔middle
   // mode choice with hysteresis so a gesture can't flicker between pluck and
@@ -222,10 +229,17 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // Per-slot filtered finger-x from the previous frame, for strum detection: any
   // string centre the finger sweeps past re-plucks (null = not strumming).
   const strumPrevXRef = useRef<(number | null)[]>([null, null])
+  // Per-slot timestamp (seconds) before which the strum is suppressed — set when a
+  // pluck fires, so the pinch-curl that follows doesn't strum (see STRUM_SETTLE_SEC).
+  const strumEnableAtRef = useRef<number[]>([0, 0])
   // Higher minCutoff + beta than before → much less smoothing lag when the hand
   // moves fast (beta is the speed coefficient; low beta was the "slow tracking").
   const fingerFiltersRef = useRef([createOneEuroFilter({ minCutoff: 1.7, beta: 0.08 }), createOneEuroFilter({ minCutoff: 1.7, beta: 0.08 })])
   const sustainCourseRef = useRef<(number | null)[]>([null, null])
+  // Per-slot course selected last frame — the seed for snap hysteresis, so a finger
+  // hovering near a string boundary doesn't flicker between two strings (null = no
+  // hand / fresh selection).
+  const lastCourseRef = useRef<(number | null)[]>([null, null])
   const lastHoldKeyRef = useRef('')
   // Guards so the per-frame highlight/pluck setState only fires when the set of
   // lit courses actually changes (otherwise React re-renders 84 string spans every frame).
@@ -234,33 +248,18 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
   const recompute = useCallback((next: MandalState, nextTonic: number): void => {
     const detune = detuneCentsRef.current
-    const field = buildField({ tonicMidi: nextTonic, mandalState: next, detuneCents: detune })
+    const field = buildField({ tonicMidi: nextTonic, mandalState: next, detuneCents: detune, ...FIELD_WINDOW })
     coursesRef.current = field
     setCourses(field)
     const id = identifyAjnas(next)
     const home = homeDegreeRef.current
     const homeNote = degreeNoteLabel({ tonicMidi: nextTonic, degree: home, offset: offsetOf(next, home) })
-    setReading((r) => ({ ...r, maqamName: id.maqamName, lowerJins: id.lower, upperJins: id.upper, tonicMidi: nextTonic, homeNote }))
+    setReading((r) => ({ ...r, maqamName: id.maqamName, homeNote }))
     // The drone follows the maqam's home note (not the fixed key), carrying the
     // same fine-tune offset (cents → fractional MIDI) so it never clashes with
     // the detuned strings.
     droneRef.current?.setTonic(nextTonic + offsetOf(next, home) + detune / 100)
   }, [])
-
-  const setMandalAll = useCallback((next: MandalState): void => {
-    mandalRef.current = next
-    setMandalStateRaw(next)
-    recompute(next, tonicRef.current)
-  }, [recompute])
-
-  const setMandalState = useCallback((state: MandalState): void => {
-    setMandalAll(state)
-  }, [setMandalAll])
-
-  const setMaqamPreset = useCallback((id: string): void => {
-    const preset = MAQAM_PRESETS.find((p) => p.id === id)
-    if (preset) setMandalAll(preset.mandalState)
-  }, [setMandalAll])
 
   // Pick a lower jins: load its scale, re-anchor the home tonic to that jins's
   // conventional degree, reset to its default upper, then OVERRIDE the readout
@@ -278,7 +277,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     mandalRef.current = scale
     setMandalStateRaw(scale)
     recompute(scale, tonicRef.current)
-    setReading((r) => ({ ...r, maqamName: maqamNameFor(id, up), lowerJins: id, upperJins: up }))
+    setReading((r) => ({ ...r, maqamName: maqamNameFor(id, up) }))
   }, [recompute])
 
   // Pick an upper jins: modulate on the ghammāz of the current lower jins, then
@@ -290,7 +289,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     mandalRef.current = next
     setMandalStateRaw(next)
     recompute(next, tonicRef.current)
-    setReading((r) => ({ ...r, maqamName: maqamNameFor(lowerJinsRef.current, id), upperJins: id }))
+    setReading((r) => ({ ...r, maqamName: maqamNameFor(lowerJinsRef.current, id) }))
   }, [recompute])
 
   const setTonic = useCallback((midi: number): void => {
@@ -314,16 +313,18 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // 1 2 3 4 5 pick the upper jins from the current lower jins's options. Ignored
   // while typing in a form field or when a modifier is held.
   useEffect(() => {
-    const LOWER_KEYS = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o']
-    const UPPER_KEYS = ['1', '2', '3', '4', '5']
+    // Number row picks the lower jins (9 families); Q W E R T pick the upper jins.
+    const LOWER_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+    const UPPER_KEYS = ['q', 'w', 'e', 'r', 't']
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
-      const li = LOWER_KEYS.indexOf(e.key.toLowerCase())
+      const key = e.key.toLowerCase()
+      const li = LOWER_KEYS.indexOf(key)
       const families = lowerJinsList()
       if (li !== -1 && li < families.length) { setLowerJins(families[li].id); return }
-      const ui = UPPER_KEYS.indexOf(e.key)
+      const ui = UPPER_KEYS.indexOf(key)
       if (ui !== -1) {
         const opts = lowerJinsById(lowerJinsRef.current).upperOptions
         if (ui < opts.length) setUpperJins(opts[ui])
@@ -368,7 +369,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         // No toast in this phase; the UI will see state→encoding automatically.
       },
       onEncoderError: () => {
-        // Silently ignored — the recorder resolves with a partial WAV on error anyway.
+        // Silently ignored — on a worker crash the recorder falls back to a
+        // main-thread encode of the full take, so stop() still resolves.
       }
     })
     recorderRef.current = rec
@@ -487,6 +489,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   }, [])
 
   const setMidiEnabled = useCallback(async (b: boolean): Promise<void> => {
+    midiEnabledRef.current = b
     setMidiEnabledState(b)
     if (!b) return
     const midi = ensureMidi()
@@ -507,12 +510,14 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
   /**
    * Fire-and-forget MIDI note emission. Called alongside every audio.pluck() when
-   * MIDI is enabled. Deliberately cheap — just delegates to playNote() with no await.
+   * MIDI is enabled. Deliberately cheap — just delegates to playNote() with no
+   * await. Reads the enabled flag from a ref (stable identity) so the running
+   * frame loop sees toggles immediately.
    */
   const emitMidi = useCallback((freqHz: number, velocity: number): void => {
-    if (!midiEnabled) return
+    if (!midiEnabledRef.current) return
     midiRef.current?.playNote({ freqHz, velocity })
-  }, [midiEnabled])
+  }, [])
 
   // ── Pointer play primitives ─────────────────────────────────────────────────
   // These work without the webcam — ensureAudioEngine() handles lazy audio init.
@@ -530,6 +535,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       if (!audio || !field[index]) return
       setHighlightIndices([index])
       setPluckedIndices([index])
+      // Keep the tick-loop dedupe guards in sync so the camera loop (when it
+      // runs) sees this highlight as current state and clears it normally.
+      lastHoverKeyRef.current = String(index)
+      lastPluckedKeyRef.current = String(index)
       pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
       audio.pluck({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY, bloom })
       emitMidi(field[index].freqHz, POINTER_VELOCITY)
@@ -545,6 +554,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       const field = coursesRef.current
       if (!audio || !field[index]) return
       setHighlightIndices([index])
+      lastHoverKeyRef.current = String(index)
       holdingRef.current = true
       // Pass immediate:false because pluckCourse() already attacked ~150 ms
       // earlier on pointer-down; we only want to start the rashsh loop. Use the
@@ -555,6 +565,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   }, [ensureAudioEngine, emitMidi])
 
   const releaseHold = useCallback((): void => {
+    // Pointer-up: clear the lit string here, because with the camera off no
+    // tick ever runs to expire the highlight or the pluck glow.
+    setHighlightIndices([])
+    setPluckedIndices([])
+    lastHoverKeyRef.current = ''
+    lastPluckedKeyRef.current = ''
     if (!holdingRef.current) return
     holdingRef.current = false
     audioRef.current?.holdStop()
@@ -589,21 +605,46 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
     const tNow = performance.now() / 1000
     const { rightHandIdx, leftHandIdx } = findHandedness({ result })
-    const { playHands } = deriveHandRoles({ rightHandIdx, leftHandIdx })
+    // Fixed slots keyed by HANDEDNESS (0 = right, 1 = left), not array position:
+    // when one hand enters or leaves the frame, the other keeps its own filter
+    // history, pinch state, strum baseline, and hysteresis course instead of
+    // silently inheriting the departed hand's (e.g. a tremolo it never gestured).
+    const slotHands = [rightHandIdx, leftHandIdx]
     const field = coursesRef.current
 
+    // MediaPipe y is normalized to the FULL camera frame, but the video (and the
+    // ring canvas) render with object-fit: cover — which crops the frame
+    // vertically whenever the board is wider than 16:9 — while strings are
+    // positioned in board ELEMENT space. Remap frame-y → visible-y so the string
+    // under the fingertip ring is the one that sounds (identity at zero crop).
+    // Overlay drawing below stays in raw frame coords: the canvas shares the
+    // video's cover crop, so the rings line up by construction.
+    const coverScale = Math.max(canvas.clientWidth / canvas.width, canvas.clientHeight / canvas.height)
+    const visibleYFrac = coverScale > 0 ? Math.min(1, canvas.clientHeight / (canvas.height * coverScale)) : 1
+    const cropYFrac = (1 - visibleYFrac) / 2
+
     // Fingertips to draw this frame, collected during detection and rendered
-    // AFTER the audio path so canvas work never delays a pluck. `pinched` and
-    // `trilling` mirror the live pinchPlay state so the ring matches the audio;
-    // `thumbTip`/`handSize` drive the depth-scaled pinch ring + thumb dot.
-    const playTips: { indexTip: NormPoint; middleTip: NormPoint; thumbTip: NormPoint; handSize: number; mode: ActiveFinger }[] = []
+    // AFTER the audio path so canvas work never delays a pluck. `mode` mirrors
+    // the live active-finger state so the lit ring matches the audio.
+    const playTips: { indexTip: NormPoint; middleTip: NormPoint; thumbTip: NormPoint; mode: ActiveFinger }[] = []
 
     // --- Playing hands ---
     let lastPluckMidi: number | null = null
     const hoverCourses: number[] = []
     const pluckedCourses: number[] = []
-    playHands.forEach((handIdx, slot) => {
-      if (slot > 1) return // two-slot pool
+    for (let slot = 0; slot < 2; slot++) {
+      const handIdx = slotHands[slot]
+      if (handIdx === -1) {
+        // No hand in this slot — clear its gesture state so a vanished hand
+        // doesn't leave a stuck tremolo or stale strum baseline behind.
+        sustainCourseRef.current[slot] = null
+        activeFingerRef.current[slot] = 'none'
+        strumPrevXRef.current[slot] = null
+        strumEnableAtRef.current[slot] = 0
+        lastCourseRef.current[slot] = null
+        indexPlayRef.current[slot].reset()
+        continue
+      }
       const lm = result.landmarks[handIdx]
       const indexTip = lm[INDEX_TIP]
       const middleTip = lm[MIDDLE_TIP]
@@ -628,40 +669,49 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       // plucking — so a middle-pinch tremolo lands on the string the middle finger
       // is over, not wherever the index happens to hover.
       const courseTip = active === 'middle' ? middleTip : indexTip
-      const screenX = fingerFiltersRef.current[slot].filter({ x: 1 - courseTip.x, tNow })
-      const course = nearestCourse({
-        x: screenX,
+      // Field position follows the finger's VERTICAL screen position: hand low →
+      // lowest pitch (field 0), hand high → highest. Inverted because MediaPipe y
+      // grows downward; not mirrored (only x is, for the selfie view). Cover-crop
+      // remap first (see above), then the One-Euro filter smooths the 1-D scalar.
+      const yVis = Math.min(1, Math.max(0, (courseTip.y - cropYFrac) / visibleYFrac))
+      const fieldPos = fingerFiltersRef.current[slot].filter({ x: 1 - yVis, tNow })
+      // Snap with hysteresis: hold the previous string until the finger crosses far
+      // enough into a neighbour, so a hand hovering near a boundary doesn't flicker.
+      const course = courseWithHysteresis({
+        x: fieldPos,
+        prevCourse: lastCourseRef.current[slot],
         courseCount: field.length,
         fieldLeft: PLAY_FIELD_LEFT,
         fieldRight: PLAY_FIELD_RIGHT
       })
+      lastCourseRef.current[slot] = course
       // Every playing hand's hovered string is highlighted (both hands).
       hoverCourses.push(course)
 
       // INDEX detector is always advanced (so close-speed → velocity stays
-      // correct), but only sounds while index mode is active. It never sustains
-      // (holdDelaySec Infinity); its 'glide' event is ignored in favour of the
-      // centre-crossing strum below.
+      // correct), but only sounds while index mode is active.
       const pp = indexPlayRef.current[slot]
       const pinchEvts = pp.update({ pinchDist: indexRatio, courseIndex: course, tNow })
       if (active === 'index') {
         for (const ev of pinchEvts) {
-          if (ev.type === 'pluck' && field[ev.courseIndex]) {
+          if (field[ev.courseIndex]) {
             // Deliberate pluck on the close edge — blooms (3 voices), velocity
             // from pinch speed.
             audio.pluck({ freqHz: field[ev.courseIndex].freqHz, velocity: ev.velocity, bloom: true })
             emitMidi(field[ev.courseIndex].freqHz, ev.velocity)
             lastPluckMidi = field[ev.courseIndex].midi
             pluckedCourses.push(ev.courseIndex)
-            strumPrevXRef.current[slot] = screenX // baseline so the close note isn't re-strummed
+            strumPrevXRef.current[slot] = fieldPos // baseline so the close note isn't re-strummed
+            strumEnableAtRef.current[slot] = tNow + STRUM_SETTLE_SEC // let the pinch curl settle first
           }
         }
-        // Strum: re-pluck every string centre the finger sweeps past since the
-        // last frame — INCLUDING the same string on the way back. Single-voice
-        // (bloom:false) so a fast sweep can't slam the master chain.
+        // Strum: re-pluck every string centre the finger sweeps past since the last
+        // frame — INCLUDING the same string on the way back. Single-voice
+        // (bloom:false) so a fast sweep can't slam the master chain. Suppressed
+        // until the post-pluck settle window passes (the curl is absorbed below).
         const prevX = strumPrevXRef.current[slot]
-        if (prevX !== null) {
-          for (const c of coursesCrossed({ prevX, curX: screenX, courseCount: field.length, fieldLeft: PLAY_FIELD_LEFT, fieldRight: PLAY_FIELD_RIGHT })) {
+        if (prevX !== null && tNow >= strumEnableAtRef.current[slot]) {
+          for (const c of coursesCrossed({ prevX, curX: fieldPos, courseCount: field.length, fieldLeft: PLAY_FIELD_LEFT, fieldRight: PLAY_FIELD_RIGHT })) {
             if (field[c]) {
               audio.pluck({ freqHz: field[c].freqHz, velocity: STRUM_VELOCITY, bloom: false })
               emitMidi(field[c].freqHz, STRUM_VELOCITY)
@@ -670,7 +720,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
             }
           }
         }
-        strumPrevXRef.current[slot] = screenX
+        strumPrevXRef.current[slot] = fieldPos
       } else {
         strumPrevXRef.current[slot] = null // not in pluck mode → no strum baseline
       }
@@ -688,16 +738,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
       // Overlay: persistent circles on BOTH the index and middle fingertips + a
       // thumb dot; the active finger lights (white = pluck, cyan = tremolo).
-      playTips.push({ indexTip, middleTip, thumbTip, handSize, mode: active })
-    })
-
-    // Clear any slot whose hand left the frame this pass, so a vanished hand
-    // doesn't leave a stuck tremolo or stale gesture state behind.
-    for (let slot = playHands.length; slot < 2; slot++) {
-      sustainCourseRef.current[slot] = null
-      activeFingerRef.current[slot] = 'none'
-      strumPrevXRef.current[slot] = null
-      indexPlayRef.current[slot].reset()
+      playTips.push({ indexTip, middleTip, thumbTip, mode: active })
     }
 
     // --- Reconcile the sustained hold to the set of held courses ---
@@ -718,8 +759,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     }
 
     frameCounterRef.current += 1
-    if (lastPluckMidi !== null || frameCounterRef.current % READING_PUSH_EVERY_N_FRAMES === 0) {
-      setReading((r) => ({ ...r, lastPluckMidi: lastPluckMidi ?? r.lastPluckMidi }))
+    // Push the HUD's "last" cell only on an actual change — the updater returns
+    // the SAME object when nothing changed, so React skips the re-render (the
+    // whole Qanun tree would otherwise re-render at frame rate during tremolo).
+    if (lastPluckMidi !== null) {
+      const lp = lastPluckMidi
+      setReading((r) => (r.lastPluckMidi === lp ? r : { ...r, lastPluckMidi: lp }))
     }
 
     // --- String highlight / pluck feedback (state for StringField) ---
@@ -729,8 +774,14 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       setHighlightIndices(hoverCourses)
     }
     if (pluckedCourses.length > 0) {
-      setPluckedIndices(pluckedCourses)
-      lastPluckedKeyRef.current = pluckedCourses.slice().sort((a, b) => a - b).join(',')
+      // Key-guarded like the hover set above: a sustained tremolo pushes the
+      // same course every frame, and an unguarded fresh array would defeat
+      // StringField's memo at full frame rate.
+      const pluckedKey = pluckedCourses.slice().sort((a, b) => a - b).join(',')
+      if (pluckedKey !== lastPluckedKeyRef.current) {
+        lastPluckedKeyRef.current = pluckedKey
+        setPluckedIndices(pluckedCourses)
+      }
       pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
     } else if (frameCounterRef.current >= pluckClearRef.current && lastPluckedKeyRef.current !== '') {
       setPluckedIndices([])
@@ -770,10 +821,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         }
         ctx.globalAlpha = 1
       }
-      playTips.forEach(({ indexTip, middleTip, thumbTip, handSize, mode }) => {
-        // Fingertip-sized circle that scales with hand distance — large enough to
-        // sit AROUND the tip, not as a small dot inside the finger.
-        const radius = Math.max(8, Math.min(28, handSize * w * 0.1))
+      playTips.forEach(({ indexTip, middleTip, thumbTip, mode }) => {
+        // Small, FIXED-size ring (no longer scales with hand distance): the ring is
+        // purely visual — selection always uses the fingertip centre — so a ring
+        // that balloons when the hand is near the camera only obscures which string
+        // you're on. A steady small ring reads as a precise pointer. Sized to the
+        // canvas resolution only.
+        const radius = Math.max(5, Math.min(10, w * 0.008))
         drawCircle(indexTip, radius, mode === 'index' ? PLUCK_RING_COLOR : PLAY_RING_COLOR, mode === 'index', false)
         drawCircle(middleTip, radius, mode === 'middle' ? TRILL_RING_COLOR : PLAY_RING_COLOR, mode === 'middle', mode === 'middle')
         // Thumb dot — the finger that meets index/middle to pinch.
@@ -791,6 +845,24 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     scheduleNext()
   }, [videoRef, canvasRef, emitMidi])
 
+  // Shared by start() and stop() so the two can't drift apart: a Stop→Start
+  // cycle must not inherit stale gesture state (e.g. a One-Euro timestamp that
+  // would spike the derivative and misfire on the first frame back).
+  const resetGestureState = useCallback((): void => {
+    indexPlayRef.current.forEach((d) => d.reset())
+    activeFingerRef.current = ['none', 'none']
+    strumPrevXRef.current = [null, null]
+    strumEnableAtRef.current = [0, 0]
+    lastCourseRef.current = [null, null]
+    fingerFiltersRef.current.forEach((f) => f.reset())
+    sustainCourseRef.current = [null, null]
+    lastHoldKeyRef.current = ''
+    lastHoverKeyRef.current = ''
+    lastPluckedKeyRef.current = ''
+    setHighlightIndices([])
+    setPluckedIndices([])
+  }, [])
+
   const start = useCallback(async (): Promise<void> => {
     if (status === 'running' || status === 'loading') return
     setErrorMsg(null)
@@ -804,16 +876,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       const { width, height } = await startCamera({ video })
       canvas.width = width
       canvas.height = height
-      indexPlayRef.current.forEach((d) => d.reset())
-      activeFingerRef.current = ['none', 'none']
-      strumPrevXRef.current = [null, null]
-      fingerFiltersRef.current.forEach((f) => f.reset())
-      sustainCourseRef.current = [null, null]
-      lastHoldKeyRef.current = ''
+      resetGestureState()
       frameCounterRef.current = 0
       pluckClearRef.current = 0
-      setHighlightIndices([])
-      setPluckedIndices([])
       runningRef.current = true
       setStatus('running')
       frameHandleRef.current = scheduleVideoFrame({ video, callback: tick })
@@ -821,32 +886,22 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       setErrorMsg(err instanceof Error ? err.message : String(err))
       setStatus('error')
     }
-  }, [status, videoRef, canvasRef, tick, ensureAudioEngine])
+  }, [status, videoRef, canvasRef, tick, ensureAudioEngine, resetGestureState])
 
   const stop = useCallback((): void => {
     runningRef.current = false
     frameHandleRef.current?.cancel()
     frameHandleRef.current = null
     stopCamera({ video: videoRef.current })
-    // Reset gesture state, symmetric with start(), so a Stop→Start cycle doesn't
-    // inherit a stale One-Euro timestamp (which would spike the derivative and
-    // misfire on the first frame back).
-    indexPlayRef.current.forEach((d) => d.reset())
-    activeFingerRef.current = ['none', 'none']
-    strumPrevXRef.current = [null, null]
-    fingerFiltersRef.current.forEach((f) => f.reset())
-    sustainCourseRef.current = [null, null]
-    lastHoldKeyRef.current = ''
+    resetGestureState()
     // Stop any ringing rashsh so Stop→Start is clean.
     audioRef.current?.holdStop()
-    // Clear any lingering overlay ring and the string highlight/pluck glow.
+    // Clear any lingering overlay ring.
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
-    setHighlightIndices([])
-    setPluckedIndices([])
     setStatus('idle')
-  }, [videoRef, canvasRef])
+  }, [videoRef, canvasRef, resetGestureState])
 
   // Release renderer-side resources on unmount: the audio graph and the
   // MediaPipe landmarker's WASM. Both are lazily rebuilt on the next start().
@@ -866,8 +921,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   )
 
 
-  // Ghammāz upper-jins options — contextual to the active lower jins + home.
-  const upperJinsOptions = upperOptions(lowerJins, mandalState, homeDegree)
+  // Ghammāz upper-jins options for the active lower jins; the selected upper is
+  // lit. Memoized so UpperJinsSwitcher's memo() holds across per-frame renders.
+  const upperJinsOptions = useMemo(() => upperOptions(lowerJins, upperJins), [lowerJins, upperJins])
 
   // The scale degree the upper jins pivots on, relative to the maqam tonic
   // (5 for Rast, 4 for Bayati, 3 for Sikah) — shown in the switcher header.
@@ -891,8 +947,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     stop,
     setTonic,
     setDetuneCents,
-    setMandalState,
-    setMaqamPreset,
     lowerJins,
     upperJins,
     homeDegree,

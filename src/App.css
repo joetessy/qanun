@@ -1,20 +1,20 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    QANUN — photoreal wood-and-brass instrument shell (spec §7, §1).
-   Strings vertical; pitch low→high left→right. Mandal rack seated at the left.
-   The camera + overlay canvas live under the painted soundboard; hands read as
-   glowing fingertip rings drawn on the canvas (see useQanunEngine.tick).
+   Strings horizontal; pitch low→high bottom→top. The camera + overlay canvas
+   live under the painted soundboard; hands read as glowing fingertip rings drawn
+   on the canvas (see useQanunEngine.tick).
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .app-root {
   height: 100%;
   display: flex;
   flex-direction: column;
-  /* The cabinet: a warm, vignetted darkness the instrument sits within. */
+  /* Full-bleed: the instrument reaches every screen edge — no cabinet padding. */
   background:
     radial-gradient(120% 90% at 50% -10%, #241710 0%, var(--frame-edge) 70%),
     var(--frame-edge);
-  padding: clamp(10px, 2vmin, 28px);
-  gap: clamp(8px, 1.4vmin, 16px);
+  padding: 0;
+  gap: 0;
 }
 
 /* ── The instrument body (a trapezoidal qanun is suggested via the frame) ──── */
@@ -23,16 +23,10 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 10px;
+  /* Full-bleed: no rounded corners or cabinet bevel — the board fills the screen. */
+  border-radius: 0;
   overflow: hidden;
   background: var(--frame-dark);
-  /* Cabinet bevel: bright top edge, deep drop below, inner well. */
-  box-shadow:
-    inset 0 1px 0 rgba(255, 222, 150, 0.18),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.6),
-    inset 0 0 60px 8px rgba(0, 0, 0, 0.55),
-    0 24px 70px -16px rgba(0, 0, 0, 0.85),
-    0 4px 14px rgba(0, 0, 0, 0.6);
 }
 
 /* ── Top bar: wordmark · HUD · tune toggle ─────────────────────────────────── */
@@ -40,7 +34,7 @@
   display: flex;
   align-items: center;
   gap: clamp(14px, 3vw, 40px);
-  padding: clamp(8px, 1.4vmin, 14px) clamp(14px, 2.4vw, 26px);
+  padding: clamp(5px, 1vmin, 9px) clamp(14px, 2.4vw, 26px);
   background:
     linear-gradient(180deg, #20140b 0%, #160d07 100%);
   border-bottom: 1px solid rgba(0, 0, 0, 0.7);
@@ -52,6 +46,7 @@
 }
 
 .wordmark {
+  flex-shrink: 0;
   font-family: var(--font-display);
   font-weight: 600;
   font-size: clamp(26px, 3.4vw, 42px);
@@ -76,7 +71,7 @@
   display: flex;
   align-items: stretch;
   gap: clamp(10px, 1.8vw, 22px);
-  margin-right: auto;
+  flex-shrink: 0;
   padding: 5px 16px;
   border-radius: 6px;
   background:
@@ -92,6 +87,12 @@
   gap: 1px;
   justify-content: center;
 }
+/* Reserve stable widths so a changing note (home/last) or maqam name doesn't
+   reflow the readout and wiggle the jins selector to its right. The note cells
+   are floored wide enough for a microtonal accidental; the maqam value gets a
+   FIXED width sized to the LONGEST maqam name (em-based, so it scales with the
+   font) — every name fits in full, the plate never grows. */
+.readout .cell:not(.maqam) .v { min-width: 2.9em; }
 .readout .cell + .cell {
   padding-left: clamp(10px, 1.8vw, 22px);
   border-left: 1px solid rgba(231, 194, 91, 0.14);
@@ -112,12 +113,20 @@
   font-weight: 500;
   line-height: 1.05;
   color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
 }
 
 .readout .cell.maqam .v {
   font-weight: 600;
   color: var(--brass-glow);
   text-shadow: 0 0 12px rgba(255, 221, 128, 0.25);
+  /* Fixed width sized to the longest maqam name → it never truncates and the
+     readout never grows when the name changes. (ellipsis is a safety net only.) */
+  display: block;
+  width: 11.4em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The tune toggle — quiet brass capsule, opt-in progressive disclosure. */
@@ -248,25 +257,25 @@
   opacity: 0.5;
 }
 
-/* ═══ STRING FIELD — vertical brass strings ═════════════════════════════════ */
+/* ═══ STRING FIELD — horizontal brass strings (low pitch bottom → high top) ══ */
 .string-field {
   position: absolute;
   inset: 0;
   z-index: 3;
-  pointer-events: none;
   overflow: hidden;
 }
 
-/* ── Triple-course wrapper: positions at exact course screen-x, holds 3 strings ─ */
+/* ── Triple-course wrapper: positions at exact course screen-y, holds 3 strings ─ */
 .string-field .course {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  /* Wide enough for 3 strings + gap, centred on the course x. Every course is
+  left: 0;
+  right: 0;
+  /* Tall enough for 3 strings + gap, centred on the course y. Every course is
      identical — uniform length, width, and spacing (matches a real qanun). */
-  width: 9px;
-  transform: translateX(-50%);
+  height: 9px;
+  transform: translateY(-50%);
   display: flex;
+  flex-direction: column;
   justify-content: center;
   gap: 2px;
   pointer-events: none;
@@ -276,13 +285,14 @@
 .string-field .course .str {
   flex-shrink: 0;
   /* A crisp whole pixel so all three wires rasterize identically (a sub-pixel
-     width made the centre wire look skinnier than the outer two). */
-  width: 1px;
-  height: 100%;
+     height made the centre wire look skinnier than the outer two). */
+  height: 1px;
+  width: 100%;
   border-radius: 1px;
-  /* Brass wire: shadowed rim, bright specular centre. */
+  /* Brass wire: shadowed rim, bright specular centre. The gradient runs along the
+     wire's length (now horizontal → 90deg). */
   background: linear-gradient(
-    180deg,
+    90deg,
     var(--brass-spec) 0%,
     var(--brass-base) 30%,
     var(--brass-base) 70%,
@@ -299,7 +309,7 @@
 /* Home course (the maqam tonic): warmer, brighter — the "you are here" anchor. */
 .string-field .course.is-home .str {
   background: linear-gradient(
-    180deg,
+    90deg,
     var(--brass-spec) 0%,
     var(--brass-lit) 25%,
     #fffae0 50%,
@@ -317,7 +327,7 @@
    clearly a different colour from + dimmer than the warm home/tonic. */
 .string-field .course.is-ghammaz .str {
   background: linear-gradient(
-    180deg,
+    90deg,
     #e6ead2 0%,
     #b6c39a 42%,
     #8a9a66 72%,
@@ -629,141 +639,39 @@
   cursor: pointer;
 }
 
-/* ═══ MAQAM PRESETS — the instrument's maqam rail ═══════════════════════════
-   A persistent bottom bar across the full soundboard width. Styled as the
-   sustain/modulation rail of an Oriental keyboard: dark walnut, always visible,
-   one tap sets the whole pattern. */
-.maqam-presets {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 4;
+/* ═══ JINS BAR — in the header, two stacked rows ═════════════════════════════
+   Wedged between the readout and the header buttons. Lower jins on the first line,
+   upper jins on the second, so every option is visible at once (the header grows
+   to fit). Each row scrolls horizontally on its own only as a narrow-screen
+   fallback. */
+.jins-bar {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: clamp(5px, 1vmin, 9px) clamp(10px, 1.8vw, 18px);
-  /* Same walnut block as the rack — the rail is a structural continuation. */
-  background:
-    repeating-linear-gradient(2deg, rgba(0, 0, 0, 0.14) 0 2px, rgba(0, 0, 0, 0) 2px 6px),
-    linear-gradient(180deg, #1f140a 0%, #181009 100%);
-  border-top: 1px solid rgba(0, 0, 0, 0.75);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 222, 150, 0.07),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
-    0 -4px 16px -6px rgba(0, 0, 0, 0.6);
-}
-
-/* "maqam" label — mirrors the rack's .rack-label treatment. */
-.maqam-presets .presets-label {
-  font-family: var(--font-body);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  flex-shrink: 0;
-  user-select: none;
-}
-
-/* Scrollable row of chips. */
-.maqam-presets .preset-chips {
-  display: flex;
-  align-items: center;
-  gap: clamp(4px, 0.8vw, 8px);
-  overflow-x: auto;
-  scrollbar-width: none;         /* hide scrollbar on Firefox */
-  -ms-overflow-style: none;
-  /* Fade edges to hint overflow without chrome. */
-  -webkit-mask-image: linear-gradient(to right, transparent 0, black 10px, black calc(100% - 10px), transparent 100%);
-  mask-image: linear-gradient(to right, transparent 0, black 10px, black calc(100% - 10px), transparent 100%);
-  padding: 2px 10px;
-}
-.maqam-presets .preset-chips::-webkit-scrollbar { display: none; }
-
-/* Individual maqam chip — a compact pill routed into the rail. */
-.maqam-presets .preset-chip {
-  font-family: var(--font-body);
-  font-size: clamp(10px, 1.2vmin, 12px);
-  font-weight: 500;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-  flex-shrink: 0;
-  color: var(--ink-dim);
-  background: linear-gradient(180deg, #2c1d10 0%, #1b1107 100%);
-  border: 1px solid rgba(110, 79, 28, 0.35);
-  border-radius: 999px;
-  padding: clamp(4px, 0.6vmin, 6px) clamp(10px, 1.4vw, 14px);
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
-  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.06);
-}
-.maqam-presets .preset-chip:hover {
-  color: var(--brass-lit);
-  border-color: rgba(184, 138, 46, 0.55);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 222, 150, 0.1),
-    0 0 8px rgba(184, 138, 46, 0.2);
-}
-
-/* Active maqam: lit brass — glows against the dark rail. */
-.maqam-presets .preset-chip.is-active {
-  color: var(--ink-engrave);
-  background: linear-gradient(180deg, var(--brass-lit) 0%, var(--brass-base) 100%);
-  border-color: var(--brass-lit);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 248, 220, 0.5),
-    inset 0 -2px 4px rgba(110, 79, 28, 0.4),
-    0 0 14px rgba(231, 194, 91, 0.35),
-    0 0 28px rgba(184, 138, 46, 0.18);
-  font-weight: 600;
-}
-
-/* Reset chip — a muted warm-brass tone, distinct from maqam chips. */
-.maqam-presets .preset-chip.preset-reset {
-  color: var(--ink-faint);
-  border-color: rgba(110, 79, 28, 0.22);
-  font-size: clamp(12px, 1.4vmin, 14px);
-  padding-left: clamp(8px, 1.2vw, 12px);
-  padding-right: clamp(8px, 1.2vw, 12px);
-}
-.maqam-presets .preset-chip.preset-reset:hover {
-  color: var(--ink-dim);
-  border-color: rgba(184, 138, 46, 0.4);
-  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.08);
-}
-
-/* ═══ LOWER-JINS SELECTOR — the family rail ═════════════════════════════════
-   Replaces the old maqam-preset rail at the bottom of the soundboard. Same
-   walnut-block language as .maqam-presets; picking a family re-anchors the home
-   tonic. Each chip carries a dim keycap (Q W E R …) mirroring the hook. */
-.jins-selector {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 4;
-  display: flex;
-  align-items: center;
+  flex-direction: column;
   justify-content: center;
-  gap: 10px;
-  padding: clamp(5px, 1vmin, 9px) clamp(10px, 1.8vw, 18px);
-  background:
-    repeating-linear-gradient(2deg, rgba(0, 0, 0, 0.14) 0 2px, rgba(0, 0, 0, 0) 2px 6px),
-    linear-gradient(180deg, #1f140a 0%, #181009 100%);
-  border-top: 1px solid rgba(0, 0, 0, 0.75);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 222, 150, 0.07),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
-    0 -4px 16px -6px rgba(0, 0, 0, 0.6);
+  gap: clamp(2px, 0.5vmin, 6px);
+  overflow: hidden;
+  padding-left: clamp(8px, 1.2vw, 18px);
 }
 
-/* "jins" label — mirrors .maqam-presets .presets-label. */
+/* ═══ LOWER-JINS SELECTOR — the family rail (first jins-bar row) ═════════════
+   Picking a family re-anchors the home tonic. Each chip carries a dim keycap
+   (1–9) mirroring the hook. */
+.jins-selector {
+  flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: clamp(5px, 0.8vw, 8px);
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+/* "jins" label — sits inline before the chips. */
 .jins-selector-label {
-  position: absolute;
-  left: clamp(10px, 1.8vw, 18px);
-  top: 50%;
-  transform: translateY(-50%);
   font-family: var(--font-body);
   font-size: 9px;
   font-weight: 600;
@@ -774,17 +682,19 @@
   user-select: none;
 }
 
-/* Scrollable row of chips — identical mask/scroll treatment to .preset-chips. */
+/* Chip row — fills its line; scrolls horizontally (right-edge fade) only if the
+   chips can't all fit at the current width. */
 .jins-chips {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: clamp(4px, 0.8vw, 8px);
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  -webkit-mask-image: linear-gradient(to right, transparent 0, black 10px, black calc(100% - 10px), transparent 100%);
-  mask-image: linear-gradient(to right, transparent 0, black 10px, black calc(100% - 10px), transparent 100%);
-  padding: 2px 10px;
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to right, black calc(100% - 18px), transparent 100%);
 }
 .jins-chips::-webkit-scrollbar { display: none; }
 
@@ -844,35 +754,22 @@
   opacity: 0.65;
 }
 
-/* ═══ UPPER-JINS SWITCHER — ghammāz family chip row ═════════════════════════
-   Floats just above the lower-jins rail; same walnut-block language as the
-   sayr guide so the two rows stack naturally when both are visible. */
+/* ═══ UPPER-JINS SWITCHER — ghammāz family chip group (second jins-bar row) ══
+   Sits on the line below the lower-jins rail; a warmer accent marks it as a
+   different axis of modulation. */
 .upper-jins-switcher {
-  position: absolute;
-  bottom: clamp(32px, 5vmin, 46px); /* sits on top of the jins selector */
-  left: 0;
-  right: 0;
-  z-index: 4;
+  flex: 0 0 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: clamp(4px, 0.8vmin, 8px) clamp(10px, 1.8vw, 18px);
-  background:
-    repeating-linear-gradient(2deg, rgba(0, 0, 0, 0.12) 0 2px, rgba(0, 0, 0, 0) 2px 6px),
-    linear-gradient(180deg, rgba(26, 16, 8, 0.97) 0%, rgba(18, 11, 5, 0.97) 100%);
-  border-top: 1px solid rgba(0, 0, 0, 0.6);
-  border-bottom: 1px solid rgba(255, 222, 150, 0.05);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 222, 150, 0.07),
-    0 -2px 10px -4px rgba(0, 0, 0, 0.5);
+  gap: clamp(5px, 0.8vw, 8px);
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
 }
 
 .upper-jins-label {
-  position: absolute;
-  left: clamp(10px, 1.8vw, 18px);
-  top: 50%;
-  transform: translateY(-50%);
   font-family: var(--font-body);
   font-size: 9px;
   font-weight: 600;
@@ -895,17 +792,19 @@
   text-transform: none;
 }
 
-/* Scrollable chip row — identical mask/scroll treatment to .preset-chips. */
+/* Chip row — fills its line; scrolls horizontally (right-edge fade) only if the
+   chips can't all fit at the current width. */
 .upper-jins-chips {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: clamp(4px, 0.8vw, 8px);
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  -webkit-mask-image: linear-gradient(to right, transparent 0, black 10px, black calc(100% - 10px), transparent 100%);
-  mask-image: linear-gradient(to right, transparent 0, black 10px, black calc(100% - 10px), transparent 100%);
-  padding: 2px 10px;
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 18px), transparent 100%);
+  mask-image: linear-gradient(to right, black calc(100% - 18px), transparent 100%);
 }
 .upper-jins-chips::-webkit-scrollbar { display: none; }
 
@@ -949,203 +848,7 @@
   font-weight: 600;
 }
 
-/* ═══ EMPHASIS OVERLAY — sayr emphasis-note glows ════════════════════════════
-   Layered above .string-field (z-index 3), below everything interactive. */
-.emphasis-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.emphasis-glow {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  transform: translateX(-50%);
-  border-radius: 2px;
-  pointer-events: none;
-}
-
-/* Tonic + ghammaz — strongest golden glow */
-.emphasis-glow.emphasis-strong {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 210, 80, 0.22) 35%,
-    rgba(255, 240, 120, 0.42) 50%,
-    rgba(255, 210, 80, 0.22) 65%,
-    transparent 100%
-  );
-  box-shadow:
-    0 0 8px 3px rgba(255, 220, 80, 0.35),
-    0 0 20px 6px rgba(231, 194, 91, 0.18);
-  width: 5px;
-}
-
-/* Octave — medium warm glow */
-.emphasis-glow.emphasis-medium {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 195, 60, 0.14) 35%,
-    rgba(255, 220, 100, 0.28) 50%,
-    rgba(255, 195, 60, 0.14) 65%,
-    transparent 100%
-  );
-  box-shadow:
-    0 0 6px 2px rgba(255, 210, 70, 0.22),
-    0 0 14px 4px rgba(231, 194, 91, 0.10);
-  width: 3px;
-}
-
-/* Leading tone — subtle warm hint */
-.emphasis-glow.emphasis-light {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(200, 160, 50, 0.08) 35%,
-    rgba(255, 200, 80, 0.16) 50%,
-    rgba(200, 160, 50, 0.08) 65%,
-    transparent 100%
-  );
-  box-shadow: 0 0 4px 1px rgba(231, 194, 91, 0.10);
-  width: 2px;
-}
-
-/* ═══ SAYR GUIDE — idiomatic next-move chip panel ════════════════════════════
-   Floats above the preset rail when enabled; z-index 5 so it's clickable. */
-.sayr-guide {
-  position: absolute;
-  bottom: clamp(36px, 6vmin, 52px); /* just above the preset rail */
-  left: 0;
-  right: 0;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: clamp(4px, 0.8vmin, 8px) clamp(10px, 1.8vw, 18px);
-  background:
-    repeating-linear-gradient(2deg, rgba(0, 0, 0, 0.10) 0 2px, rgba(0, 0, 0, 0) 2px 6px),
-    linear-gradient(180deg, rgba(20, 12, 6, 0.95) 0%, rgba(12, 7, 3, 0.95) 100%);
-  border-top: 1px solid rgba(0, 0, 0, 0.65);
-  border-bottom: 1px solid rgba(255, 222, 150, 0.05);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 222, 150, 0.06),
-    0 -2px 10px -4px rgba(0, 0, 0, 0.5);
-}
-
-.sayr-guide-header {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.sayr-guide-label {
-  font-family: var(--font-body);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  white-space: nowrap;
-}
-
-.sayr-guide-maqam {
-  font-family: var(--font-display);
-  font-size: clamp(11px, 1.4vmin, 13px);
-  font-weight: 500;
-  color: var(--brass-glow);
-  text-shadow: 0 0 8px rgba(255, 221, 128, 0.2);
-  white-space: nowrap;
-  max-width: 12ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.sayr-guide-chips {
-  display: flex;
-  align-items: center;
-  gap: clamp(4px, 0.8vw, 8px);
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  -webkit-mask-image: linear-gradient(to right, transparent 0, black 8px, black calc(100% - 8px), transparent 100%);
-  mask-image: linear-gradient(to right, transparent 0, black 8px, black calc(100% - 8px), transparent 100%);
-  padding: 2px 8px;
-}
-.sayr-guide-chips::-webkit-scrollbar { display: none; }
-
-.sayr-guide-empty {
-  font-size: 11px;
-  color: var(--ink-faint);
-  font-style: italic;
-  padding: 0 8px;
-}
-
-/* Sayr chip: ordered move pill */
-.sayr-chip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  font-family: var(--font-body);
-  background: linear-gradient(180deg, #2c1d10 0%, #1b1107 100%);
-  border: 1px solid rgba(110, 79, 28, 0.32);
-  border-radius: 999px;
-  padding: clamp(4px, 0.6vmin, 6px) clamp(10px, 1.4vw, 14px) clamp(4px, 0.6vmin, 6px) clamp(8px, 1.2vw, 12px);
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
-  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.05);
-}
-.sayr-chip:hover {
-  border-color: rgba(184, 138, 46, 0.55);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 222, 150, 0.1),
-    0 0 10px rgba(184, 138, 46, 0.22);
-}
-.sayr-chip:active {
-  transform: translateY(1px);
-}
-
-.sayr-chip-label {
-  font-size: clamp(10px, 1.2vmin, 12px);
-  font-weight: 500;
-  color: var(--ink-dim);
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  transition: color 0.15s;
-}
-.sayr-chip:hover .sayr-chip-label {
-  color: var(--brass-lit);
-}
-
-/* Relationship tag: a compact pill within the chip */
-.sayr-chip-tag {
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(110, 79, 28, 0.22);
-  border-radius: 999px;
-  padding: 1px 6px;
-  white-space: nowrap;
-  transition: color 0.15s, border-color 0.15s;
-}
-.sayr-chip:hover .sayr-chip-tag {
-  color: rgba(231, 194, 91, 0.55);
-  border-color: rgba(184, 138, 46, 0.3);
-}
-
-/* Adjust the preset rail bottom offset when sayr-guide is present (handled by
-   the sayr-guide bottom value above — no extra adjustment needed). */
-
-/* Toggle button (shared with trill, sound, now emphasis and sayr) */
+/* Toggle button (drone / metronome / MIDI switches in the drawer) */
 .controls .toggle {
   font-family: var(--font-body);
   font-size: 12px;
@@ -1198,12 +901,10 @@
   align-items: center;
   justify-content: center;
   padding: clamp(16px, 3vmin, 32px);
-  background: radial-gradient(
-    140% 140% at 50% 45%,
-    rgba(10, 6, 3, 0.65) 0%,
-    rgba(5, 3, 1, 0.82) 100%
-  );
-  backdrop-filter: blur(3px);
+  /* Clean, even darkening + a soft blur so the wood reads gently behind the card. */
+  background: rgba(8, 5, 2, 0.66);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
   animation: onboarding-fade-in 0.32s ease-out both;
 }
 
@@ -1212,48 +913,26 @@
   to   { opacity: 1; }
 }
 
-/* Card: a raised walnut block with the same grain language as the rack/rail. */
+/* Card: a clean dark panel with a brass hairline and a soft warm glow up top. */
 .onboarding-card {
   position: relative;
   width: min(440px, 100%);
   overflow: hidden;
-  border-radius: 10px;
-  /* Walnut block: stripe grain + broad warm spotlight. */
+  border-radius: 14px;
   background:
-    repeating-linear-gradient(2deg, rgba(0, 0, 0, 0.22) 0 3px, rgba(0, 0, 0, 0) 3px 8px),
-    repeating-linear-gradient(90deg,
-      rgba(0, 0, 0, 0.08) 0px,
-      rgba(0, 0, 0, 0) 30px,
-      rgba(120, 80, 40, 0.08) 64px,
-      rgba(0, 0, 0, 0) 100px
-    ),
-    linear-gradient(160deg, var(--wood-glow) 0%, var(--wood-warm) 38%, var(--wood-base) 72%, var(--wood-deep) 100%);
-  border: 1px solid rgba(110, 79, 28, 0.55);
+    radial-gradient(120% 80% at 50% 0%, rgba(231, 194, 91, 0.08) 0%, rgba(231, 194, 91, 0) 55%),
+    linear-gradient(180deg, #241710 0%, #1a110a 56%, #120b06 100%);
+  border: 1px solid rgba(231, 194, 91, 0.26);
   box-shadow:
-    inset 0 1px 0 rgba(255, 222, 150, 0.18),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.55),
-    inset 0 0 40px 6px rgba(0, 0, 0, 0.45),
-    0 28px 70px -10px rgba(0, 0, 0, 0.8),
-    0 0 0 1px rgba(0, 0, 0, 0.5),
-    0 0 50px rgba(184, 138, 46, 0.08);
+    inset 0 1px 0 rgba(255, 222, 150, 0.14),
+    0 30px 80px -16px rgba(0, 0, 0, 0.85),
+    0 0 0 1px rgba(0, 0, 0, 0.5);
   animation: onboarding-rise 0.38s cubic-bezier(0.18, 0.8, 0.36, 1) both;
 }
 
 @keyframes onboarding-rise {
   from { transform: translateY(14px) scale(0.98); opacity: 0; }
   to   { transform: translateY(0) scale(1); opacity: 1; }
-}
-
-/* Grain noise film over the card — same technique as .soundboard::before */
-.onboarding-grain {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
-  background-size: 160px 160px;
-  opacity: 0.045;
-  mix-blend-mode: overlay;
 }
 
 /* Header — narrow engraved-brass band at the top of the card. */
@@ -1458,12 +1137,6 @@
   .readout .cell + .cell {
     padding-left: clamp(6px, 1.2vw, 16px);
   }
-
-  /* Slightly smaller maqam preset chips so the rail doesn't scroll awkwardly. */
-  .maqam-presets .preset-chip {
-    padding-left: clamp(7px, 1vw, 12px);
-    padding-right: clamp(7px, 1vw, 12px);
-  }
 }
 
 /* At 1024 px: tighten the controls drawer so it doesn't overflow. */
@@ -1471,12 +1144,6 @@
   .controls {
     gap: clamp(8px, 1.4vw, 18px);
     padding: 10px clamp(12px, 1.8vw, 22px);
-  }
-
-  /* Quick-swap buttons wrap naturally but don't overflow the drawer. */
-  .controls .quick-swaps {
-    flex-wrap: wrap;
-    gap: 6px;
   }
 
   /* Ensure the controls drawer can expand enough to show two rows of controls. */

@@ -2,6 +2,7 @@
 import * as ToneNamespace from 'tone'
 import type { Gain, ToneAudioNode } from 'tone'
 import type { ReverbSize } from '../../types'
+import { clamp01 } from '../music/clamp01'
 import { reverbSizeToParams } from './reverbSize'
 import { velocityCurve } from './velocityCurve'
 import { nextVoiceIndex } from './voicePool'
@@ -32,12 +33,12 @@ if (import.meta.hot) import.meta.hot.accept(() => window.location.reload())
 //   • Triple-course bloom: each pluck fires 3 detuned voices (±4 cents).
 //   • Longer ring: resonance ↑ to 0.97, dampening 3500 Hz for warmer tone.
 //   • Body reverb on by default (wet ≈ 0.28).
-//   • Rashsh hold: a continuous loop re-strikes a single held course at ~10 Hz.
-//   • Two-note trill: a DEDICATED engine — two independent voices alternating
-//     attacks hi-lo-hi-lo on the same 16th-note pulse; each string rings out
-//     naturally until struck again (like two real strings plucked in turn).
-//     Each voice has its own Sampler (real qanun timbre) with a brief
-//     Karplus-Strong fallback while samples load (see startTrill).
+//   • Rashsh hold: a continuous loop re-strikes a single held course at ~9 Hz.
+//   • Two-note trill: two interleaved "hands" — alternating attacks hi-lo-hi-lo
+//     at TWICE the rashsh pulse, so each string is struck at the full
+//     single-string tremolo rate; each string rings out naturally until struck
+//     again. Strikes route through fireVoice, so they share the main sampler
+//     (with the Karplus-Strong fallback while samples load).
 export type SoundSource = 'sample' | 'synth'
 
 export interface QanunEngineOptions {
@@ -53,7 +54,6 @@ export interface QanunEngine {
   holdStart: (args: { freqHz: number; velocity: number; immediate?: boolean }) => void
   holdAlternate: (args: { freqs: number[]; velocity: number }) => void
   holdStop: () => void
-  trill: (args: { freqHz: number; neighborHz: number; velocity: number; cycles?: number }) => void
   setReverbEnabled: (enabled: boolean) => void
   setReverbWet: (wet: number) => void
   setReverbSize: (size: ReverbSize) => void
@@ -75,20 +75,33 @@ const COURSE_CENTS = [-4, 0, 4] as const
 /** Voices per note (= COURSE_CENTS.length). */
 const VOICES_PER_NOTE = COURSE_CENTS.length
 
-/** Rashsh tremolo rate in Hz (~10 picks/s — a brisk Arabic tremolo). */
-const RASHSH_HZ = 10
+/** Rashsh tremolo rate in Hz (~9 picks/s — a brisk Arabic tremolo, eased a
+ *  touch from 10 so each strike's attack reads more clearly). */
+const RASHSH_HZ = 9
 
 /**
- * Pluck interval for Tone.Loop (in seconds).
- * A small constant offset staggers the repeated attack slightly for realism.
+ * Two-note trill pulse multiplier. A real qanun octave tremolo is TWO hands each
+ * tremolo-ing their own string, interleaved — so each string is struck at the
+ * full single-string rashsh rate and the combined alternation ticks at twice
+ * that. (Splitting one rashsh pulse across two strings — the old behaviour —
+ * halves each string's rate and reads as a slow seesaw, not a tremolo.)
  */
-const RASHSH_INTERVAL = 1 / RASHSH_HZ
+const TRILL_PULSE_MULT = 2
 
-/** Trill attack spacing — same 7 Hz rhythm as rashsh, but finite. */
-const TRILL_HZ = 7
-const TRILL_INTERVAL = 1 / TRILL_HZ
-/** Default trill cycles: principal–neighbor pairs + final principal = 2*4+1 = 9 attacks. */
-const TRILL_DEFAULT_CYCLES = 4
+/**
+ * Per-strike velocity scale for the two-note trill. The interleaved pulse lays
+ * down twice the strike density of a single rashsh, so each strike sits a touch
+ * softer to keep the summed level near the single-string tremolo — otherwise
+ * the master limiter squashes the very attacks that make it percussive.
+ */
+const TRILL_VELOCITY_SCALE = 0.85
+
+/**
+ * Forward-only timing slop per trill strike (seconds). Two real hands never
+ * interleave on a perfect grid; a few ms of humanization keeps the alternation
+ * from sounding mechanical. Strictly positive so nothing schedules in the past.
+ */
+const TRILL_TIME_JITTER_SEC = 0.006
 
 /**
  * Velocity variation range for rashsh re-triggers (± this fraction of base).
@@ -114,7 +127,6 @@ const CHORUS_WET = 0.35        // blend: mostly dry, gentle shimmer
 
 const FX_WET_RAMP = 0.08
 const VOICE_GAIN_RAMP = 0.01
-const clamp01 = (n: number): number => Math.min(1, Math.max(0, n))
 
 /** Below this magnitude the soft-clip is fully transparent (identity). */
 const SOFTCLIP_KNEE = 0.9
@@ -227,31 +239,20 @@ export const createQanunEngine = ({
   let started = false
 
   // ── rashsh state — ONE continuous loop re-plucks the held course (single-note
-  // tremolo). Two simultaneous holds route to the dedicated trill engine below. ──
-  interface LoopHandle { start(t: number): void; stop(): void; dispose(): void }
-  let rashshLoop: LoopHandle | null = null
+  // tremolo). Two simultaneous holds route to the alternating trill loop below.
+  // Both run on their own Tone.Clock (NOT the Transport) so the tremolo rate
+  // stays a fixed Hz, independent of the metronome's Transport BPM. ──
+  interface ClockHandle { start(): void; stop(): void; dispose(): void }
+  let rashshLoop: ClockHandle | null = null
   let heldFreqs: number[] = []
   let heldVelocity = 0.6
   let rashshTick = 0
 
-  // ── dedicated two-note trill ──────────────────────────────────────────────────
-  // Two held notes get their OWN engine (not the rashsh loop): two independent
-  // voices, one per octave, alternately struck hi→lo→hi→lo at the 16th-note
-  // pulse. Nothing is cut — each string rings out naturally until struck again,
-  // like two real strings plucked in turn. Each voice carries its OWN small
-  // Sampler (so each octave has the real qanun timbre on its own output) plus a
-  // Karplus-Strong fallback while samples load. The per-voice gain carries the
-  // strike level.
-  interface TrillVoice {
-    sampler: { triggerAttack: (f: number, t?: number, v?: number) => void; dispose: () => void }
-    synth: { triggerAttack: (f: number, t?: number) => void; dispose: () => void }
-    gain: Gain
-  }
-  let trillVoices: [TrillVoice, TrillVoice] | null = null
-  // Both trill samplers must be ready before the trill switches to the sampled
-  // timbre, so the two octaves never sound mismatched (one sample, one synth).
-  let trillSamplersLoaded = 0
-  let trillLoop: LoopHandle | null = null
+  // ── two-note trill — alternating attacks, hi→lo→hi→lo, on the same pulse.
+  // Nothing is cut: each string rings out naturally until struck again, like two
+  // real strings plucked in turn. Strikes route through fireVoice, sharing the
+  // main sampler (Karplus-Strong fallback while samples load). ──
+  let trillLoop: ClockHandle | null = null
   let trillFreqs: [number, number] = [0, 0]
   let trillVelocity = 0.6
   let trillTick = 0
@@ -271,7 +272,9 @@ export const createQanunEngine = ({
     time?: number
   ): void => {
     const v = allocVoice()
-    v.gain.gain.rampTo(gainValue, VOICE_GAIN_RAMP)
+    // Ramp at the scheduled attack time (rashsh ticks arrive ~0.1 s early), so
+    // the level change can't retroactively rescale a still-ringing prior note.
+    v.gain.gain.rampTo(gainValue, VOICE_GAIN_RAMP, time)
     v.synth.triggerAttack(freqHz, time)
   }
 
@@ -298,9 +301,6 @@ export const createQanunEngine = ({
     if (started) return
     await Tone.start()
     started = true
-    // Pre-warm the dedicated trill voices so their samplers are loaded (from
-    // browser cache) well before the first two-note trill is played.
-    ensureTrillVoices()
   }
 
   /**
@@ -350,9 +350,8 @@ export const createQanunEngine = ({
     }
 
     if (!rashshLoop) {
-      Tone.Transport.start()
       rashshTick = 0
-      rashshLoop = new Tone.Loop((time: number) => {
+      rashshLoop = new Tone.Clock((time: number) => {
         if (heldFreqs.length === 0) return
         const freqHz = heldFreqs[rashshTick % heldFreqs.length]
         rashshTick++
@@ -363,78 +362,36 @@ export const createQanunEngine = ({
         // ~10×/s rings ~1.5 s, so blooming would stack dozens of copies and slam
         // the master soft-clip.
         fireVoice(freqHz, velocityCurve(v), time)
-      }, RASHSH_INTERVAL)
-      rashshLoop.start(0)
+      }, RASHSH_HZ)
+      rashshLoop.start()
     }
   }
 
-  // ── dedicated two-note trill engine ──────────────────────────────────────────
-
   /**
-   * Lazily build the two gated trill voices (one per octave): each is its own
-   * Sampler (the real qanun timbre) + a Karplus-Strong fallback, both feeding the
-   * voice's gate gain → reverb. The sample URLs were already fetched by the main
-   * sampler, so these load from browser cache — typically ready in well under a
-   * second; start() pre-warms them so the first trill is already sampled.
-   */
-  const ensureTrillVoices = (): [TrillVoice, TrillVoice] => {
-    if (trillVoices) return trillVoices
-    const make = (): TrillVoice => {
-      const gain = new Tone.Gain(0)
-      // Through the shared chorus so the trill matches the main sampled path's
-      // shimmer exactly (sampler → gate → chorus → reverb).
-      gain.connect(chorus)
-      const voiceSampler = new Tone.Sampler({
-        urls: QANUN_SAMPLE_URLS,
-        baseUrl: QANUN_SAMPLE_BASE_URL,
-        onload: () => {
-          trillSamplersLoaded++
-        }
-      })
-      voiceSampler.connect(gain)
-      const synth = new Tone.PluckSynth({ attackNoise: 1, dampening: KS_DAMPENING, resonance: KS_RESONANCE })
-      synth.connect(gain)
-      return { sampler: voiceSampler, synth, gain }
-    }
-    trillVoices = [make(), make()]
-    return trillVoices
-  }
-
-  /**
-   * Start (or retune) the two-note trill: alternating 16th-note attacks — hi,
-   * lo, hi, lo — always starting on the high note. Each tick strikes ONE
-   * dedicated voice; nothing is silenced, so both strings ring out naturally
-   * until their next strike, like two real strings plucked in turn. Calling
-   * again while running just retunes (slide) without restarting the loop, so
-   * the phase never stutters.
+   * Start (or retune) the two-note trill — modelled as two interleaved hands:
+   * alternating attacks hi, lo, hi, lo, always leading with the high note, at
+   * TWICE the rashsh pulse so EACH string is struck at the full single-string
+   * tremolo rate (matching what one hand does on one string). Each tick strikes
+   * ONE voice, slightly softened (TRILL_VELOCITY_SCALE) and humanized by a few
+   * ms (TRILL_TIME_JITTER_SEC); nothing is silenced, so both strings ring out
+   * naturally until their next strike. Calling again while running just retunes
+   * (slide) without restarting the loop, so the phase never stutters.
    */
   const startTrill = (hiHz: number, loHz: number, velocity: number): void => {
     trillFreqs = [hiHz, loHz]
     trillVelocity = velocity
     if (trillLoop) return
-    const pair = ensureTrillVoices()
-    Tone.Transport.start()
     trillTick = 0
-    trillLoop = new Tone.Loop((time: number) => {
+    trillLoop = new Tone.Clock((time: number) => {
       const idx = trillTick % 2
       trillTick++
-      const active = pair[idx]
       const jitter = (Math.random() * 2 - 1) * RASHSH_VELOCITY_JITTER
-      const level = velocityCurve(clamp01(trillVelocity + jitter))
-      // Two INDEPENDENT strings: the gate only carries the strike level — the
-      // other octave is never closed, so each string rings out naturally until
-      // it is struck again (the alternation lives in the attacks, hi-lo-hi-lo,
-      // exactly like two real strings plucked in turn).
-      active.gain.gain.rampTo(level, VOICE_GAIN_RAMP, time)
-      // Sampled qanun timbre once both voice-samplers are ready (and the engine
-      // is in 'sample' mode); Karplus-Strong only as the brief loading fallback.
-      if (currentSource === 'sample' && trillSamplersLoaded >= 2) {
-        active.sampler.triggerAttack(trillFreqs[idx], time, 1)
-      } else {
-        active.synth.triggerAttack(trillFreqs[idx], time)
-      }
-    }, RASHSH_INTERVAL)
-    trillLoop.start(0)
+      const v = clamp01(trillVelocity * TRILL_VELOCITY_SCALE + jitter)
+      // Forward-only slop — two hands never interleave on a perfect grid.
+      const t = time + Math.random() * TRILL_TIME_JITTER_SEC
+      fireVoice(trillFreqs[idx], velocityCurve(v), t)
+    }, RASHSH_HZ * TRILL_PULSE_MULT)
+    trillLoop.start()
   }
 
   /**
@@ -487,35 +444,6 @@ export const createQanunEngine = ({
     setHeld({ freqs: [] })
   }
 
-  /**
-   * Trill: finite upper-neighbor burst.
-   * Pattern: principal, neighbor, principal, neighbor, … (cycles pairs), then principal.
-   * Each attack = triple-course pluck at a scheduled time.
-   * cycles defaults to 4 → 9 attacks over ~1.14 s (9 × 1/7 s).
-   */
-  const trill = ({
-    freqHz,
-    neighborHz,
-    velocity,
-    cycles = TRILL_DEFAULT_CYCLES
-  }: {
-    freqHz: number
-    neighborHz: number
-    velocity: number
-    cycles?: number
-  }): void => {
-    if (!Number.isFinite(freqHz) || freqHz <= 0) return
-    if (!Number.isFinite(neighborHz) || neighborHz <= 0) return
-    const t0 = Tone.now()
-    const totalAttacks = cycles * 2 + 1  // p n p n … p
-    for (let k = 0; k < totalAttacks; k++) {
-      const isPrincipal = k % 2 === 0
-      const hz = isPrincipal ? freqHz : neighborHz
-      const time = t0 + k * TRILL_INTERVAL
-      pluck({ freqHz: hz, velocity, time })
-    }
-  }
-
   const applyReverbWet = (): void => {
     reverb.wet.rampTo(reverbEnabled ? clamp01(reverbWet) : 0, FX_WET_RAMP)
   }
@@ -541,11 +469,6 @@ export const createQanunEngine = ({
   const dispose = (): void => {
     holdStop()
     voices.forEach((v) => {
-      v.synth.dispose()
-      v.gain.dispose()
-    })
-    trillVoices?.forEach((v) => {
-      v.sampler.dispose()
       v.synth.dispose()
       v.gain.dispose()
     })
@@ -575,7 +498,6 @@ export const createQanunEngine = ({
     holdStart,
     holdAlternate,
     holdStop,
-    trill,
     setReverbEnabled,
     setReverbWet,
     setReverbSize,

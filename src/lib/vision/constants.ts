@@ -10,7 +10,9 @@ export const MIDDLE_TIP = 12
 export const INDEX_MCP = 5
 export const PINKY_MCP = 17
 
-// Requested webcam dimensions. 16:9 native — wider horizontal range for pitch,
-// no `object-fit: cover` crop needed (canvas overlay aligns with the video 1:1).
+// Requested webcam dimensions (16:9 native). The board renders the frame with
+// `object-fit: cover`, which crops it vertically on wider-than-16:9 layouts —
+// the engine remaps MediaPipe's frame-y to the visible region (see tick) so
+// string selection matches what's on screen.
 export const VIDEO_WIDTH = 1280
 export const VIDEO_HEIGHT = 720

@@ -36,6 +36,17 @@ export const Qanun = () => {
       <header className="qanun-header">
         <span className="wordmark">qanun</span>
         <QanunHud reading={engine.reading} />
+        {/* Jins controls inline in the header — lower (1–9) + upper (Q–T) jins on
+            one scrollable strip, so they take no extra row and never cover the
+            strings (and stay clickable before the camera starts). */}
+        <div className="jins-bar">
+          <LowerJinsSelector lowerJins={engine.lowerJins} onSelect={engine.setLowerJins} />
+          <UpperJinsSwitcher
+            options={engine.upperJinsOptions}
+            ghammazLabel={engine.ghammazLabel}
+            onSelect={engine.setUpperJins}
+          />
+        </div>
         <button
           type="button"
           className="help-btn"
@@ -69,13 +80,6 @@ export const Qanun = () => {
           <Rosette className="rosette-minor" />
         </div>
 
-        <LowerJinsSelector lowerJins={engine.lowerJins} onSelect={engine.setLowerJins} />
-        {/* Upper-jins switcher — primary modulation control, always visible. */}
-        <UpperJinsSwitcher
-          options={engine.upperJinsOptions}
-          ghammazLabel={engine.ghammazLabel}
-          onSelect={engine.setUpperJins}
-        />
         <StringField
           courses={engine.courses}
           highlightIndices={engine.highlightIndices}

@@ -1,9 +1,7 @@
 import type { MandalState } from '../types'
 import { jinsById } from '../ajnas/JINS'
-import { offsetOf, setMandal } from '../ajnas/MANDALS'
+import { DEGREE_COUNT, offsetOf, setMandal } from '../ajnas/MANDALS'
 import { lowerJinsById, maqamNameFor } from './lowerJins'
-
-const DEGREE_COUNT = 7
 
 const lowerGhammaz = (lowerId: string): number => jinsById(lowerId).ghammazDegree
 
@@ -57,19 +55,17 @@ const upperLabel = (id: string): string => {
   return jinsById(id).label
 }
 
-const arraysEqual = (a: MandalState, b: MandalState): boolean =>
-  a.length === b.length && a.every((v, i) => v === b[i])
-
-// The contextual upper-jins chips for the current lower jins. `active` = the
-// option whose application leaves the state unchanged (the current upper).
+// The contextual upper-jins chips for the current lower jins. `active` flags the
+// CURRENTLY-SELECTED upper jins by id — NOT a re-analysis of the scale, which is
+// ambiguous: a compound upper (Hijazkar also sets degree 1) makes a simpler upper
+// (Nahawand) spuriously "match" the resulting state. Tracking the selection is exact.
 export const upperOptions = (
   lowerId: string,
-  state: MandalState,
-  homeDegree: number
+  currentUpperId: string
 ): UpperJinsOption[] =>
   lowerJinsById(lowerId).upperOptions.map((id) => ({
     id,
     label: upperLabel(id),
     maqamName: maqamNameFor(lowerId, id),
-    active: arraysEqual(applyUpperJins(state, id, homeDegree, lowerId), state)
+    active: id === currentUpperId
   }))

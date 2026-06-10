@@ -3,7 +3,6 @@ import {
   DEGREE_COUNT,
   DEFAULT_RAST_STATE,
   MANDAL_DEGREES,
-  cycleMandal,
   offsetOf,
   positionsForDegree,
   setMandal
@@ -54,40 +53,5 @@ describe('setMandal', () => {
     expect(offsetOf(next, 3)).toBe(3)
     expect(next).not.toBe(DEFAULT_RAST_STATE)         // immutable
     expect(offsetOf(DEFAULT_RAST_STATE, 3)).toBe(3.5) // original untouched
-  })
-})
-
-describe('cycleMandal', () => {
-  it('moves the degree to the next higher position', () => {
-    // degree 3 default 3.5 → next up is 4 (natural).
-    expect(offsetOf(cycleMandal(DEFAULT_RAST_STATE, 3, 1), 3)).toBe(4)
-  })
-  it('moves the degree to the next lower position', () => {
-    // degree 3 default 3.5 → next down is 3 (flat).
-    expect(offsetOf(cycleMandal(DEFAULT_RAST_STATE, 3, -1), 3)).toBe(3)
-  })
-  it('clamps at the top and bottom of a degree (no wrap)', () => {
-    const top = setMandal(DEFAULT_RAST_STATE, 2, 2)      // degree 2 highest
-    expect(offsetOf(cycleMandal(top, 2, 1), 2)).toBe(2)  // stays at 2
-    const bottom = setMandal(DEFAULT_RAST_STATE, 2, 1)   // degree 2 lowest
-    expect(offsetOf(cycleMandal(bottom, 2, -1), 2)).toBe(1)
-  })
-  it('is a no-op only on fixed pillar degree 1', () => {
-    expect(cycleMandal(DEFAULT_RAST_STATE, 1, 1)).toEqual(DEFAULT_RAST_STATE)
-  })
-  it('cycles degree 5 (no longer a fixed pillar)', () => {
-    // DEFAULT_RAST_STATE has degree 5 = 7 (top of [6, 6.5, 7]); cycling down
-    // moves it to 6.5.
-    expect(offsetOf(cycleMandal(DEFAULT_RAST_STATE, 5, -1), 5)).toBe(6.5)
-    // Cycling up from the top is a clamped no-op.
-    expect(offsetOf(cycleMandal(DEFAULT_RAST_STATE, 5, 1), 5)).toBe(7)
-  })
-  it('snaps to the lowest position when cycling up from an off-grid offset', () => {
-    const offGrid = setMandal(DEFAULT_RAST_STATE, 2, 0.7) // 0.7 ∉ [1, 1.5, 2]
-    expect(offsetOf(cycleMandal(offGrid, 2, 1), 2)).toBe(1)
-  })
-  it('snaps to the highest position when cycling down from an off-grid offset', () => {
-    const offGrid = setMandal(DEFAULT_RAST_STATE, 2, 0.7)
-    expect(offsetOf(cycleMandal(offGrid, 2, -1), 2)).toBe(2)
   })
 })

@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { UpperJinsOption } from '../lib/music/sayr/upperJins'
 
 interface UpperJinsSwitcherProps {
@@ -6,9 +7,11 @@ interface UpperJinsSwitcherProps {
   onSelect: (id: string) => void
 }
 
-const KEYS = ['1', '2', '3', '4', '5']
+const KEYS = ['Q', 'W', 'E', 'R', 'T']
 
-export const UpperJinsSwitcher = ({ options, ghammazLabel, onSelect }: UpperJinsSwitcherProps) => {
+// memo: re-renders only when the jins selection changes (options is memoized in
+// the hook), not on every per-pluck engine state push.
+export const UpperJinsSwitcher = memo(({ options, ghammazLabel, onSelect }: UpperJinsSwitcherProps) => {
   if (options.length === 0) return null
   return (
     <div className="upper-jins-switcher" role="group" aria-label="Upper jins (on the ghammāz)">
@@ -32,4 +35,4 @@ export const UpperJinsSwitcher = ({ options, ghammazLabel, onSelect }: UpperJins
       </div>
     </div>
   )
-}
+})

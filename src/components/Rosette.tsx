@@ -1,13 +1,15 @@
 // Decorative sound-hole rosette — a geometric Islamic-style star lattice, the
 // kind inlaid on a real qanun soundboard. Purely ornamental (aria-hidden); the
 // strings pass over it. Rendered as crisp SVG so it scales with the board.
-import { useId } from 'react'
+import { memo, useId } from 'react'
 
 interface RosetteProps {
   className?: string
 }
 
-export const Rosette = ({ className }: RosetteProps) => {
+// memo: purely decorative and prop-stable, but its parent re-renders per pluck —
+// without it the 3×24-vertex star polygons are recomputed every time.
+export const Rosette = memo(({ className }: RosetteProps) => {
   // Unique gradient id per instance — two rosettes render at once, and a
   // shared id would be a duplicate-id violation. Strip useId's colons so the
   // value is a valid url(#…) fragment reference.
@@ -63,7 +65,7 @@ export const Rosette = ({ className }: RosetteProps) => {
     </g>
   </svg>
   )
-}
+})
 
 // One 12-pointed star drawn as a closed polygon (alternating long/short radii).
 const StarPoly = () => {

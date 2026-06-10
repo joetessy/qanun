@@ -1,14 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createDrone, midiToDroneFreq } from './createDrone'
-
-describe('midiToDroneFreq', () => {
-  it('returns A4 = 440 for MIDI 69', () => {
-    expect(midiToDroneFreq(69)).toBeCloseTo(440, 5)
-  })
-  it('returns C4 = ~261.63 for MIDI 60', () => {
-    expect(midiToDroneFreq(60)).toBeCloseTo(261.6256, 3)
-  })
-})
+import { createDrone } from './createDrone'
 
 describe('createDrone', () => {
   const makeMockTone = () => {

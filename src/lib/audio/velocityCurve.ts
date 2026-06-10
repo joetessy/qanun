@@ -1,10 +1,10 @@
+import { clamp01 } from '../music/clamp01'
+
 export interface VelocityCurveOptions {
   min?: number   // floor so even the gentlest pluck is audible
   max?: number
   gamma?: number // >1 makes soft plucks softer (perceptual shaping)
 }
-
-const clamp01 = (n: number): number => Math.min(1, Math.max(0, n))
 
 // Map a normalized gesture speed (0..1) to a pluck velocity (min..max).
 export const velocityCurve = (

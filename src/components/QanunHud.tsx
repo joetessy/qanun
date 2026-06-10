@@ -11,7 +11,7 @@ export const QanunHud = ({ reading }: QanunHudProps) => (
   <div className="readout">
     <div className="cell maqam">
       <span className="k">maqam</span>
-      <span className="v">{reading.maqamName}</span>
+      <span className="v" title={reading.maqamName}>{reading.maqamName}</span>
     </div>
     <div className="cell">
       <span className="k">home</span>

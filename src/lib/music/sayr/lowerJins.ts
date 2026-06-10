@@ -20,7 +20,7 @@ export const LOWER_JINS: readonly LowerJins[] = [
   { id: 'kurd',     label: 'Kurd',     homeDegree: 2, defaultScale: [0, 2, 3, 5, 7, 9, 10],      upperOptions: ['nahawand', 'rast'] },
   { id: 'nikriz',   label: 'Nikriz',   homeDegree: 1, defaultScale: [0, 2, 3, 6, 7, 9, 10],      upperOptions: ['nahawand'] },
   { id: 'ajam',     label: 'ʿAjam',    homeDegree: 1, defaultScale: [0, 2, 4, 5, 7, 9, 11],      upperOptions: ['ajam', 'hijaz', 'nahawand'] },
-  { id: 'saba',     label: 'Saba',     homeDegree: 2, defaultScale: [0, 2, 3.5, 5, 6, 8, 10],    upperOptions: ['hijaz', 'ajam'] },
+  { id: 'saba',     label: 'Saba',     homeDegree: 2, defaultScale: [0, 2, 3.5, 5, 6, 9, 10],    upperOptions: ['hijaz', 'ajam'] },
   { id: 'sikah',    label: 'Sikah',    homeDegree: 3, defaultScale: [0, 2, 3.5, 5, 7, 9, 10.5],  upperOptions: ['rast', 'nahawand', 'hijaz'] }
 ]
 

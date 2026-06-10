@@ -103,11 +103,22 @@ export const createRecorder = ({
 }: CreateRecorderOptions): Recorder => {
   const sampleRate = audioContext.sampleRate
   const capacityFrames = Math.floor(sampleRate * maxDurationSec)
-  // The source bus is stereo at the destination — allocate 2 channels.
-  const buffer: RingBuffer = __testOnly_createRingBuffer({
-    channelCount: 2,
-    capacityFrames
-  })
+  // The source bus is stereo at the destination — 2 channels. The PCM arrays
+  // are allocated per take in start() and released when the take settles, so
+  // retained memory scales with the ACTIVE take, not the app's lifetime (the
+  // recorder instance itself is cached for the app's lifetime by the hook).
+  const buffer: RingBuffer = {
+    channels: [],
+    capacityFrames,
+    lengthFrames: 0,
+    overflowFired: false
+  }
+
+  const releaseBuffer = (): void => {
+    buffer.channels = []
+    buffer.lengthFrames = 0
+    buffer.overflowFired = false
+  }
 
   let state: RecorderState = 'idle'
   let workletNode: AudioWorkletNode | null = null
@@ -142,7 +153,8 @@ export const createRecorder = ({
   const start = async (): Promise<void> => {
     if (state !== 'idle') throw new Error(`createRecorder.start: bad state ${state}`)
     await ensureWorkletRegistered(audioContext)
-    // Reset the buffer for a fresh take.
+    // Fresh per-take buffer (virtual until written — pages commit as recorded).
+    buffer.channels = Array.from({ length: 2 }, () => new Float32Array(capacityFrames))
     buffer.lengthFrames = 0
     buffer.overflowFired = false
     workletNode = new AudioWorkletNode(audioContext, 'theremin-recorder', {
@@ -185,9 +197,11 @@ export const createRecorder = ({
       // sync fallback) or fail. Kept in the resolved shape for future use
       // (e.g., if we ever surface a truncated take).
       const partial = false
-      // Snapshot the lengths/buffers we'll send so a late worklet message
-      // can't mutate them mid-flight (cleanupWorklet already disconnected
-      // the source, so there shouldn't be any, but defensive).
+      // Snapshot the recorded portion to transfer to the worker. The ORIGINAL
+      // buffer.channels stay intact (and stable — cleanupWorklet disconnected
+      // the source) so the crash fallback below can still encode the take:
+      // transferring detaches channelsCopy, so reading IT after postMessage
+      // would encode pure silence.
       const channelsCopy = buffer.channels.map((ch) =>
         ch.slice(0, buffer.lengthFrames)
       )
@@ -197,6 +211,7 @@ export const createRecorder = ({
         const data = event.data as { type: 'ok' | 'error'; wav?: ArrayBuffer; message?: string }
         worker.terminate()
         activeEncoder = null
+        releaseBuffer()
         setState('idle')
         if (data.type === 'ok' && data.wav) {
           resolve({ wav: data.wav, sampleRate, partial })
@@ -214,13 +229,13 @@ export const createRecorder = ({
         const message = err.message || 'encoder worker crashed'
         // Fall back: encode synchronously on the main thread so the user
         // doesn't lose the take. Acceptable because this is the exceptional
-        // path — the normal happy path stays off the main thread. The encode
-        // is complete (we have every buffered frame), so partial stays false
-        // on success; only fire onEncoderError if even the fallback fails.
+        // path — the normal happy path stays off the main thread. Encodes from
+        // the intact originals (encodeWavSync reads only the first
+        // lengthFrames entries), NOT the transferred-and-detached copies.
         import('./encodeWavSync').then(({ encodeWavSync }) => {
           try {
             const wav = encodeWavSync({
-              channels: channelsCopy,
+              channels: buffer.channels,
               sampleRate,
               lengthFrames
             })
@@ -228,6 +243,8 @@ export const createRecorder = ({
           } catch (fallbackErr) {
             onEncoderError?.(message)
             reject(fallbackErr instanceof Error ? fallbackErr : new Error(String(fallbackErr)))
+          } finally {
+            releaseBuffer()
           }
         })
       }
@@ -250,8 +267,7 @@ export const createRecorder = ({
       activeEncoder.reject(cancelError)
       activeEncoder = null
     }
-    buffer.lengthFrames = 0
-    buffer.overflowFired = false
+    releaseBuffer()
     setState('idle')
   }
 

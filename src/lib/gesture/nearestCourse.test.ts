@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nearestCourse, coursesCrossed, courseScreenX, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from './nearestCourse'
+import { nearestCourse, coursesCrossed, courseWithHysteresis, courseScreenX, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from './nearestCourse'
 
 const ARGS = { courseCount: 28, fieldLeft: PLAY_FIELD_LEFT, fieldRight: PLAY_FIELD_RIGHT }
 const cx = (i: number) => courseScreenX(i, 28, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT)
@@ -61,5 +61,41 @@ describe('coursesCrossed (strum)', () => {
     const sit = coursesCrossed({ prevX: cx(10), curX: cx(10) + 0.0005, ...ARGS })
     expect(arrive).toEqual([10])
     expect(sit).toEqual([])
+  })
+})
+
+describe('courseWithHysteresis', () => {
+  // A simple 4-course field over [0,1]: cell 0.25, centres 0.125/0.375/0.625/0.875,
+  // boundaries at 0.25/0.5/0.75. margin 0.35 → must move >0.85 cells from the held
+  // course's centre (i.e. >0.35 into the neighbour) before the selection switches.
+  const H = { courseCount: 4, fieldLeft: 0, fieldRight: 1, margin: 0.35 }
+
+  it('falls back to plain nearest when there is no previous course', () => {
+    expect(courseWithHysteresis({ x: 0.62, prevCourse: null, ...H })).toBe(2)
+  })
+
+  it('keeps the held course while the finger lingers just past the boundary', () => {
+    // x = 0.55 is technically in course 2, but only 0.2 of a cell past course 1's
+    // centre — inside the deadzone, so it stays on 1.
+    expect(nearestCourse({ x: 0.55, courseCount: 4, fieldLeft: 0, fieldRight: 1 })).toBe(2)
+    expect(courseWithHysteresis({ x: 0.55, prevCourse: 1, ...H })).toBe(1)
+  })
+
+  it('switches once the finger crosses far enough into the neighbour', () => {
+    // x = 0.62 is 0.98 cells from course 1's centre — past the 0.85 threshold.
+    expect(courseWithHysteresis({ x: 0.62, prevCourse: 1, ...H })).toBe(2)
+  })
+
+  it('snaps directly on a large jump (more than one course away)', () => {
+    expect(courseWithHysteresis({ x: 0.9, prevCourse: 1, ...H })).toBe(3)
+  })
+
+  it('returns the held course unchanged when the finger has not left it', () => {
+    expect(courseWithHysteresis({ x: 0.375, prevCourse: 1, ...H })).toBe(1)
+  })
+
+  it('ignores a stale previous course outside the current field', () => {
+    // prevCourse 9 no longer exists (field shrank) → behave as plain nearest.
+    expect(courseWithHysteresis({ x: 0.62, prevCourse: 9, ...H })).toBe(2)
   })
 })

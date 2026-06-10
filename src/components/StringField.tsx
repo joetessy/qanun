@@ -6,7 +6,7 @@ import {
   courseScreenX,
   nearestCourse
 } from '../lib/gesture/nearestCourse'
-import { stageNormalizedX } from '../lib/gesture/pointerPlay'
+import { stageNormalizedY } from '../lib/gesture/pointerPlay'
 
 interface StringFieldProps {
   courses: Course[]
@@ -23,9 +23,11 @@ interface StringFieldProps {
 
 const HOLD_DELAY_MS = 150
 
-// Vertical brass strings across the play field. Each course is positioned at
-// its screen x (matching nearestCourse, so visuals and hit-testing agree).
-// The wrapper div captures pointer events for mouse/touch play (§2 spec).
+// Horizontal brass strings across the play field, stacked by pitch: the lowest
+// course sits at the BOTTOM, the highest at the TOP. Each course is positioned at
+// its screen y (matching nearestCourse, so visuals and hit-testing agree) — the
+// field fraction is inverted to top-down screen space. The wrapper div captures
+// pointer events for mouse/touch play (§2 spec).
 export const StringField = memo(({
   courses,
   highlightIndices,
@@ -44,9 +46,11 @@ export const StringField = memo(({
   const courseFromPointer = useCallback(
     (e: React.PointerEvent<HTMLDivElement>): number => {
       const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
-      const nx = stageNormalizedX({ clientX: e.clientX, rectLeft: rect.left, rectWidth: rect.width })
+      // Invert: screen-top (ny=0) is the highest pitch, screen-bottom (ny=1) the
+      // lowest — so the field fraction grows upward, matching nearestCourse.
+      const ny = stageNormalizedY({ clientY: e.clientY, rectTop: rect.top, rectHeight: rect.height })
       return nearestCourse({
-        x: nx,
+        x: 1 - ny,
         courseCount: courses.length,
         fieldLeft: PLAY_FIELD_LEFT,
         fieldRight: PLAY_FIELD_RIGHT
@@ -65,6 +69,18 @@ export const StringField = memo(({
   // Cancel any pending hold timer when the component unmounts.
   useEffect(() => () => { if (holdTimerRef.current !== null) clearTimeout(holdTimerRef.current) }, [])
 
+  // Arm the press-and-hold (rashsh) timer for the course under the pointer.
+  const armHoldTimer = useCallback(
+    (course: number) => {
+      holdTimerRef.current = setTimeout(() => {
+        if (isPointerDownRef.current && activeCourseRef.current === course) {
+          onHoldCourse(course)
+        }
+      }, HOLD_DELAY_MS)
+    },
+    [onHoldCourse]
+  )
+
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       e.preventDefault()
@@ -73,13 +89,9 @@ export const StringField = memo(({
       const course = courseFromPointer(e)
       activeCourseRef.current = course
       onPluckCourse(course)
-      holdTimerRef.current = setTimeout(() => {
-        if (isPointerDownRef.current && activeCourseRef.current === course) {
-          onHoldCourse(course)
-        }
-      }, HOLD_DELAY_MS)
+      armHoldTimer(course)
     },
-    [courseFromPointer, onPluckCourse, onHoldCourse]
+    [courseFromPointer, onPluckCourse, armHoldTimer]
   )
 
   const handlePointerMove = useCallback(
@@ -88,11 +100,16 @@ export const StringField = memo(({
       const course = courseFromPointer(e)
       if (course !== activeCourseRef.current) {
         clearHoldTimer()
+        // Mirror the pinch gesture (release before glide): stop any engaged
+        // rashsh so it doesn't keep droning on the old string under the glide,
+        // then re-arm so settling on the new string can sustain again.
+        onReleaseHold()
         activeCourseRef.current = course
         onGlideCourse(course)
+        armHoldTimer(course)
       }
     },
-    [courseFromPointer, onGlideCourse]
+    [courseFromPointer, onGlideCourse, onReleaseHold, armHoldTimer]
   )
 
   const handlePointerUp = useCallback(
@@ -123,7 +140,9 @@ export const StringField = memo(({
       onPointerCancel={handlePointerUp}
     >
       {courses.map((c) => {
-        const xPct = courseScreenX(c.index, courses.length, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT) * 100
+        // courseScreenX is the field fraction (0 = first/lowest course → 1 = last).
+        // Invert into top-down screen space so the lowest course sits at the bottom.
+        const yPct = (1 - courseScreenX(c.index, courses.length, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT)) * 100
         const classes = [
           'course',
           c.degree === homeDegree ? 'is-home' : '',
@@ -132,7 +151,7 @@ export const StringField = memo(({
           pluckedIndices.includes(c.index) ? 'is-plucked' : ''
         ].filter(Boolean).join(' ')
         return (
-          <span key={c.index} className={classes} style={{ left: `${xPct}%` }} data-degree={c.degree} aria-hidden>
+          <span key={c.index} className={classes} style={{ top: `${yPct}%` }} data-degree={c.degree} aria-hidden>
             <i className="str str-l" />
             <i className="str str-m" />
             <i className="str str-r" />

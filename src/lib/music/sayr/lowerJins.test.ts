@@ -44,7 +44,11 @@ describe('LOWER_JINS table', () => {
       kurd:     [0, 2, 3, 5, 7, 9, 10],
       nikriz:   [0, 2, 3, 6, 7, 9, 10],
       ajam:     [0, 2, 4, 5, 7, 9, 11],
-      saba:     [0, 2, 3.5, 5, 6, 8, 10],
+      // Saba's degree 6 is A natural (9): the default scale must equal its own
+      // default upper jins applied — Hijaz on the ghammāz F gives F G♭ A B♭ —
+      // matching the canonical Saba preset (an 8 here would make the upper
+      // tetrachord Kurd, which isn't even in saba's upperOptions).
+      saba:     [0, 2, 3.5, 5, 6, 9, 10],
       sikah:    [0, 2, 3.5, 5, 7, 9, 10.5]
     }
     for (const j of LOWER_JINS) expect(j.defaultScale).toEqual(expected[j.id])

@@ -96,6 +96,13 @@ export const createMidiOut = (opts: MidiOutOptions = {}): MidiOutEngine => {
   let bendRange = 2
   let outputsCache: MidiOutputInfo[] = []
   let lastChannel = MPE_CHANNELS[MPE_CHANNELS.length - 1] // nextMpeChannel will return [0]
+  // Note still sounding on each (0-indexed) member channel. A fast strum can
+  // rotate through all 15 channels inside the note-off window, and pitch bend
+  // is channel-wide — so a reused channel must cut its previous note first or
+  // the new bend retunes the old note's ringing tail. `gen` invalidates the
+  // superseded note's scheduled note-off.
+  const activeNotes = new Map<number, { note: number; gen: number }>()
+  let noteGen = 0
 
   const refreshOutputs = (): void => {
     if (!access) { outputsCache = []; return }
@@ -160,15 +167,23 @@ export const createMidiOut = (opts: MidiOutOptions = {}): MidiOutEngine => {
     const { note, bendCents } = freqToNoteBend(freqHz)
     const bend14 = bendToPitchBend14(bendCents, bendRange)
 
+    // Cut whatever is still sounding on this channel before retuning it.
+    const pending = activeNotes.get(ch)
+    if (pending) send([STATUS_NOTE_OFF | ch, pending.note, 0])
+
     // Pitch-bend first, then note-on (so the synth sees the bent pitch immediately).
     send([STATUS_PITCH_BEND | ch, bend14 & 0x7f, (bend14 >> 7) & 0x7f])
-    send([STATUS_NOTE_ON | ch, clampMidi(note), clampVelocity(velocity)])
-
-    // Schedule note-off.
     const capturedNote = clampMidi(note)
-    const capturedCh = ch
+    send([STATUS_NOTE_ON | ch, capturedNote, clampVelocity(velocity)])
+
+    // Schedule note-off; skipped if the channel was reused in the meantime
+    // (the immediate cut above already ended this note).
+    const gen = ++noteGen
+    activeNotes.set(ch, { note: capturedNote, gen })
     scheduleNoteOff(() => {
-      send([STATUS_NOTE_OFF | capturedCh, capturedNote, 0])
+      if (activeNotes.get(ch)?.gen !== gen) return
+      activeNotes.delete(ch)
+      send([STATUS_NOTE_OFF | ch, capturedNote, 0])
     }, NOTE_OFF_DELAY_MS)
   }
 
@@ -179,6 +194,7 @@ export const createMidiOut = (opts: MidiOutOptions = {}): MidiOutEngine => {
     }
     output = null
     outputId = null
+    activeNotes.clear()
   }
 
   return {

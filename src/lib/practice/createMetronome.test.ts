@@ -40,6 +40,9 @@ const makeMockTone = () => {
   }
   const ToneMock = {
     getTransport: vi.fn(() => transport),
+    // playClick computes its dispose deadline from the scheduled time relative
+    // to the audio clock.
+    getContext: vi.fn(() => ({ currentTime: 0 })),
     Gain: vi.fn().mockImplementation(() => {
       // First Gain allocation = output gain bus; subsequent are per-click envelopes.
       const calls = ToneMock.Gain.mock.calls.length
@@ -110,8 +113,8 @@ describe('createMetronome', () => {
     await metro.setEnabled(true)
     await metro.setEnabled(false)
     expect(transport.clear).toHaveBeenCalledWith(42)
-    // The rashsh sustain loop shares the global transport, so disabling the
-    // metronome must NOT stop it.
+    // The Transport is shared app-wide state, so disabling the metronome must
+    // NOT stop it.
     expect(transport.stop).not.toHaveBeenCalled()
   })
 

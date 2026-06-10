@@ -26,8 +26,6 @@ export const Onboarding = ({ onDismiss }: OnboardingProps) => {
         className="onboarding-card"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="onboarding-grain" aria-hidden />
-
         <header className="onboarding-head">
           <span className="onboarding-title">how to play</span>
         </header>
@@ -38,9 +36,11 @@ export const Onboarding = ({ onDismiss }: OnboardingProps) => {
             <div className="step-body">
               <strong>pluck &amp; strum</strong>
               <span>
-                Press <em>play</em> for your hands: pinch your <em>index</em> finger to
-                the thumb to pluck a string, and sweep sideways to strum across them.
-                No camera? Click a string to pluck, or drag across to strum.
+                Press <em>play</em> for your hands. Strings run left&ndash;right, low at
+                the bottom: move your hand <em>up or down</em> to pick one, then pinch
+                your <em>index</em> finger to the thumb to pluck it. Sweep up and down
+                across the strings to strum. No camera? Click a string to pluck, or drag
+                up or down to strum.
               </span>
             </div>
           </li>
@@ -60,8 +60,8 @@ export const Onboarding = ({ onDismiss }: OnboardingProps) => {
             <div className="step-body">
               <strong>choose a maqam</strong>
               <span>
-                Pick a <em>lower jins</em> (the chips, or keys <em>Q&ndash;O</em>) to
-                set the home note, then an <em>upper jins</em> (keys <em>1&ndash;5</em>)
+                Pick a <em>lower jins</em> (the chips, or keys <em>1&ndash;9</em>) to
+                set the home note, then an <em>upper jins</em> (keys <em>Q&ndash;T</em>)
                 to modulate on the ghammāz. The readout names the maqam you build.
                 Open <em>tune</em> for the key, recording, drone, metronome &amp; MIDI.
               </span>
