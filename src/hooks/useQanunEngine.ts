@@ -25,7 +25,8 @@ import { pinchDistance } from '../lib/vision/pinchDistance'
 import { scheduleVideoFrame, type FrameHandle } from '../lib/vision/scheduleVideoFrame'
 import { startCamera } from '../lib/vision/startCamera'
 import { stopCamera } from '../lib/vision/stopCamera'
-import { INDEX_TIP, THUMB_TIP, MIDDLE_TIP, INDEX_MCP, PINKY_MCP } from '../lib/vision/constants'
+import { INDEX_TIP, THUMB_TIP, THUMB_IP, MIDDLE_TIP, INDEX_MCP, PINKY_MCP } from '../lib/vision/constants'
+import { extrapolateTip } from '../lib/vision/extrapolateTip'
 import { projectPoint } from '../lib/draw/projectPoint'
 
 // The playable string window — trims the raw octave grid to 2 leading tones below
@@ -66,12 +67,12 @@ const PINCH_OPEN_RATIO = 0.78
 
 // Velocity for each string a strum sweeps past (single-voice, see bloom:false).
 const STRUM_VELOCITY = 0.6
-// After a pluck fires, suppress the strum for this long while the pinch settles.
-// With horizontal strings the selection axis is vertical, so the finger's downward
-// curl INTO the pinch sweeps across string lines — without this gate that curl
-// would strum a handful of extra strings on every clean pluck. The baseline still
-// advances during the window, so the curl distance is absorbed, not played.
-const STRUM_SETTLE_SEC = 0.13
+// After a pluck fires, suppress the strum briefly while the pinch settles. The
+// cursor is the THUMB (which barely moves during a close), so this is only a
+// safety net against residual thumb wobble at the pinch — not the old gate
+// against the index curl sweeping the selection axis. The baseline still
+// advances during the window, so any wobble is absorbed, not played.
+const STRUM_SETTLE_SEC = 0.05
 const OVERLAY_SHADOW_BLUR = 6
 
 export interface UseQanunEngineArgs {
@@ -626,7 +627,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     // Fingertips to draw this frame, collected during detection and rendered
     // AFTER the audio path so canvas work never delays a pluck. `mode` mirrors
     // the live active-finger state so the lit ring matches the audio.
-    const playTips: { indexTip: NormPoint; middleTip: NormPoint; thumbTip: NormPoint; mode: ActiveFinger }[] = []
+    const playTips: { indexTip: NormPoint; middleTip: NormPoint; thumbPoint: NormPoint; mode: ActiveFinger }[] = []
 
     // --- Playing hands ---
     let lastPluckMidi: number | null = null
@@ -649,6 +650,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       const indexTip = lm[INDEX_TIP]
       const middleTip = lm[MIDDLE_TIP]
       const thumbTip = lm[THUMB_TIP]
+      // The CURSOR is the thumb — the stable jaw of the pinch (the index/middle
+      // curl during a close; tracking them swept the selection axis on every
+      // pluck). Extrapolated past the pad-centre landmark to the visual nail tip;
+      // this same point feeds the overlay, so the dot and the cursor agree.
+      const thumbPoint = extrapolateTip({ tip: thumbTip, ip: lm[THUMB_IP] })
       // Distance-invariant pinch ratios: each thumb↔fingertip gap ÷ palm width
       // (index-knuckle ↔ pinky-knuckle), which scales the same way with camera
       // distance — so a pinch reads the same near or far.
@@ -665,15 +671,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       })
       activeFingerRef.current[slot] = active
 
-      // Course follows the ACTIVE finger: the MIDDLE when trilling, the index when
-      // plucking — so a middle-pinch tremolo lands on the string the middle finger
-      // is over, not wherever the index happens to hover.
-      const courseTip = active === 'middle' ? middleTip : indexTip
-      // Field position follows the finger's VERTICAL screen position: hand low →
-      // lowest pitch (field 0), hand high → highest. Inverted because MediaPipe y
-      // grows downward; not mirrored (only x is, for the selfie view). Cover-crop
-      // remap first (see above), then the One-Euro filter smooths the 1-D scalar.
-      const yVis = Math.min(1, Math.max(0, (courseTip.y - cropYFrac) / visibleYFrac))
+      // Field position follows the THUMB's VERTICAL screen position for every
+      // mode (pluck, strum, tremolo, hover): hand low → lowest pitch (field 0),
+      // hand high → highest. Inverted because MediaPipe y grows downward; not
+      // mirrored (only x is, for the selfie view). Cover-crop remap first (see
+      // above), then the One-Euro filter smooths the 1-D scalar.
+      const yVis = Math.min(1, Math.max(0, (thumbPoint.y - cropYFrac) / visibleYFrac))
       const fieldPos = fingerFiltersRef.current[slot].filter({ x: 1 - yVis, tNow })
       // Snap with hysteresis: hold the previous string until the finger crosses far
       // enough into a neighbour, so a hand hovering near a boundary doesn't flicker.
@@ -736,9 +739,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         sustainCourseRef.current[slot] = null
       }
 
-      // Overlay: persistent circles on BOTH the index and middle fingertips + a
-      // thumb dot; the active finger lights (white = pluck, cyan = tremolo).
-      playTips.push({ indexTip, middleTip, thumbTip, mode: active })
+      // Overlay: the thumb cursor ring + small index/middle state dots; the
+      // active mode colours the thumb (white = pluck, cyan = tremolo).
+      playTips.push({ indexTip, middleTip, thumbPoint, mode: active })
     }
 
     // --- Reconcile the sustained hold to the set of held courses ---
@@ -821,7 +824,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         }
         ctx.globalAlpha = 1
       }
-      playTips.forEach(({ indexTip, middleTip, thumbTip, mode }) => {
+      playTips.forEach(({ indexTip, middleTip, thumbPoint, mode }) => {
         // Small, FIXED-size ring (no longer scales with hand distance): the ring is
         // purely visual — selection always uses the fingertip centre — so a ring
         // that balloons when the hand is near the camera only obscures which string
@@ -831,7 +834,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         drawCircle(indexTip, radius, mode === 'index' ? PLUCK_RING_COLOR : PLAY_RING_COLOR, mode === 'index', false)
         drawCircle(middleTip, radius, mode === 'middle' ? TRILL_RING_COLOR : PLAY_RING_COLOR, mode === 'middle', mode === 'middle')
         // Thumb dot — the finger that meets index/middle to pinch.
-        const thumb = projectPoint({ p: thumbTip, width: w, height: h, mirror: false })
+        const thumb = projectPoint({ p: thumbPoint, width: w, height: h, mirror: false })
         ctx.fillStyle = THUMB_DOT_COLOR
         ctx.beginPath()
         ctx.arc(thumb.x, thumb.y, Math.max(3, radius * 0.45), 0, Math.PI * 2)
