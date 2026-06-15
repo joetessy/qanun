@@ -6,7 +6,7 @@ import type { MandalState } from '../lib/music/types'
 // Widest position set across the degrees — when expanded, shorter levers pad with
 // spacers at the top so the highest pitch of every column lines up along the bottom.
 const SLOTS = Math.max(...MANDAL_DEGREES.map((d) => d.positions.length))
-// Two directional key rows, one note per column: top key raises, bottom lowers.
+// Two directional key rows, one note per column: top key lowers, bottom raises.
 const RAISE_KEYS = ['Q', 'W', 'E', 'R', 'T', 'Y', 'U']
 const LOWER_KEYS = ['1', '2', '3', '4', '5', '6', '7']
 
@@ -30,7 +30,7 @@ interface MandalRailProps {
 }
 
 // Qanun-mode levers (the ʿurab). One column per note course, capped by its two
-// directional keys — raise on top, lower below (Q–U raise C..B, 1–7 lower; hold to
+// directional keys — lower on top, raise below (Q–U raise C..B, 1–7 lower; hold to
 // glide). Collapsed by default to just the SET note per course (click it, or the
 // header toggle, to reveal the full position stack — click a slot to jump there).
 // Labels track the tonic. No home — you root wherever you play. memo: parent
@@ -44,12 +44,12 @@ export const MandalRail = memo(({ mandalState, tonicMidi, onSetMandal, onStep, e
         <div className="mandal-col" key={degree}>
           <button
             type="button"
-            className="mandal-step mandal-raise"
-            onClick={() => onStep(degree, 1)}
-            aria-label={`Raise degree ${degree}`}
-            title="raise (hold to glide)"
+            className="mandal-step mandal-lower"
+            onClick={() => onStep(degree, -1)}
+            aria-label={`Lower degree ${degree}`}
+            title="lower (hold to glide)"
           >
-            ↑ {RAISE_KEYS[degree - 1]}
+            ↓ {LOWER_KEYS[degree - 1]}
           </button>
           {expanded ? (
             <div className="mandal-slots">
@@ -85,12 +85,12 @@ export const MandalRail = memo(({ mandalState, tonicMidi, onSetMandal, onStep, e
           )}
           <button
             type="button"
-            className="mandal-step mandal-lower"
-            onClick={() => onStep(degree, -1)}
-            aria-label={`Lower degree ${degree}`}
-            title="lower (hold to glide)"
+            className="mandal-step mandal-raise"
+            onClick={() => onStep(degree, 1)}
+            aria-label={`Raise degree ${degree}`}
+            title="raise (hold to glide)"
           >
-            ↓ {LOWER_KEYS[degree - 1]}
+            ↑ {RAISE_KEYS[degree - 1]}
           </button>
         </div>
       )

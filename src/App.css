@@ -898,7 +898,7 @@
   background: none;
   pointer-events: none;
 }
-/* Directional keycaps capping each lever column — raise on top, lower below,
+/* Directional keycaps capping each lever column — lower on top, raise below,
    mirroring the keyboard (Q–U raise, A–J lower). Click to step a quarter-tone. */
 .mandal-step {
   height: clamp(14px, 1.85vmin, 18px);
