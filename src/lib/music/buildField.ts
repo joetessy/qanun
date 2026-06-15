@@ -9,13 +9,17 @@ export const DEFAULT_TONIC_MIDI = 60
 export const FIELD_OCTAVES = 4
 export const FIELD_OCTAVES_BELOW = 1
 
-// The playable window, in scale steps from the tonic. Two leading tones below the
-// tonic; above it, three full octaves (3 × 7 = 21 steps, ending on the top tonic)
-// plus one more tone past it. Together: 2 + 1 (tonic) + 22 = 25 strings — wide
-// spacing for precise hand-tracking selection. buildField grows its raw grid to
-// cover whatever reach is requested, so these constants can't be silently clamped.
-export const FIELD_LEADING_TONES = 2
-export const FIELD_REACH_ABOVE_TONIC = DEGREE_COUNT * 3 + 1
+// The playable window, in scale steps from the tonic. A full octave plus two
+// leading tones below the tonic (9 steps, bottoming two strings below the
+// octave-down tonic — two below C3 at the default tonic); above it, two full
+// octaves (2 × 7 = 14 steps) plus one more tone, ending on D6 at the default
+// tonic. Together: 9 + 1 (tonic) + 15 = 25 strings — wide spacing for precise
+// hand-tracking selection. The tonic still sits at index FIELD_LEADING_TONES, so
+// the computer-keyboard play layer ('a' = tonic = C4) is unaffected. buildField
+// grows its raw grid to cover whatever reach is requested, so these constants
+// can't be silently clamped.
+export const FIELD_LEADING_TONES = 9
+export const FIELD_REACH_ABOVE_TONIC = DEGREE_COUNT * 2 + 1
 // A fine-tune offset may reach at most one semitone (100 cents) either way — far
 // enough to retune all the way to an adjacent pitch. Shared by the engine clamp
 // and the TUNE-menu slider so the two can't drift apart.
@@ -52,15 +56,21 @@ export const buildField = ({
   leadingTones,
   reachAboveTonic
 }: BuildFieldArgs): Course[] => {
-  // Grow the raw grid to fit the requested window — otherwise a reach taller
-  // than the default grid would be silently clamped (wrong top string).
+  // Grow the raw grid to fit the requested window — otherwise a reach beyond the
+  // default grid would be silently clamped (wrong edge string). Both sides grow:
+  // leadingTones may dip more than one octave below the tonic, reachAboveTonic
+  // more than three above. The tonic stays at octavesBelow * DEGREE_COUNT, so the
+  // play-layer index (which keys off FIELD_LEADING_TONES) is unaffected.
+  const octavesBelowFit = leadingTones == null
+    ? octavesBelow
+    : Math.max(octavesBelow, Math.ceil(leadingTones / DEGREE_COUNT))
   const gridOctaves = reachAboveTonic == null
     ? octaveCount
-    : Math.max(octaveCount, octavesBelow + Math.ceil((reachAboveTonic + 1) / DEGREE_COUNT))
+    : Math.max(octaveCount, octavesBelowFit + Math.ceil((reachAboveTonic + 1) / DEGREE_COUNT))
   const courses: Course[] = []
   let index = 0
   const detuneSemitones = detuneCents / 100
-  for (let octave = -octavesBelow; octave < gridOctaves - octavesBelow; octave++) {
+  for (let octave = -octavesBelowFit; octave < gridOctaves - octavesBelowFit; octave++) {
     for (let degree = 1; degree <= DEGREE_COUNT; degree++) {
       const midi = tonicMidi + 12 * octave + offsetOf(mandalState, degree)
       // Detune touches only the frequency, never the stored `midi` label.
@@ -69,7 +79,7 @@ export const buildField = ({
     }
   }
   // The tonic (degree 1, octave 0) lands here in the freshly built grid.
-  const tonicIndex = octavesBelow * DEGREE_COUNT
+  const tonicIndex = octavesBelowFit * DEGREE_COUNT
   const lo = leadingTones == null ? 0 : Math.max(0, tonicIndex - leadingTones)
   const hi = reachAboveTonic == null ? courses.length - 1 : Math.min(courses.length - 1, tonicIndex + reachAboveTonic)
   if (lo === 0 && hi === courses.length - 1) return courses

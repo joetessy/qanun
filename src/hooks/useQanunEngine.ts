@@ -29,9 +29,11 @@ import { INDEX_TIP, INDEX_DIP, THUMB_TIP, THUMB_IP, MIDDLE_TIP, MIDDLE_DIP, INDE
 import { extrapolateTip } from '../lib/vision/extrapolateTip'
 import { projectPoint } from '../lib/draw/projectPoint'
 
-// The playable string window — trims the raw octave grid to 2 leading tones below
-// the tonic + 3 full octaves + 1 tone above it (25 strings; top is one tone past
-// the third-octave tonic). buildField grows its raw grid to fit the requested
+// The playable string window — trims the raw octave grid to a full octave + 2
+// leading tones below the tonic + 2 full octaves + 1 tone above it (25 strings;
+// bottom is two strings below the octave-down tonic — two below C3 at default
+// tonic; top is D6 at default tonic). buildField grows its raw grid to fit the
+// requested
 // reach. Shared by every buildField call so the field shape can't drift between
 // init and recompute.
 const FIELD_WINDOW = { leadingTones: FIELD_LEADING_TONES, reachAboveTonic: FIELD_REACH_ABOVE_TONIC } as const
@@ -456,7 +458,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     const QANUN_LOWER = ['1', '2', '3', '4', '5', '6', '7'] // C..B down
     // Computer-keyboard play layer (both modes): the home row plays the scale up
     // from the tonic; Z / X drop / raise the octave. The tonic course sits at index
-    // FIELD_LEADING_TONES (the two leading tones below it come first in the field).
+    // FIELD_LEADING_TONES (the full octave below it comes first in the field), so
+    // 'a' still plays the tonic (C4 at the default tonic) regardless of that reach.
     const PLAY_KEYS = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', "'"]
     const onKey = (e: KeyboardEvent): void => {
       const t = e.target as HTMLElement | null
