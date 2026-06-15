@@ -1,6 +1,7 @@
 import { memo } from 'react'
 import type { RecorderState } from '../lib/audio/createRecorder'
 import type { MidiSupportState, MidiOutputInfo } from '../lib/midi/createMidiOut'
+import type { ModMode } from '../hooks/useQanunEngine'
 import { TypedSelect } from './TypedSelect'
 import { midiName } from '../lib/music/midiName'
 import { DETUNE_LIMIT_CENTS } from '../lib/music/buildField'
@@ -8,6 +9,9 @@ import { formatCents } from '../lib/ui/formatCents'
 import { DEFAULT_TREMOLO_HZ, TREMOLO_HZ_MIN, TREMOLO_HZ_MAX } from '../lib/audio/createQanunEngine'
 
 interface ControlsProps {
+  // Qanun mode has no fixed tonic (you root wherever you play), so the tonic
+  // selector is hidden there.
+  modMode: ModMode
   tonicMidi: number
   onTonic: (midi: number) => void
   // Global fine-tune (cents), −DETUNE_LIMIT_CENTS…+DETUNE_LIMIT_CENTS.
@@ -44,10 +48,10 @@ interface ControlsProps {
   onMidiBendRange: (semitones: number) => void
 }
 
-// 12 tonic choices, one per pitch class, anchored near the qanun's low register.
+// 12 tonic choices, one per pitch class, anchored around the C4 default tonic.
 const TONICS = Array.from({ length: 12 }, (_, i) => ({
-  value: String(45 + i),
-  label: midiName(45 + i)
+  value: String(57 + i),
+  label: midiName(57 + i)
 }))
 
 const BEND_RANGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
@@ -63,6 +67,7 @@ const BEND_RANGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
 // memo: the drawer stays mounted (hidden) while the engine pushes per-pluck
 // state, so without it the ~60-element tree re-renders on every pluck.
 export const Controls = memo(({
+  modMode,
   tonicMidi,
   onTonic,
   detuneCents,
@@ -93,14 +98,16 @@ export const Controls = memo(({
   onMidiBendRange,
 }: ControlsProps) => (
   <div className="controls">
-    <label className="ctrl">
-      <span>tonic</span>
-      <TypedSelect
-        value={String(tonicMidi)}
-        options={TONICS}
-        onChange={(v) => onTonic(Number(v))}
-      />
-    </label>
+    {modMode !== 'qanun' && (
+      <label className="ctrl">
+        <span>tonic</span>
+        <TypedSelect
+          value={String(tonicMidi)}
+          options={TONICS}
+          onChange={(v) => onTonic(Number(v))}
+        />
+      </label>
+    )}
     {/* Fine-tune: a master detune in cents, ± a semitone. Slider + click-to-reset
         readout. Shifts the whole instrument's pitch without renaming any note. */}
     <div className="ctrl">

@@ -63,6 +63,8 @@ export const Onboarding = ({ onDismiss }: OnboardingProps) => {
                 Pick a <em>lower jins</em> (the chips, or keys <em>Q&ndash;O</em>) to
                 set the home note, then an <em>upper jins</em> (keys <em>1&ndash;5</em>)
                 to modulate on the ghammāz. The readout names the maqam you build.
+                Or press <em>Tab</em> for <em>qanun</em> mode and raise / lower each
+                note with two key rows (<em>Q&ndash;U</em> raise, <em>1&ndash;7</em> lower).
                 Open <em>tune</em> for the key, recording, drone, metronome &amp; MIDI.
               </span>
             </div>

@@ -33,7 +33,7 @@
 .qanun-header {
   display: flex;
   align-items: center;
-  gap: clamp(14px, 3vw, 40px);
+  gap: clamp(12px, 2.3vw, 30px);
   padding: clamp(5px, 1vmin, 9px) clamp(14px, 2.4vw, 26px);
   background:
     linear-gradient(180deg, #20140b 0%, #160d07 100%);
@@ -153,6 +153,30 @@
   background: linear-gradient(180deg, var(--brass-lit), var(--brass-base));
   border-color: var(--brass-base);
   box-shadow: 0 0 14px rgba(231, 194, 91, 0.35);
+}
+
+/* Qanun-mode lever expand/collapse — a compact pill sitting just to the right of
+   the lever rail. */
+.levers-toggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-body);
+  font-size: clamp(9px, 1vmin, 10.5px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  background: linear-gradient(180deg, #2c1d10, #1b1107);
+  border: 1px solid rgba(110, 79, 28, 0.35);
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.levers-toggle:hover {
+  color: var(--brass-glow);
+  border-color: rgba(231, 194, 91, 0.5);
 }
 
 /* ═══ THE SOUNDBOARD ════════════════════════════════════════════════════════
@@ -682,11 +706,159 @@
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: clamp(4px, 0.7vw, 9px);
+  overflow: visible;
+  padding-left: clamp(2px, 0.4vw, 8px);
+}
+
+/* Holds whichever rail set is live (jins rails or the mandal rail), stacked as
+   the bar's column used to be — sits to the right of the mode switch. */
+.jins-bar-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
   justify-content: center;
   gap: clamp(2px, 0.5vmin, 6px);
-  overflow: visible;
-  padding-left: clamp(8px, 1.2vw, 18px);
+}
+
+/* ═══ MODE SWITCH — jins ↔ qanun (also Tab) ══════════════════════════════════
+   A compact two-segment pill: the lit segment is the live mode. Small enough to
+   sit inline without crowding the rails. */
+.mode-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: linear-gradient(180deg, #2c1d10 0%, #1b1107 100%);
+  border: 1px solid rgba(110, 79, 28, 0.35);
+  border-radius: 999px;
+  cursor: pointer;
+  /* Drop onto the wordmark's optical centre. The header centres every item on
+     its box, but the wordmark's box sits high relative to the visible letters
+     (line-height 0.9 + the 'q' descender), so the pill otherwise reads above
+     the logo. This lands its middle on the letterforms. */
+  transform: translateY(2px);
+}
+.mode-toggle span {
+  font-family: var(--font-body);
+  font-size: clamp(9px, 1.05vmin, 11px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  padding: 2px 7px;
+  border-radius: 999px;
+  transition: color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.mode-toggle span.is-active {
+  color: var(--ink-engrave);
+  background: linear-gradient(180deg, var(--brass-lit) 0%, var(--brass-base) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 220, 0.5),
+    0 0 10px rgba(231, 194, 91, 0.28);
+}
+.mode-toggle:hover span:not(.is-active) { color: var(--brass-lit); }
+
+/* ═══ MANDAL RAIL — Qanun-mode levers / ʿurab (keys 1–7) ══════════════════════
+   One column per note course, every position shown as a stacked lever so the
+   whole tuning reads at a glance. Lit slot = live pitch; click any to set. Slots
+   run high → low; shorter levers pad with hidden spacers so the bases bottom-align.
+   No home — the qanun has no fixed tonic. */
+/* Centers the rail + its expand toggle, side by side, in the bar. */
+.mandal-rail-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 1.2vw, 16px);
+}
+.mandal-rail {
+  display: flex;
+  align-items: flex-end;
+  gap: clamp(10px, 1.5vw, 19px);
+}
+.mandal-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: clamp(44px, 4.7vw, 62px);
+}
+.mandal-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mandal-slot {
+  height: clamp(14px, 1.95vmin, 18px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body);
+  font-size: clamp(9px, 1vmin, 10.5px);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: var(--ink-dim);
+  background: linear-gradient(180deg, #2c1d10 0%, #1b1107 100%);
+  border: 1px solid rgba(110, 79, 28, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.13s, border-color 0.13s, background 0.13s, box-shadow 0.13s;
+}
+.mandal-slot:hover:not(.is-active) {
+  color: var(--brass-lit);
+  border-color: rgba(184, 138, 46, 0.55);
+  box-shadow: 0 0 7px rgba(184, 138, 46, 0.16);
+}
+/* The ♭/♯/½ glyphs carry right-side bearing; a small negative right-margin pulls
+   that trailing space in so an accidental note still reads visually centred. */
+.note-acc { margin-right: -0.24em; }
+.mandal-slot.is-active {
+  color: var(--ink-engrave);
+  background: linear-gradient(180deg, var(--brass-lit) 0%, var(--brass-base) 100%);
+  border-color: var(--brass-lit);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 220, 0.45),
+    0 0 11px rgba(231, 194, 91, 0.28);
+  font-weight: 600;
+}
+.mandal-slot.is-spacer {
+  visibility: hidden;
+  border-color: transparent;
+  background: none;
+  pointer-events: none;
+}
+/* Directional keycaps capping each lever column — raise on top, lower below,
+   mirroring the keyboard (Q–U raise, A–J lower). Click to step a quarter-tone. */
+.mandal-step {
+  height: clamp(14px, 1.85vmin, 18px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: clamp(9px, 1.05vmin, 11px);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--brass-lit);
+  background: linear-gradient(180deg, #3b2814 0%, #241507 100%);
+  border: 1px solid rgba(184, 138, 46, 0.5);
+  border-radius: 5px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.1);
+  transition: color 0.13s, border-color 0.13s, background 0.13s, box-shadow 0.13s;
+}
+.mandal-step:hover {
+  color: var(--brass-glow);
+  border-color: rgba(231, 194, 91, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.14), 0 0 8px rgba(184, 138, 46, 0.28);
+}
+.mandal-step:active {
+  color: var(--ink-engrave);
+  background: linear-gradient(180deg, var(--brass-lit), var(--brass-base));
+  border-color: var(--brass-lit);
 }
 
 /* ═══ LOWER-JINS SELECTOR — the family rail (second jins-bar row) ════════════

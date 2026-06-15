@@ -4,6 +4,7 @@ import { StageCover } from './StageCover'
 import { StringField } from './StringField'
 import { LowerJinsSelector } from './LowerJinsSelector'
 import { UpperJinsSwitcher } from './UpperJinsSwitcher'
+import { MandalRail } from './MandalRail'
 import { QanunHud } from './QanunHud'
 import { Controls } from './Controls'
 import { Rosette } from './Rosette'
@@ -22,6 +23,10 @@ export const Qanun = () => {
   // Controls stay tucked away by default — the surface is just the instrument,
   // your hands, and the readout until you open the drawer.
   const [controlsOpen, setControlsOpen] = useState(false)
+  // Qanun mode: the lever rail is collapsed to just the set note per course by
+  // default; this header toggle expands it to the full position stacks. Lifted
+  // here so it persists across rail re-renders and sits with the right-side controls.
+  const [leversExpanded, setLeversExpanded] = useState(false)
 
   // Onboarding: show on first visit; persist dismissal in localStorage.
   const [showOnboarding, setShowOnboarding] = useState(() => !hasOnboarded())
@@ -35,18 +40,54 @@ export const Qanun = () => {
     <div className="qanun">
       <header className="qanun-header">
         <span className="wordmark">qanun</span>
-        <QanunHud reading={engine.reading} />
-        {/* Jins controls inline in the header — upper jins (1–5) on the first
-            line, lower jins (Q–O) beneath, mirroring the keyboard rows. One
-            strip so they take no extra room and never cover the strings (and
-            stay clickable before the camera starts). */}
+        {/* Mode switch pinned right by the wordmark (before the readout) so it keeps
+            a fixed spot and doesn't shift when the bar's contents change on switch. */}
+        <button
+          type="button"
+          className="mode-toggle"
+          onClick={() => engine.setModMode(engine.modMode === 'qanun' ? 'jins' : 'qanun')}
+          aria-label={`Modulation mode: ${engine.modMode}. Switch with Tab.`}
+          title="Switch modulation mode (Tab)"
+        >
+          <span className={engine.modMode === 'jins' ? 'is-active' : ''}>jins</span>
+          <span className={engine.modMode === 'qanun' ? 'is-active' : ''}>qanun</span>
+        </button>
+        <QanunHud reading={engine.reading} modMode={engine.modMode} />
+        {/* Modulation controls inline in the header: Jins mode shows the upper-jins
+            (1–5) + lower-jins (Q–O) rails; Qanun mode swaps in the mandal levers. */}
         <div className="jins-bar">
-          <UpperJinsSwitcher
-            options={engine.upperJinsOptions}
-            ghammazLabel={engine.ghammazLabel}
-            onSelect={engine.setUpperJins}
-          />
-          <LowerJinsSelector lowerJins={engine.lowerJins} onSelect={engine.setLowerJins} />
+          {engine.modMode === 'jins' ? (
+            <div className="jins-bar-body">
+              <UpperJinsSwitcher
+                options={engine.upperJinsOptions}
+                ghammazLabel={engine.ghammazLabel}
+                onSelect={engine.setUpperJins}
+              />
+              <LowerJinsSelector lowerJins={engine.lowerJins} onSelect={engine.setLowerJins} />
+            </div>
+          ) : (
+            <div className="jins-bar-body">
+              <div className="mandal-rail-row">
+                <MandalRail
+                  mandalState={engine.mandalState}
+                  tonicMidi={engine.tonicMidi}
+                  onSetMandal={engine.setMandalAt}
+                  onStep={engine.stepMandal}
+                  expanded={leversExpanded}
+                  onToggleExpand={() => setLeversExpanded((v) => !v)}
+                />
+                <button
+                  type="button"
+                  className="levers-toggle"
+                  aria-expanded={leversExpanded}
+                  onClick={() => setLeversExpanded((v) => !v)}
+                  title={leversExpanded ? 'Show only the set note' : 'Show all positions'}
+                >
+                  {leversExpanded ? 'collapse ▴' : 'expand ▾'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         <button
           type="button"
@@ -85,8 +126,8 @@ export const Qanun = () => {
           courses={engine.courses}
           highlightIndices={engine.highlightIndices}
           pluckedIndices={engine.pluckedIndices}
-          homeDegree={engine.homeDegree}
-          ghammazDegree={engine.ghammazDegree}
+          homeDegree={engine.modMode === 'qanun' ? 0 : engine.homeDegree}
+          ghammazDegree={engine.modMode === 'qanun' ? 0 : engine.ghammazDegree}
           onPluckCourse={engine.pluckCourse}
           onGlideCourse={engine.glideCourse}
           onHoldCourse={engine.holdCourse}
@@ -101,6 +142,7 @@ export const Qanun = () => {
 
       <div id="qanun-controls" className={`controls-drawer ${controlsOpen ? 'is-open' : ''}`} hidden={!controlsOpen}>
         <Controls
+          modMode={engine.modMode}
           tonicMidi={engine.tonicMidi}
           onTonic={engine.setTonic}
           detuneCents={engine.detuneCents}

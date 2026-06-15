@@ -2,10 +2,10 @@ import type { Course, MandalState } from './types'
 import { DEGREE_COUNT, offsetOf } from './ajnas/MANDALS'
 import { midiToFreq } from './midiToFreq'
 
-// Anchor the field low enough to span the qanun's working range. C3 = MIDI 48;
+// Anchor the field low enough to span the qanun's working range. C4 = MIDI 60;
 // the raw grid is built in whole octaves, then trimmed to the playable window
 // (see leadingTones / reachAboveTonic) around the tonic.
-export const DEFAULT_TONIC_MIDI = 48
+export const DEFAULT_TONIC_MIDI = 60
 export const FIELD_OCTAVES = 4
 export const FIELD_OCTAVES_BELOW = 1
 

@@ -3,7 +3,7 @@ import * as Tone from 'tone'
 import type { HandLandmarker } from '@mediapipe/tasks-vision'
 import type { MandalState, Course } from '../lib/music/types'
 import type { NormPoint, QanunReading, QanunStatus } from '../types'
-import { DEFAULT_RAST_STATE, offsetOf } from '../lib/music/ajnas/MANDALS'
+import { DEFAULT_RAST_STATE, DEGREE_COUNT, offsetOf, positionsForDegree, setMandal, stepMandalPosition } from '../lib/music/ajnas/MANDALS'
 import { buildField, DEFAULT_TONIC_MIDI, DETUNE_LIMIT_CENTS, FIELD_LEADING_TONES, FIELD_REACH_ABOVE_TONIC } from '../lib/music/buildField'
 import { identifyAjnas } from '../lib/music/identifyAjnas'
 import { degreeNoteLabel } from '../lib/music/degreeLabel'
@@ -95,6 +95,10 @@ export interface UseQanunEngineArgs {
   canvasRef: React.RefObject<HTMLCanvasElement | null>
 }
 
+// Which modulation control surface is live: 'jins' (pick a lower + upper jins)
+// or 'qanun' (flip individual mandals on the major scale). See docs spec.
+export type ModMode = 'jins' | 'qanun'
+
 export interface UseQanunEngine {
   status: QanunStatus
   errorMsg: string | null
@@ -120,6 +124,12 @@ export interface UseQanunEngine {
   setLowerJins: (id: string) => void
   setUpperJins: (id: string) => void
   upperJinsOptions: UpperJinsOption[]
+  // Modulation mode: 'jins' (lower+upper picker) or 'qanun' (per-mandal flips).
+  modMode: ModMode
+  setModMode: (mode: ModMode) => void
+  stepMandal: (degree: number, dir: 1 | -1) => void
+  setMandalAt: (degree: number, offset: number) => void
+  resetMandals: () => void
   pluckCourse: (index: number) => void
   glideCourse: (index: number) => void
   holdCourse: (index: number) => void
@@ -176,6 +186,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const [lowerJins, setLowerJinsState] = useState('rast')
   const [upperJins, setUpperJinsState] = useState('rast')
   const [homeDegree, setHomeDegreeState] = useState(1)
+  const [modMode, setModModeState] = useState<ModMode>('jins')
   const [highlightIndices, setHighlightIndices] = useState<number[]>([])
   const [pluckedIndices, setPluckedIndices] = useState<number[]>([])
   // True while a hand is actively tracked (its thumb-ring cursor is on screen).
@@ -226,6 +237,15 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const lowerJinsRef = useRef('rast')
   const upperJinsRef = useRef('rast')
   const homeDegreeRef = useRef(1)
+  const modeRef = useRef<ModMode>('jins')
+  // Qanun mode keeps its own tuning so toggling Jins ↔ Qanun never loses either
+  // side's work; it seeds from the major scale (ʿAjam).
+  const qanunStateRef = useRef<MandalState>(DEFAULT_RAST_STATE)
+  // Computer-keyboard play layer: which octave the home-row keys play in (0 = from
+  // the tonic). pluckCourseRef is the latest pluckCourse, read inside the keydown
+  // handler without making it a dependency (pluckCourse is defined further down).
+  const playOctaveRef = useRef(0)
+  const pluckCourseRef = useRef<(index: number) => void>(() => {})
   const coursesRef = useRef<Course[]>(courses)
   const landmarkerRef = useRef<HandLandmarker | null>(null)
   const audioRef = useRef<QanunEngine | null>(null)
@@ -296,6 +316,9 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     const id = identifyAjnas(next)
     const home = homeDegreeRef.current
     const homeNote = degreeNoteLabel({ tonicMidi: nextTonic, degree: home, offset: offsetOf(next, home) })
+    // The maqam reading is only shown in Jins mode; Qanun mode hides that cell
+    // (the same mandals are an ambiguous maqam without a fixed root). Keeping the
+    // identify here is harmless — the value just isn't displayed in Qanun mode.
     setReading((r) => ({ ...r, maqamName: id.maqamName, homeNote }))
     // The drone follows the maqam's home note (not the fixed key), carrying the
     // same fine-tune offset (cents → fractional MIDI) so it never clashes with
@@ -351,18 +374,130 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     recompute(mandalRef.current, tonicRef.current)
   }, [recompute])
 
-  // Keyboard modulation: Q W E R T Y U I O pick the lower jins (in list order);
-  // 1 2 3 4 5 pick the upper jins from the current lower jins's options. Ignored
-  // while typing in a form field or when a modifier is held.
+  // ── Qanun (mandal) mode ─────────────────────────────────────────────────────
+  // Per-degree modulation over the major scale. Each action retunes one (or all)
+  // mandal(s) and funnels through recompute, so the HUD, drone, and MIDI-out all
+  // follow with no extra wiring. Qanun mode keeps its tuning in qanunStateRef so
+  // switching modes never clobbers it.
+
+  const setModMode = useCallback((mode: ModMode): void => {
+    if (mode === modeRef.current) return
+    modeRef.current = mode
+    setModModeState(mode)
+    if (mode === 'qanun') {
+      // Qanun mode has no movable home — like a real qanun, you root the melody
+      // wherever you play. We still pin degree 1 (the key) internally so the drone
+      // and the readout have a tonic reference, but nothing in the UI calls it
+      // "home". Default tuning is Rast.
+      homeDegreeRef.current = 1
+      setHomeDegreeState(1)
+      mandalRef.current = qanunStateRef.current
+      setMandalStateRaw(qanunStateRef.current)
+      recompute(qanunStateRef.current, tonicRef.current)
+    } else {
+      // Back to Jins mode: rebuild the exact tuning from the saved selection so
+      // the user's lower+upper choice (and home anchor) come back untouched.
+      const { mandalState: base, homeDegree: home } = applyLowerJins(lowerJinsRef.current)
+      const restored = applyUpperJins(base, upperJinsRef.current, home, lowerJinsRef.current)
+      homeDegreeRef.current = home
+      setHomeDegreeState(home)
+      mandalRef.current = restored
+      setMandalStateRaw(restored)
+      recompute(restored, tonicRef.current)
+      setReading((r) => ({ ...r, maqamName: maqamNameFor(lowerJinsRef.current, upperJinsRef.current) }))
+    }
+  }, [recompute])
+
+  // Move one mandal one quarter-tone in a direction (dir +1 raises/sharper, −1
+  // lowers/flatter), clamped at the ends — the directional-key + rail-arrow handler.
+  const stepMandal = useCallback((degree: number, dir: 1 | -1): void => {
+    if (modeRef.current !== 'qanun') return
+    const positions = positionsForDegree(degree)
+    if (positions.length <= 1) return // safety: nothing to step (no single-position degrees today)
+    const nextOffset = stepMandalPosition(positions, offsetOf(qanunStateRef.current, degree), dir)
+    const updated = setMandal(qanunStateRef.current, degree, nextOffset)
+    qanunStateRef.current = updated
+    mandalRef.current = updated
+    setMandalStateRaw(updated)
+    recompute(updated, tonicRef.current)
+  }, [recompute])
+
+  // Set one mandal directly to a chosen position — the rail click handler.
+  const setMandalAt = useCallback((degree: number, offset: number): void => {
+    if (modeRef.current !== 'qanun') return
+    const updated = setMandal(qanunStateRef.current, degree, offset)
+    qanunStateRef.current = updated
+    mandalRef.current = updated
+    setMandalStateRaw(updated)
+    recompute(updated, tonicRef.current)
+  }, [recompute])
+
+  // Reset Qanun mode to the Rast default.
+  const resetMandals = useCallback((): void => {
+    if (modeRef.current !== 'qanun') return
+    qanunStateRef.current = DEFAULT_RAST_STATE
+    mandalRef.current = DEFAULT_RAST_STATE
+    setMandalStateRaw(DEFAULT_RAST_STATE)
+    recompute(DEFAULT_RAST_STATE, tonicRef.current)
+  }, [recompute])
+
+  // Keyboard modulation. Tab toggles Jins ↔ Qanun mode. In Jins mode: Q W E R T Y
+  // U I O pick the lower jins, 1 2 3 4 5 the upper jins. In Qanun mode two stacked
+  // key rows move the levers directionally: 1 2 3 4 5 6 7 raise C..B a quarter-tone,
+  // Q W E R T Y U lower them (hold to glide — key repeat — clamped at the ends); 0 /
+  // Backspace resets to Rast. Ignored while typing in a field or (except Tab) when
+  // a modifier is held.
   useEffect(() => {
-    // Letter row picks the lower jins (9 families); 1 2 3 4 5 pick the upper jins.
     const LOWER_KEYS = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o']
     const UPPER_KEYS = ['1', '2', '3', '4', '5']
+    // Qanun mode: two adjacent rows, one quarter-tone step per press, degree d =
+    // d-1. Raise on the Q row, lower on the number row directly above it.
+    const QANUN_RAISE = ['q', 'w', 'e', 'r', 't', 'y', 'u'] // C..B up
+    const QANUN_LOWER = ['1', '2', '3', '4', '5', '6', '7'] // C..B down
+    // Computer-keyboard play layer (both modes): the home row plays the scale up
+    // from the tonic; Z / X drop / raise the octave. The tonic course sits at index
+    // FIELD_LEADING_TONES (the two leading tones below it come first in the field).
+    const PLAY_KEYS = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', "'"]
     const onKey = (e: KeyboardEvent): void => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return
       const t = e.target as HTMLElement | null
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      // Tab flips modes — claimed before the modifier/field guards so it works
+      // from anywhere on the instrument (but not while typing in the drawer).
+      if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey && !inField) {
+        e.preventDefault()
+        setModMode(modeRef.current === 'qanun' ? 'jins' : 'qanun')
+        return
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey || inField) return
       const key = e.key.toLowerCase()
+      // Octave shift (Z down / X up). Skip auto-repeat so a held key steps once.
+      if (key === 'z' || key === 'x') {
+        if (!e.repeat) {
+          const maxOct = Math.max(0, Math.floor((coursesRef.current.length - 1 - FIELD_LEADING_TONES) / DEGREE_COUNT))
+          const next = playOctaveRef.current + (key === 'x' ? 1 : -1)
+          playOctaveRef.current = Math.max(0, Math.min(maxOct, next))
+        }
+        e.preventDefault()
+        return
+      }
+      // Home row plays the scale from the tonic — one pluck per press (no repeat).
+      const pi = PLAY_KEYS.indexOf(key)
+      if (pi !== -1) {
+        if (!e.repeat) {
+          const idx = FIELD_LEADING_TONES + playOctaveRef.current * DEGREE_COUNT + pi
+          if (idx >= 0 && idx < coursesRef.current.length) pluckCourseRef.current(idx)
+        }
+        e.preventDefault()
+        return
+      }
+      if (modeRef.current === 'qanun') {
+        const ri = QANUN_RAISE.indexOf(key)
+        if (ri !== -1) { stepMandal(ri + 1, 1); e.preventDefault(); return }
+        const di = QANUN_LOWER.indexOf(key)
+        if (di !== -1) { stepMandal(di + 1, -1); e.preventDefault(); return }
+        if (e.key === '0' || e.key === 'Backspace') resetMandals()
+        return
+      }
       const li = LOWER_KEYS.indexOf(key)
       const families = lowerJinsList()
       if (li !== -1 && li < families.length) { setLowerJins(families[li].id); return }
@@ -374,12 +509,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [setLowerJins, setUpperJins])
+  }, [setLowerJins, setUpperJins, setModMode, stepMandal, resetMandals])
 
   /** Lazily creates + starts the audio engine on first user interaction. */
   const ensureAudioEngine = useCallback(async (): Promise<void> => {
     if (!audioRef.current) {
-      audioRef.current = createQanunEngine({ polyphony: 16 })
+      audioRef.current = createQanunEngine()
       setSampleRate(audioRef.current.getSampleRate())
       // The slider may have moved before first interaction — read the ref, not
       // state, so this callback's identity never churns with the value.
@@ -584,23 +719,33 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // against here. One helper, two thin wrappers, so the highlight/glow/MIDI
   // bookkeeping lives in one place.
   const soundCourse = useCallback((index: number): void => {
+    const field = coursesRef.current
+    if (!field[index]) return
+    // Visual feedback + the "last" readout update synchronously, NOT inside the
+    // audio-start promise: the camera tick loop sets these for hand plucks, but
+    // with the camera off no tick runs, so the pointer/mouse path must — and it
+    // shouldn't wait on the (async, first-gesture) audio-engine start.
+    setHighlightIndices([index])
+    setPluckedIndices([index])
+    // Keep the tick-loop dedupe guards in sync so the camera loop (when it runs)
+    // sees this highlight as current state and clears it normally.
+    lastHoverKeyRef.current = String(index)
+    lastPluckedKeyRef.current = String(index)
+    pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
+    const playedMidi = field[index].midi
+    setReading((r) => (r.lastPluckMidi === playedMidi ? r : { ...r, lastPluckMidi: playedMidi }))
     void ensureAudioEngine().then(() => {
       const audio = audioRef.current
-      const field = coursesRef.current
       if (!audio || !field[index]) return
-      setHighlightIndices([index])
-      setPluckedIndices([index])
-      // Keep the tick-loop dedupe guards in sync so the camera loop (when it
-      // runs) sees this highlight as current state and clears it normally.
-      lastHoverKeyRef.current = String(index)
-      lastPluckedKeyRef.current = String(index)
-      pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
       audio.pluck({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY, bloom: true })
       emitMidi(field[index].freqHz, POINTER_VELOCITY)
     })
   }, [ensureAudioEngine, emitMidi])
 
   const pluckCourse = useCallback((index: number): void => soundCourse(index), [soundCourse])
+  // Keep the keydown play layer pointed at the latest pluckCourse (synced in an
+  // effect, not during render, so the handler can read it without depending on it).
+  useEffect(() => { pluckCourseRef.current = pluckCourse }, [pluckCourse])
   const glideCourse = useCallback((index: number): void => soundCourse(index), [soundCourse])
 
   const holdCourse = useCallback((index: number): void => {
@@ -616,6 +761,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       // softer sustain level (the pluck already gave the louder attack).
       audio.holdStart({ freqHz: field[index].freqHz, velocity: SUSTAIN_VELOCITY, immediate: false })
       emitMidi(field[index].freqHz, SUSTAIN_VELOCITY)
+      const heldMidi = field[index].midi
+      setReading((r) => (r.lastPluckMidi === heldMidi ? r : { ...r, lastPluckMidi: heldMidi }))
     })
   }, [ensureAudioEngine, emitMidi])
 
@@ -1066,6 +1213,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setLowerJins,
     setUpperJins,
     upperJinsOptions,
+    modMode,
+    setModMode,
+    stepMandal,
+    setMandalAt,
+    resetMandals,
     pluckCourse,
     glideCourse,
     holdCourse,
