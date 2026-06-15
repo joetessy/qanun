@@ -16,6 +16,13 @@ describe('StageCover (start / permission flow)', () => {
     expect(container.firstChild).toBeNull()
   })
 
+  it('lifts (renders nothing) in no-camera so mouse/keyboard play is reachable', () => {
+    const { container } = render(
+      <StageCover status="no-camera" errorMsg="Camera permission denied" onStart={() => {}} />
+    )
+    expect(container.firstChild).toBeNull()
+  })
+
   it('shows the error message and a retry button on error', () => {
     render(<StageCover status="error" errorMsg="camera blocked" onStart={() => {}} />)
     expect(screen.getByText(/camera blocked/i)).toBeTruthy()

@@ -23,7 +23,7 @@ import { findHandedness } from '../lib/vision/findHandedness'
 import { loadHandLandmarker } from '../lib/vision/loadHandLandmarker'
 import { pinchDistance } from '../lib/vision/pinchDistance'
 import { scheduleVideoFrame, type FrameHandle } from '../lib/vision/scheduleVideoFrame'
-import { startCamera } from '../lib/vision/startCamera'
+import { startCamera, describeCameraError } from '../lib/vision/startCamera'
 import { stopCamera } from '../lib/vision/stopCamera'
 import { INDEX_TIP, INDEX_DIP, THUMB_TIP, THUMB_IP, MIDDLE_TIP, MIDDLE_DIP, INDEX_MCP, PINKY_MCP } from '../lib/vision/constants'
 import { extrapolateTip } from '../lib/vision/extrapolateTip'
@@ -315,7 +315,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setCourses(field)
     const id = identifyAjnas(next)
     const home = homeDegreeRef.current
-    const homeNote = degreeNoteLabel({ tonicMidi: nextTonic, degree: home, offset: offsetOf(next, home) })
+    const homeNote = degreeNoteLabel({ tonicMidi: nextTonic, degree: home, offset: offsetOf(next, home), flats: true })
     // The maqam reading is only shown in Jins mode; Qanun mode hides that cell
     // (the same mandals are an ambiguous maqam without a fixed root). Keeping the
     // identify here is harmless — the value just isn't displayed in Qanun mode.
@@ -1121,11 +1121,24 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   }, [])
 
   const start = useCallback(async (): Promise<void> => {
+    // 'no-camera' is re-entrant: it's the "retry camera" path. Only an
+    // already-running camera or an in-flight start should short-circuit.
     if (status === 'running' || status === 'loading') return
     setErrorMsg(null)
     setStatus('loading')
+    // Audio is the one hard requirement — this user gesture unlocks it. If even
+    // that fails the instrument is mute, so surface a blocking error to retry.
     try {
       await ensureAudioEngine()
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : String(err))
+      setStatus('error')
+      return
+    }
+    // The camera only adds hand tracking. If it's denied/unavailable — or the
+    // tracking model can't load — fall through to a fully playable 'no-camera'
+    // state (mouse + keyboard) instead of blocking the instrument behind the cover.
+    try {
       if (!landmarkerRef.current) landmarkerRef.current = await loadHandLandmarker()
       const video = videoRef.current
       const canvas = canvasRef.current
@@ -1137,11 +1150,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       frameCounterRef.current = 0
       pluckClearRef.current = 0
       runningRef.current = true
+      setErrorMsg(null)
       setStatus('running')
       frameHandleRef.current = scheduleVideoFrame({ video, callback: tick })
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : String(err))
-      setStatus('error')
+      runningRef.current = false
+      setErrorMsg(describeCameraError(err))
+      setStatus('no-camera')
     }
   }, [status, videoRef, canvasRef, tick, ensureAudioEngine, resetGestureState])
 

@@ -38,3 +38,22 @@ export const startCamera = async ({ video }: StartCameraArgs): Promise<CameraInf
     height: video.videoHeight || VIDEO_HEIGHT
   }
 }
+
+// Map a getUserMedia / camera-start failure to a short, human-readable reason.
+// Used for the non-blocking "playing without the camera" notice — the camera is
+// optional, so these are informational, not errors that stop play.
+export const describeCameraError = (err: unknown): string => {
+  if (err instanceof DOMException) {
+    switch (err.name) {
+      case 'NotAllowedError':
+      case 'SecurityError':
+        return 'Camera permission denied'
+      case 'NotFoundError':
+      case 'OverconstrainedError':
+        return 'No camera found'
+      case 'NotReadableError':
+        return 'Camera is in use by another app'
+    }
+  }
+  return err instanceof Error ? err.message : String(err)
+}

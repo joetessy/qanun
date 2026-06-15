@@ -73,6 +73,26 @@ describe('degreeNoteLabel — C tonic (MIDI 48)', () => {
   })
 })
 
+describe('degreeNoteLabel — flats option (absolute readouts)', () => {
+  // A♭ tonic = MIDI 68. Default spells the base with a sharp; flats:true spells
+  // it as a flat — the spelling the jins "home" readout and tonic control use.
+  it('A♭ tonic deg1 → "G#" by default but "A♭" with flats:true', () => {
+    expect(degreeNoteLabel({ tonicMidi: 68, degree: 1, offset: 0 })).toBe('G#')
+    expect(degreeNoteLabel({ tonicMidi: 68, degree: 1, offset: 0, flats: true })).toBe('A♭')
+  })
+
+  // E♭ tonic = MIDI 63 → pitch class 3.
+  it('E♭ tonic deg1 → "D#" by default but "E♭" with flats:true', () => {
+    expect(degreeNoteLabel({ tonicMidi: 63, degree: 1, offset: 0 })).toBe('D#')
+    expect(degreeNoteLabel({ tonicMidi: 63, degree: 1, offset: 0, flats: true })).toBe('E♭')
+  })
+
+  // Naturals are unaffected by the flag.
+  it('C tonic deg1 → "C" regardless of flats', () => {
+    expect(degreeNoteLabel({ tonicMidi: 60, degree: 1, offset: 0, flats: true })).toBe('C')
+  })
+})
+
 describe('degreeNoteLabel — D tonic (MIDI 50)', () => {
   // D tonic: NOTE_NAMES[2]='D'. For degree 3: natural offset=4 → NOTE_NAMES[(2+4)%12]=NOTE_NAMES[6]='F#'
   // off 3.5 → delta = 3.5 - 4 = -0.5 → 'F#½♭'
