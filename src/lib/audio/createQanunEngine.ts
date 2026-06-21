@@ -158,12 +158,37 @@ export const makeSoftClipCurve = (samples = 2048): Float32Array => {
   return curve
 }
 
+/**
+ * Route Web Audio output to the iOS "playback" audio-session category.
+ *
+ * By default iOS puts Web Audio in the "ambient" category, which is silenced by
+ * the hardware mute switch and played at *ringer* (not media) volume — the usual
+ * reason a correctly-unlocked instrument is dead silent on an iPhone even though
+ * it works on desktop. "playback" routes output to the media channel: it ignores
+ * the mute switch and follows the volume buttons' media level.
+ *
+ * Feature-detected via the Audio Session API (Safari 16.4+); a harmless no-op on
+ * browsers that don't expose `navigator.audioSession` (desktop, Android Chrome).
+ */
+const setPlaybackAudioSession = (): void => {
+  const nav = navigator as Navigator & { audioSession?: { type?: string } }
+  if (!nav.audioSession || nav.audioSession.type === 'playback') return
+  try {
+    nav.audioSession.type = 'playback'
+  } catch {
+    // Property may be read-only / throw on some engines — ignore.
+  }
+}
+
 // ─── factory ──────────────────────────────────────────────────────────────────
 
 export const createQanunEngine = ({
   Tone = ToneNamespace,
   fx
 }: QanunEngineOptions = {}): QanunEngine => {
+  // Set the playback session BEFORE the first Tone node creates the AudioContext,
+  // so the context comes up on the media route from the start (iOS — see helper).
+  setPlaybackAudioSession()
   let reverbEnabled = fx?.reverbEnabled ?? true
   let reverbWet = fx?.reverbWet ?? DEFAULT_REVERB_WET
   let reverbSize: ReverbSize = fx?.reverbSize ?? DEFAULT_REVERB_SIZE
@@ -260,6 +285,9 @@ export const createQanunEngine = ({
 
   const start = async (): Promise<void> => {
     if (started) return
+    // Re-assert the media route on the unlock gesture too — covers the case where
+    // the context was created before the session was set (iOS — see helper).
+    setPlaybackAudioSession()
     await Tone.start()
     started = true
   }
