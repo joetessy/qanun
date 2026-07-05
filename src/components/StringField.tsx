@@ -23,6 +23,36 @@ interface StringFieldProps {
 
 const HOLD_DELAY_MS = 150
 
+interface CourseLineProps {
+  yPct: number
+  degree: number
+  isHome: boolean
+  isGhammaz: boolean
+  isHighlight: boolean
+  isPlucked: boolean
+}
+
+// One triple-wire course row. memo on scalar props: a hover/pluck change flips
+// booleans on the one or two courses involved, so the other ~23 rows skip
+// re-rendering entirely — the field re-renders per course *crossing* during a
+// sweep, and re-painting 100 spans each time was the bulk of that work.
+const CourseLine = memo(({ yPct, degree, isHome, isGhammaz, isHighlight, isPlucked }: CourseLineProps) => {
+  const classes = [
+    'course',
+    isHome ? 'is-home' : '',
+    isGhammaz ? 'is-ghammaz' : '',
+    isHighlight ? 'is-highlight' : '',
+    isPlucked ? 'is-plucked' : ''
+  ].filter(Boolean).join(' ')
+  return (
+    <span className={classes} style={{ top: `${yPct}%` }} data-degree={degree} aria-hidden>
+      <i className="str str-l" />
+      <i className="str str-m" />
+      <i className="str str-r" />
+    </span>
+  )
+})
+
 // Horizontal brass strings across the play field, stacked by pitch: the lowest
 // course sits at the BOTTOM, the highest at the TOP. Each course is positioned at
 // its screen y (matching nearestCourse, so visuals and hit-testing agree) — the
@@ -84,7 +114,12 @@ export const StringField = memo(({
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       e.preventDefault()
-      ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
+      try {
+        ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
+      } catch {
+        // NotFoundError if the pointer vanished between dispatch and capture
+        // (fast touch lift, pen leaving range) — the pluck must still fire.
+      }
       isPointerDownRef.current = true
       const course = courseFromPointer(e)
       activeCourseRef.current = course
@@ -139,25 +174,19 @@ export const StringField = memo(({
       onPointerLeave={handlePointerUp}
       onPointerCancel={handlePointerUp}
     >
-      {courses.map((c) => {
+      {courses.map((c) => (
         // courseScreenX is the field fraction (0 = first/lowest course → 1 = last).
         // Invert into top-down screen space so the lowest course sits at the bottom.
-        const yPct = (1 - courseScreenX(c.index, courses.length, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT)) * 100
-        const classes = [
-          'course',
-          c.degree === homeDegree ? 'is-home' : '',
-          c.degree === ghammazDegree && c.degree !== homeDegree ? 'is-ghammaz' : '',
-          highlightIndices.includes(c.index) ? 'is-highlight' : '',
-          pluckedIndices.includes(c.index) ? 'is-plucked' : ''
-        ].filter(Boolean).join(' ')
-        return (
-          <span key={c.index} className={classes} style={{ top: `${yPct}%` }} data-degree={c.degree} aria-hidden>
-            <i className="str str-l" />
-            <i className="str str-m" />
-            <i className="str str-r" />
-          </span>
-        )
-      })}
+        <CourseLine
+          key={c.index}
+          yPct={(1 - courseScreenX(c.index, courses.length, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT)) * 100}
+          degree={c.degree}
+          isHome={c.degree === homeDegree}
+          isGhammaz={c.degree === ghammazDegree && c.degree !== homeDegree}
+          isHighlight={highlightIndices.includes(c.index)}
+          isPlucked={pluckedIndices.includes(c.index)}
+        />
+      ))}
     </div>
   )
 })

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import * as Tone from 'tone'
 import type { HandLandmarker } from '@mediapipe/tasks-vision'
 import type { MandalState, Course } from '../lib/music/types'
 import type { NormPoint, QanunReading, QanunStatus } from '../types'
@@ -12,11 +11,16 @@ import { applyUpperJins, upperOptions, ghammazFieldDegree, type UpperJinsOption 
 import { courseWithHysteresis, coursesCrossed, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
 import { createPinchPlay } from '../lib/gesture/pinchPlay'
 import { resolveActiveFinger, type ActiveFinger } from '../lib/gesture/activeFinger'
-import { createQanunEngine, DEFAULT_TREMOLO_HZ, type QanunEngine } from '../lib/audio/createQanunEngine'
+// Audio modules that pull in Tone.js are imported DYNAMICALLY (inside the
+// ensure* helpers below) so the ~340 kB audio stack stays out of the initial
+// bundle — audio can't sound before a user gesture anyway. Types are erased at
+// compile time, so type-only imports here are free.
+import type { QanunEngine } from '../lib/audio/createQanunEngine'
+import { DEFAULT_TREMOLO_HZ } from '../lib/audio/tremolo'
 import { createRecorder, type Recorder, type RecorderState } from '../lib/audio/createRecorder'
 import { formatElapsed } from '../lib/audio/formatElapsed'
-import { createDrone, type DroneEngine } from '../lib/practice/createDrone'
-import { createMetronome, type MetronomeEngine } from '../lib/practice/createMetronome'
+import type { DroneEngine } from '../lib/practice/createDrone'
+import type { MetronomeEngine } from '../lib/practice/createMetronome'
 import { createMidiOut, type MidiOutEngine, type MidiSupportState, type MidiOutputInfo } from '../lib/midi/createMidiOut'
 import { createOneEuroFilter } from '../lib/oneEuro/createOneEuroFilter'
 import { findHandedness } from '../lib/vision/findHandedness'
@@ -251,6 +255,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const coursesRef = useRef<Course[]>(courses)
   const landmarkerRef = useRef<HandLandmarker | null>(null)
   const audioRef = useRef<QanunEngine | null>(null)
+  // In-flight dynamic import + construction of the audio engine (see
+  // ensureAudioEngine): cached so concurrent first interactions (e.g. "play"
+  // and a string click in the same tick) share ONE engine instead of racing
+  // two into existence.
+  const enginePromiseRef = useRef<Promise<QanunEngine> | null>(null)
   // Sample rate is exposed as state (not a ref) so the elapsed display can read it
   // during render. It is set once when the engine is first started and never changes.
   const [sampleRate, setSampleRate] = useState(48000)
@@ -514,26 +523,39 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     return () => window.removeEventListener('keydown', onKey)
   }, [setLowerJins, setUpperJins, setModMode, stepMandal, resetMandals])
 
-  /** Lazily creates + starts the audio engine on first user interaction. */
+  /** Lazily imports, creates + starts the audio engine on first user
+   *  interaction. The dynamic import is what keeps Tone.js out of the eager
+   *  bundle; the module is cached by the browser after the first call. A
+   *  failed import clears the cached promise so a later gesture can retry. */
   const ensureAudioEngine = useCallback(async (): Promise<void> => {
-    if (!audioRef.current) {
-      audioRef.current = createQanunEngine()
-      setSampleRate(audioRef.current.getSampleRate())
-      // The slider may have moved before first interaction — read the ref, not
-      // state, so this callback's identity never churns with the value.
-      audioRef.current.setTremoloHz(tremoloHzRef.current)
+    if (!enginePromiseRef.current) {
+      enginePromiseRef.current = import('../lib/audio/createQanunEngine').then(({ createQanunEngine }) => {
+        const engine = createQanunEngine()
+        audioRef.current = engine
+        setSampleRate(engine.getSampleRate())
+        // The slider may have moved before first interaction — read the ref, not
+        // state, so this callback's identity never churns with the value.
+        engine.setTremoloHz(tremoloHzRef.current)
+        return engine
+      })
+      enginePromiseRef.current.catch(() => { enginePromiseRef.current = null })
     }
-    if (!audioRef.current.isStarted) await audioRef.current.start()
+    const engine = await enginePromiseRef.current
+    if (!engine.isStarted) await engine.start()
   }, [])
 
   // ── P4a: recorder helpers ───────────────────────────────────────────────────
 
   /** Lazy-create the recorder, wired to the post-fx bus. */
-  const ensureRecorder = useCallback((): Recorder => {
+  const ensureRecorder = useCallback(async (): Promise<Recorder> => {
     if (recorderRef.current) return recorderRef.current
     const engine = audioRef.current
     if (!engine) throw new Error('Audio engine not initialised before recorder')
-    const audioContext = Tone.getContext().rawContext as AudioContext
+    // Tone is already loaded once the engine exists, so this resolves straight
+    // from the module cache — the dynamic form only keeps it out of the eager graph.
+    const { getContext } = await import('tone')
+    if (recorderRef.current) return recorderRef.current // re-check: a concurrent call may have won the await
+    const audioContext = getContext().rawContext as AudioContext
     const rec = createRecorder({
       audioContext,
       sourceNode: engine.getRecorderTap(),
@@ -563,7 +585,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const startRecording = useCallback(async (): Promise<void> => {
     // Ensure the audio engine is up before we try to tap it.
     await ensureAudioEngine()
-    const rec = ensureRecorder()
+    const rec = await ensureRecorder()
     if (rec.getState() !== 'idle') return
     await rec.start()
     // Poll elapsed frames every 500 ms while recording.
@@ -601,20 +623,21 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // ── P4a: drone helpers ──────────────────────────────────────────────────────
 
   /** Lazy-create the drone engine, connected to the sumBus. */
-  const ensureDrone = useCallback((): DroneEngine => {
+  const ensureDrone = useCallback(async (): Promise<DroneEngine> => {
     if (droneRef.current) return droneRef.current
     const engine = audioRef.current
     if (!engine) throw new Error('Audio engine not initialised before drone')
+    const { createDrone } = await import('../lib/practice/createDrone')
+    if (droneRef.current) return droneRef.current // re-check: a concurrent call may have won the await
     const d = createDrone({ output: engine.sumBus, initialTonicMidi: tonicRef.current + offsetOf(mandalRef.current, homeDegreeRef.current) + detuneCentsRef.current / 100 })
     droneRef.current = d
     return d
   }, [])
 
   const setDroneEnabled = useCallback((b: boolean): void => {
-    void ensureAudioEngine().then(() => {
-      const d = ensureDrone()
-      void d.setEnabled(b).then(() => setDroneEnabledState(d.enabled))
-    })
+    void ensureAudioEngine()
+      .then(() => ensureDrone())
+      .then((d) => d.setEnabled(b).then(() => setDroneEnabledState(d.enabled)))
   }, [ensureAudioEngine, ensureDrone])
 
   const setDroneGain = useCallback((v: number): void => {
@@ -632,10 +655,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // ── P4a: metronome helpers ──────────────────────────────────────────────────
 
   /** Lazy-create the metronome engine, connected to the sumBus. */
-  const ensureMetronome = useCallback((): MetronomeEngine => {
+  const ensureMetronome = useCallback(async (): Promise<MetronomeEngine> => {
     if (metronomeRef.current) return metronomeRef.current
     const engine = audioRef.current
     if (!engine) throw new Error('Audio engine not initialised before metronome')
+    const { createMetronome } = await import('../lib/practice/createMetronome')
+    if (metronomeRef.current) return metronomeRef.current // re-check: a concurrent call may have won the await
     // Read BPM from the ref so this callback doesn't need metronomeBpm in its
     // dep array — that would cause identity churn on every BPM keystroke.
     const m = createMetronome({ output: engine.sumBus, initialBpm: metronomeBpmRef.current })
@@ -644,13 +669,15 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   }, [])
 
   const setMetronomeEnabled = useCallback((b: boolean): void => {
-    void ensureAudioEngine().then(() => {
-      const m = ensureMetronome()
-      void m.setEnabled(b).then(() => setMetronomeEnabledState(m.enabled))
-    })
+    void ensureAudioEngine()
+      .then(() => ensureMetronome())
+      .then((m) => m.setEnabled(b).then(() => setMetronomeEnabledState(m.enabled)))
   }, [ensureAudioEngine, ensureMetronome])
 
   const setMetronomeBpm = useCallback((bpm: number): void => {
+    // Guard non-numbers (an emptied/invalid number input parses to NaN/0 —
+    // the engine clamps internally, but state should never hold NaN).
+    if (!Number.isFinite(bpm)) return
     metronomeBpmRef.current = bpm
     setMetronomeBpmState(bpm)
     metronomeRef.current?.setBpm(bpm)
@@ -658,12 +685,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
 
   const tapMetronome = useCallback((): void => {
     // Ensure engine is ready; metronome tap is fire-and-forget.
-    void ensureAudioEngine().then(() => {
-      const m = ensureMetronome()
-      m.tap()
-      // Sync displayed BPM after tap (tap may have updated it).
-      setMetronomeBpmState(m.bpm)
-    })
+    void ensureAudioEngine()
+      .then(() => ensureMetronome())
+      .then((m) => {
+        m.tap()
+        // Sync displayed BPM after tap (tap may have updated it).
+        setMetronomeBpmState(m.bpm)
+      })
   }, [ensureAudioEngine, ensureMetronome])
 
   // ── P4b: MIDI out helpers ────────────────────────────────────────────────────

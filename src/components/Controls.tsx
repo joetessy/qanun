@@ -6,7 +6,8 @@ import { TypedSelect } from './TypedSelect'
 import { midiName } from '../lib/music/midiName'
 import { DETUNE_LIMIT_CENTS } from '../lib/music/buildField'
 import { formatCents } from '../lib/ui/formatCents'
-import { DEFAULT_TREMOLO_HZ, TREMOLO_HZ_MIN, TREMOLO_HZ_MAX } from '../lib/audio/createQanunEngine'
+import { DEFAULT_TREMOLO_HZ, TREMOLO_HZ_MIN, TREMOLO_HZ_MAX } from '../lib/audio/tremolo'
+import { BPM_MIN, BPM_MAX, clamp } from '../lib/practice/tapTempo'
 
 interface ControlsProps {
   // Qanun mode has no fixed tonic (you root wherever you play), so the tonic
@@ -178,7 +179,9 @@ export const Controls = memo(({
             <button type="button" className="studio-btn rec-cancel" onClick={onCancelRecording}>
               cancel
             </button>
-            <span className="rec-elapsed">{recordingElapsedDisplay}</span>
+            {/* is-live adds the pulsing red dot — only while actually recording,
+                not for the transient encoding/saving readouts below. */}
+            <span className="rec-elapsed is-live">{recordingElapsedDisplay}</span>
           </>
         ) : (
           <span className="rec-elapsed">{recordingState}</span>
@@ -223,10 +226,14 @@ export const Controls = memo(({
         <input
           type="number"
           className="studio-bpm"
-          min={30}
-          max={300}
+          min={BPM_MIN}
+          max={BPM_MAX}
           value={metronomeBpm}
           onChange={(e) => onMetronomeBpm(Number(e.target.value))}
+          // While typing, out-of-range intermediates are allowed (the engine
+          // clamps internally); on blur the display snaps to the real range so
+          // it can't sit at e.g. 0 while the metronome actually ticks at 30.
+          onBlur={(e) => onMetronomeBpm(clamp(Number(e.target.value) || BPM_MIN, BPM_MIN, BPM_MAX))}
           aria-label="metronome BPM"
         />
         <button type="button" className="studio-btn tap-btn" onClick={onTapMetronome}>

@@ -7,6 +7,7 @@ import { reverbSizeToParams } from './reverbSize'
 import { velocityCurve } from './velocityCurve'
 import { detunedFreqs } from './detuneCluster'
 import { QANUN_SAMPLE_URLS, QANUN_SAMPLE_BASE_URL } from './qanunSamples'
+import { DEFAULT_TREMOLO_HZ, TREMOLO_HZ_MIN, TREMOLO_HZ_MAX } from './tremolo'
 
 // The audio engine is a long-lived singleton (cached in a hook ref for the tab's
 // lifetime), so plain HMR would leave a STALE engine running old code — you'd see
@@ -63,17 +64,10 @@ export interface QanunEngine {
 /** Triple-course cent offsets — one attack per string in the unison course. */
 const COURSE_CENTS = [-4, 0, 4] as const
 
-/** Default rashsh tremolo rate in Hz (~10 picks/s — a brisk Arabic tremolo).
- *  Runtime-tunable via setTremoloHz (the tune drawer's tremolo slider); both
- *  hold shapes — single-note rashsh and the two-note trill — ride this one
- *  shared pulse, so retuning it never changes their relationship. */
-export const DEFAULT_TREMOLO_HZ = 10
-
-/** setTremoloHz clamp. Below ~6 Hz the re-strikes read as separate plucks, not
- *  a tremolo; above ~16 Hz strikes start to fuse on the ~1.5 s ring (the trill
- *  pair blurs toward a continuous dyad — see TRILL_PULSE_MULT). */
-export const TREMOLO_HZ_MIN = 6
-export const TREMOLO_HZ_MAX = 16
+// Tremolo pulse constants live in ./tremolo (a Tone-free module) so the UI can
+// import them without dragging this engine — and Tone.js with it — into the
+// eager bundle. Re-exported here so engine-side callers keep one import path.
+export { DEFAULT_TREMOLO_HZ, TREMOLO_HZ_MIN, TREMOLO_HZ_MAX } from './tremolo'
 
 /**
  * Two-note trill pulse multiplier. The alternation ticks at the SAME pulse as

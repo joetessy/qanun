@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { QanunReading } from '../types'
 import type { ModMode } from '../hooks/useQanunEngine'
 import { midiName } from '../lib/music/midiName'
@@ -11,7 +12,9 @@ interface QanunHudProps {
 // shown by default besides the instrument and your hands). Qanun mode has no
 // fixed home/maqam (you root wherever you play), so it drops both the maqam and
 // home cells, leaving just the last-plucked note; Jins mode shows all three.
-export const QanunHud = ({ reading, modMode }: QanunHudProps) => (
+// memo: `reading` keeps its identity between actual changes (the hook's guarded
+// updater), so the HUD skips the parent's per-highlight re-renders.
+export const QanunHud = memo(({ reading, modMode }: QanunHudProps) => (
   <div className="readout">
     {modMode !== 'qanun' && (
       <div className="cell maqam">
@@ -30,4 +33,4 @@ export const QanunHud = ({ reading, modMode }: QanunHudProps) => (
       <span className="v">{reading.lastPluckMidi !== null ? midiName(reading.lastPluckMidi).toLowerCase() : '—'}</span>
     </div>
   </div>
-)
+))
