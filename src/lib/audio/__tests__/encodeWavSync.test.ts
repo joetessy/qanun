@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { Buffer } from 'node:buffer'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { encodeWavSync } from '../encodeWavSync'
@@ -26,16 +27,16 @@ describe('encodeWavSync', () => {
     const golden = readFileSync(
       resolve(__dirname, 'fixtures/sine-440hz-1s-48k.wav')
     )
-    const actual = new Uint8Array(wav)
-    const expected = new Uint8Array(golden.buffer, golden.byteOffset, golden.byteLength)
-    expect(actual.length).toBe(expected.length)
-    // Compare header (first 44 bytes) byte-for-byte.
-    for (let i = 0; i < 44; i += 1) {
-      expect(actual[i]).toBe(expected[i])
-    }
-    // Compare data chunk byte-for-byte.
-    for (let i = 44; i < expected.length; i += 1) {
-      expect(actual[i]).toBe(expected[i])
+    const actual = Buffer.from(wav)
+    expect(actual.length).toBe(golden.length)
+    // Compare with a single native memcmp — a per-byte expect() loop over
+    // the ~96 kB file is slow enough under parallel-worker load to trip the
+    // 5 s test timeout. Only on mismatch, scan for the first differing byte
+    // so the failure still reports a useful offset.
+    if (!actual.equals(golden)) {
+      const i = actual.findIndex((byte, index) => byte !== golden[index])
+      const region = i < 44 ? 'header' : 'data chunk'
+      expect(actual[i], `first mismatch at byte ${i} (${region})`).toBe(golden[i])
     }
   })
 
