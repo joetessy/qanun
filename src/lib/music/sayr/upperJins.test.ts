@@ -36,11 +36,13 @@ describe('upperOptions', () => {
     expect(opts[0].label).toBe('Nahawand')
     expect(opts.find((o) => o.id === 'nahawand')!.active).toBe(true)
   })
-  it('lights "Nikriz Hijazkar" on Hijaz when it is the selected upper', () => {
+  it('lights "Hijazkar" on Hijaz when it is the selected upper', () => {
     const opts = upperOptions('hijaz', 'hijazkar')
     const hijazkar = opts.find((o) => o.id === 'hijazkar')!
     expect(hijazkar).toBeDefined()
-    expect(hijazkar.label).toBe('Nikriz Hijazkar')
+    // Short chip label; the tooltip (maqamName) carries "Maqam Hijazkar".
+    expect(hijazkar.label).toBe('Hijazkar')
+    expect(hijazkar.maqamName).toBe('Maqam Hijazkar')
     expect(hijazkar.active).toBe(true)
   })
   it('does NOT also light Nahawand when Hijazkar is the selected upper (regression)', () => {

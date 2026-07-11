@@ -19,7 +19,11 @@ export const QanunHud = memo(({ reading, modMode }: QanunHudProps) => (
     {modMode !== 'qanun' && (
       <div className="cell maqam">
         <span className="k">maqam</span>
-        <span className="v" title={reading.maqamName}>{reading.maqamName}</span>
+        {/* The cell's label already says MAQAM, so the value drops the "Maqam "
+            prefix — "Rast", not "Maqam Rast" — which lets the fixed-width plate
+            run ~3em narrower (the width bottlenecks the single-line header).
+            The tooltip keeps the full formal name. */}
+        <span className="v" title={reading.maqamName}>{reading.maqamName.replace(/^Maqam\s+/, '')}</span>
       </div>
     )}
     {modMode !== 'qanun' && (
@@ -28,7 +32,7 @@ export const QanunHud = memo(({ reading, modMode }: QanunHudProps) => (
         <span className="v">{reading.homeNote.toLowerCase()}</span>
       </div>
     )}
-    <div className="cell">
+    <div className="cell last">
       <span className="k">last</span>
       <span className="v">{reading.lastPluckMidi !== null ? midiName(reading.lastPluckMidi).toLowerCase() : '—'}</span>
     </div>

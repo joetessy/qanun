@@ -51,7 +51,11 @@ export interface UpperJinsOption {
 const upperLabel = (id: string): string => {
   if (id === 'rast') return 'Upper Rast'
   if (id === 'ajam') return 'Upper ʿAjam'
-  if (id === 'hijazkar') return 'Nikriz Hijazkar'
+  // "Hijazkar", not "Nikriz Hijazkar": the chip tooltip already names the maqam
+  // it builds, and the long form is the one label wide enough to overflow the
+  // single-line header at laptop widths. The compound's anatomy (Nikriz on the
+  // ghammāz + a raised leading tone) stays documented on applyUpperJins.
+  if (id === 'hijazkar') return 'Hijazkar'
   return jinsById(id).label
 }
 

@@ -37,7 +37,7 @@
 .qanun-header {
   display: flex;
   align-items: center;
-  gap: clamp(6px, 0.8vw, 14px);
+  gap: clamp(5px, 0.65vw, 12px);
   padding: clamp(4px, 0.8vmin, 7px) clamp(10px, 1.4vw, 18px);
   background:
     linear-gradient(180deg, #20140b 0%, #160d07 100%);
@@ -53,7 +53,7 @@
   flex-shrink: 0;
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(18px, 1.8vw, 26px);
+  font-size: clamp(18px, 1.7vw, 25px);
   line-height: 0.9;
   letter-spacing: 0.06em;
   /* Engraved-brass: dark base text with a lit top bevel and a soft glow. */
@@ -74,9 +74,9 @@
 .readout {
   display: flex;
   align-items: stretch;
-  gap: clamp(8px, 1.1vw, 14px);
+  gap: clamp(6px, 0.9vw, 12px);
   flex-shrink: 0;
-  padding: 4px 10px;
+  padding: 4px 8px;
   border-radius: 6px;
   background:
     linear-gradient(180deg, rgba(10, 6, 3, 0.6), rgba(28, 18, 9, 0.35));
@@ -92,13 +92,18 @@
   justify-content: center;
 }
 /* Reserve stable widths so a changing note (home/last) or maqam name doesn't
-   reflow the readout and wiggle the jins selector to its right. The note cells
-   are floored wide enough for a microtonal accidental; the maqam value gets a
-   FIXED width sized to the LONGEST maqam name (em-based, so it scales with the
-   font) — every name fits in full, the plate never grows. */
+   reflow the readout and wiggle the jins selector to its right. The maqam value
+   gets a FIXED width sized to the LONGEST maqam name (em-based, so it scales
+   with the font) — every name fits in full, the plate never grows. */
 .readout .cell:not(.maqam) .v { min-width: 2.6em; }
+/* The `last` cell is the only note that spells a microtonal reading in full —
+   e.g. "d♭4 −50¢" (~4em) vs a plain "a4" (~0.9em). Floor it to a FIXED width
+   sized to the widest reading so a quarter-tone pluck doesn't stretch the cell
+   and wiggle the jins rail. tabular-nums (inherited from .v) keeps the cents
+   digits fixed-width; home never carries cents so it keeps the 2.6em floor. */
+.readout .cell.last .v { display: block; width: 4.6em; white-space: nowrap; }
 .readout .cell + .cell {
-  padding-left: clamp(6px, 0.8vw, 12px);
+  padding-left: clamp(5px, 0.7vw, 10px);
   border-left: 1px solid rgba(231, 194, 91, 0.14);
 }
 
@@ -127,10 +132,12 @@
   font-weight: 600;
   color: var(--brass-glow);
   text-shadow: 0 0 12px rgba(255, 221, 128, 0.25);
-  /* Fixed width sized to the longest maqam name → it never truncates and the
-     readout never grows when the name changes. (ellipsis is a safety net only.) */
+  /* Fixed width sized to the longest PREFIX-STRIPPED name ("Nahawand Murassaʿ"
+     — the HUD drops the redundant "Maqam ", see QanunHud) → it never truncates
+     and the readout never grows when the name changes. (ellipsis is a safety
+     net only; the mid-width band narrows this further.) */
   display: block;
-  width: 11.4em;
+  width: 8.5em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -815,7 +822,7 @@
   flex-direction: row;
   align-items: center;
   justify-content: flex-start;
-  gap: clamp(6px, 0.9vw, 16px);
+  gap: clamp(5px, 0.6vw, 12px);
 }
 
 /* ═══ MODE SWITCH — jins ↔ qanun (also Tab) ══════════════════════════════════
@@ -843,7 +850,7 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--ink-faint);
-  padding: 2px 6px;
+  padding: 2px 5px;
   border-radius: 999px;
   transition: color 0.15s, background 0.15s, box-shadow 0.15s;
 }
@@ -998,7 +1005,7 @@
   flex-wrap: nowrap;
   overflow-x: auto;
   scrollbar-width: none;
-  gap: clamp(2px, 0.4vmin, 4px) clamp(3px, 0.45vw, 6px);
+  gap: clamp(2px, 0.4vmin, 4px) clamp(2px, 0.28vw, 5px);
 }
 
 /* Individual jins chip — same compact pill as .preset-chip. */
@@ -1013,7 +1020,7 @@
   background: linear-gradient(180deg, #2c1d10 0%, #1b1107 100%);
   border: 1px solid rgba(110, 79, 28, 0.35);
   border-radius: 999px;
-  padding: clamp(3px, 0.45vmin, 4px) clamp(6px, 0.75vw, 9px);
+  padding: clamp(3px, 0.45vmin, 4px) clamp(5px, 0.6vw, 8px);
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
   box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.06);
@@ -1044,7 +1051,7 @@
    the jins selector and the upper-jins switcher. */
 .jins-key {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.78em;
+  font-size: 0.7em;
   font-weight: 600;
   letter-spacing: 0;
   color: var(--ink-faint);
@@ -1072,7 +1079,7 @@
      cell separators). */
   border: none;
   border-left: 1px solid rgba(231, 194, 91, 0.14);
-  padding: 2px 0 2px clamp(6px, 0.9vw, 16px);
+  padding: 2px 0 2px clamp(5px, 0.55vw, 11px);
 }
 
 .upper-jins-label {
@@ -1109,7 +1116,7 @@
   flex-wrap: nowrap;
   overflow-x: auto;
   scrollbar-width: none;
-  gap: clamp(2px, 0.4vmin, 4px) clamp(3px, 0.45vw, 6px);
+  gap: clamp(2px, 0.4vmin, 4px) clamp(2px, 0.28vw, 5px);
 }
 
 /* Individual upper-jins chip — same pill shape as .preset-chip but with a
@@ -1125,7 +1132,7 @@
   background: linear-gradient(180deg, #2e1e0f 0%, #1c1108 100%);
   border: 1px solid rgba(138, 98, 36, 0.38);
   border-radius: 999px;
-  padding: clamp(3px, 0.45vmin, 4px) clamp(6px, 0.75vw, 9px);
+  padding: clamp(3px, 0.45vmin, 4px) clamp(5px, 0.6vw, 8px);
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
   box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.07);
@@ -1425,30 +1432,26 @@
    header controls, and controls drawer must not overlap or clip.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* The header is ONE line by default (the compact sizing above). Two graceful
-   fallbacks as the viewport narrows (thresholds measured in Chrome with ~15px+
-   of real margin at each band edge, so zoom/font variance can't tip them):
-   1. 1361–1760px: the line's cheapest ~270px steps aside — chip keycap hints
-      (Q W E… / 1 2…), the ghammaz sub-label, the two group labels (the groups
-      stay tellable: hairline divider + the upper chips' amber tint vs the
-      lower's brass; group aria-labels are untouched), and the maqam plate
-      narrows. Shortcuts still work; every chip's title still names its key.
-   2. ≤1360px: even trimmed, the full jins rail can't share the line, so the
-      bar drops onto its own full-width row beneath the wordmark/readout line
-      (the pre-inline layout) — with hints and labels back on, since the full
-      width easily holds them. */
-@media (max-width: 1760px) and (min-width: 1361px) {
-  .jins-bar .jins-key { display: none; }
-  /* The ghammaz sub-label (" on 5") also steps aside; each chip's title still
+/* The header is ONE line by default (the compact sizing above). The keycap
+   hints (Q W E… / 1 2…) and the JINS / UPPER JINS group labels are NEVER
+   hidden: both groups repeat family names (Bayati, Hijaz, Nahawand appear in
+   each), so without labels + keys the bar reads as one long row of duplicates
+   and the keyboard feels broken. Two graceful fallbacks as the viewport
+   narrows (thresholds measured in Chrome with real margin at each band edge):
+   1. 1471–1760px: only DISPLAY extras step aside — the ghammaz sub-label
+      (" on 5") and a narrower maqam plate. All controls keep their hints.
+   2. ≤1470px: the full jins rail can't share the line, so the bar drops onto
+      its own full-width row beneath the wordmark/readout line (still far
+      shorter than the original stacked header). */
+@media (max-width: 1760px) and (min-width: 1471px) {
+  /* The ghammaz sub-label (" on 5") steps aside; each chip's title still
      carries the full maqam it builds. */
   .upper-jins-ghammaz { display: none; }
-  .jins-selector-label,
-  .upper-jins-label { display: none; }
   /* Narrower (still FIXED, so no wiggle) maqam plate: rare long names ellipsize
-     behind their title tooltip instead of costing the rails ~50px of line. */
-  .readout .cell.maqam .v { width: 8em; }
+     behind their title tooltip instead of costing the rails ~20px of line. */
+  .readout .cell.maqam .v { width: 7em; }
 }
-@media (max-width: 1360px) {
+@media (max-width: 1470px) {
   .qanun-header {
     flex-wrap: wrap;
     row-gap: clamp(3px, 0.7vmin, 8px);
