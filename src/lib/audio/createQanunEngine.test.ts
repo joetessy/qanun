@@ -35,6 +35,7 @@ const makeMockTone = () => {
   const ToneMock = {
     start: vi.fn().mockResolvedValue(undefined),
     now: vi.fn(() => 0.0),
+    immediate: vi.fn(() => 0.0),
     getContext: vi.fn(() => ({ sampleRate: 48000 })),
     PluckSynth: vi.fn().mockImplementation(() => ({
       triggerAttack,
@@ -323,6 +324,23 @@ describe('createQanunEngine — triple-course pluck', () => {
     expect(hiIdx).toBeGreaterThanOrEqual(0)
     // All three indices must be distinct.
     expect(new Set([zeroIdx, loIdx, hiIdx]).size).toBe(3)
+  })
+
+  it('fires on-demand plucks at immediate() (no lookahead latency), not now()', () => {
+    // Regression: an omitted time let Tone default to now() = currentTime +
+    // lookAhead (~0.1 s), delaying every live note a full beat. A played pluck
+    // must schedule at immediate() (raw context time) instead.
+    const { ToneMock, samplerTriggerAttack, simulateSamplerLoaded } = makeMockTone()
+    ToneMock.now = vi.fn(() => 99) // sentinel: now() must NOT be used for live strikes
+    ToneMock.immediate = vi.fn(() => 0.25)
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    simulateSamplerLoaded()
+    e.pluck({ freqHz: 440, velocity: 0.8 })
+
+    expect(samplerTriggerAttack).toHaveBeenCalledTimes(3)
+    for (const call of samplerTriggerAttack.mock.calls) {
+      expect(call[1]).toBe(0.25) // immediate(), never the 99 from now()
+    }
   })
 
   it('ignores invalid frequencies', () => {

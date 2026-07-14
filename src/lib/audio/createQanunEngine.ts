@@ -272,7 +272,13 @@ export const createQanunEngine = ({
     time?: number
   ): void => {
     if (!sampleLoaded) return
-    sampler.triggerAttack(freqHz, time, gainValue)
+    // On-demand strikes (pointer/keyboard pluck, hold-start) pass no time. Left
+    // undefined, Tone defaults to now() = currentTime + lookAhead (~0.1 s) — a
+    // full beat of latency on every live note. immediate() fires at the raw
+    // context time so a played note sounds when you press it. Scheduled callers
+    // (the tremolo Clock, glide sweeps) still pass an explicit `time`, keeping
+    // their lookAhead scheduling headroom.
+    sampler.triggerAttack(freqHz, time ?? Tone.immediate(), gainValue)
   }
 
   // ── public methods ──────────────────────────────────────────────────────────
