@@ -31,6 +31,9 @@ describe('LOWER_JINS table', () => {
   it('Rast does not offer ʿAjam as an upper', () => {
     expect(LOWER_JINS.find((j) => j.id === 'rast')!.upperOptions).not.toContain('ajam')
   })
+  it('Sikah offers Bayati as an upper', () => {
+    expect(LOWER_JINS.find((j) => j.id === 'sikah')!.upperOptions).toContain('bayati')
+  })
 
   // Lock every family's full default scale (offsets from the key). Kurd's
   // degree-7 is B♭ (10) — standard Kurd, and required so its default upper
