@@ -4,6 +4,12 @@ import type { Jins } from '../types'
 // Intervals are semitones from the jins tonic (half-flat = .5). Transcribed
 // from docs/MUSIC-THEORY.md §3 and docs/research/ajnas-reference.md.
 //
+// The full maqamat catalogue lives in the shared @yusuf/maqam-theory repo
+// (~/Projects/maqam-theory, consumed by maqam-atlas and maqam-studio). This
+// file stays separate on purpose: the instrument needs homeDegree and the
+// playable 4-note Hijazkar [0,1,4,5] instead of the catalogue's overlapping
+// theoretical form. Cross-check interval fixes against that repo by hand.
+//
 // Deferred to a later sub-plan (need the variant mandal positions): Sazkar,
 // Nahawand Murassaʿ, Mukhalif Sharqi, Lami, Saba Zamzam, Athar Kurd, Jiharkah,
 // Mustaʿar, ʿAjam(3), Upper Rast/Ajam.
