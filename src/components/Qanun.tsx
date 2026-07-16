@@ -1,7 +1,6 @@
 import { useRef, useState, useCallback } from 'react'
 import { Stage } from './Stage'
 import { StageCover } from './StageCover'
-import { CameraNotice } from './CameraNotice'
 import { StringField } from './StringField'
 import { LowerJinsSelector } from './LowerJinsSelector'
 import { UpperJinsSwitcher } from './UpperJinsSwitcher'
@@ -31,17 +30,6 @@ export const Qanun = () => {
   // MandalRail's memo and re-render all ~60 rail buttons on every pluck.
   const [leversExpanded, setLeversExpanded] = useState(false)
   const toggleLevers = useCallback(() => setLeversExpanded((v) => !v), [])
-
-  // The "playing without the camera" notice (status === 'no-camera') is
-  // dismissible; a retry re-arms it so a second failure is still surfaced.
-  const [cameraNoticeDismissed, setCameraNoticeDismissed] = useState(false)
-  // Depend on the start callback, not the engine object (a fresh object every
-  // render), so retryCamera's identity holds between status changes.
-  const { start: startEngine } = engine
-  const retryCamera = useCallback(() => {
-    setCameraNoticeDismissed(false)
-    void startEngine()
-  }, [startEngine])
 
   // Onboarding: show on first visit; persist dismissal in localStorage.
   const [showOnboarding, setShowOnboarding] = useState(() => !hasOnboarded())
@@ -153,15 +141,6 @@ export const Qanun = () => {
         {/* Play / start cover — a direct soundboard child so it sits ABOVE the
             strings (z-index), keeping the play button clickable. Self-hides when running. */}
         <StageCover status={engine.status} errorMsg={engine.errorMsg} onStart={engine.start} />
-        {/* Camera denied/unavailable — instrument stays playable by mouse + keys.
-            Non-blocking: it doesn't capture pointer events meant for the strings. */}
-        {engine.status === 'no-camera' && !cameraNoticeDismissed && (
-          <CameraNotice
-            reason={engine.errorMsg}
-            onRetry={retryCamera}
-            onDismiss={() => setCameraNoticeDismissed(true)}
-          />
-        )}
         {/* First-run onboarding guide — overlaid above everything, dismissible. */}
         {showOnboarding && <Onboarding onDismiss={dismissOnboarding} />}
       </div>
