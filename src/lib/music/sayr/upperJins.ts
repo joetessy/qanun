@@ -20,11 +20,17 @@ export const applyUpperJins = (
   lowerId: string
 ): MandalState => {
   if (upperId === 'hijazkar') {
-    // Maqam Hijazkar: Nikriz on the ghammāz + a raised leading tone a semitone
-    // below the home (the upper Hijaz wrapping the octave). A compound — it also
-    // sets the sub-tonic (degree 1), unlike a normal upper-jins.
-    let next = applyUpperJins(state, 'nikriz', homeDegree, lowerId) // sets A, B♭ above the ghammāz
-    // raised leading tone: a semitone below the home degree's pitch
+    // Maqam Hijazkar: Nikriz on the ghammāz + the raised leading tone a
+    // semitone under the home (the Nikriz pentachord's 4th note wrapping the
+    // octave — over D-rooted Hijaz: G A B♭ C♯ arriving on the octave D). A
+    // compound — it also sets the sub-tonic (degree 1), unlike a normal
+    // upper-jins. Mandals are octave-global, so the C♯ lands on EVERY
+    // degree-1 string, below the home as well as above. That's deliberate
+    // (revisited 2026-07: classical Hijazkar carries the raised 7th under the
+    // tonic too — descents run D → C♯, not D → C).
+    // (Not the generic path because JINS's 'hijazkar' intervals describe the
+    // root-position jins, not this on-the-ghammāz treatment.)
+    let next = applyUpperJins(state, 'nikriz', homeDegree, lowerId) // A, B♭ above the ghammāz
     next = setMandal(next, 1, offsetOf(state, homeDegree) - 1)
     return next
   }

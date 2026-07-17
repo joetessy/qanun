@@ -24,6 +24,9 @@ describe('applyUpperJins (home-aware)', () => {
     expect(applyUpperJins(bayati, 'hijaz', 2, 'bayati').slice(0, 5)).toEqual(bayati.slice(0, 5))
   })
   it('Hijaz(home 2) + Hijazkar → Nikriz on the ghammāz + raised leading tone (C♯)', () => {
+    // The C♯ is octave-global (every degree-1 string), below the home as well
+    // as above — deliberate: classical Hijazkar carries the raised 7th under
+    // the tonic too, so descents run D → C♯, not D → C.
     const hijaz = [0, 2, 3, 6, 7, 9, 10.5]
     expect(applyUpperJins(hijaz, 'hijazkar', 2, 'hijaz')).toEqual([1, 2, 3, 6, 7, 9, 10])
   })
