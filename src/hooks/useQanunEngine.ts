@@ -542,6 +542,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     }
     const engine = await enginePromiseRef.current
     if (!engine.isStarted) await engine.start()
+    // Already started: an app-switch may have left the context suspended (see
+    // the visibility-recovery effect) — this pluck is a user gesture, the most
+    // reliable place to re-unlock it. No-op while running.
+    else await engine.resume()
   }, [])
 
   // ── P4a: recorder helpers ───────────────────────────────────────────────────
@@ -1205,6 +1209,63 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
     setStatus('idle')
   }, [videoRef, canvasRef, resetGestureState])
+
+  // Mobile app-switch recovery. Backgrounding the tab suspends the AudioContext
+  // (iOS reports a non-standard "interrupted" state) and freezes or ends the
+  // camera stream — and NEITHER recovers by itself: the engine's start() is
+  // latched, and a dead track presents no frames, so the video-frame-callback
+  // loop never fires again while status still reads 'running'. On return:
+  // resume the context, then revive the camera — reacquire the stream if its
+  // track ended, else re-play the paused element — and re-arm the frame loop.
+  useEffect(() => {
+    const onVisibilityChange = (): void => {
+      if (document.visibilityState !== 'visible') {
+        // Heading to the background: end any sustained hold now — the pinch or
+        // pointer driving it is long gone by the time the tab is back, and a
+        // held rashsh would otherwise resume ringing with the context.
+        holdingRef.current = null
+        audioRef.current?.holdStop()
+        return
+      }
+      void audioRef.current?.resume()
+      if (!runningRef.current) return
+      const video = videoRef.current
+      const canvas = canvasRef.current
+      if (!video || !canvas) return
+      const src = video.srcObject
+      const track = src instanceof MediaStream ? src.getVideoTracks()[0] : undefined
+      frameHandleRef.current?.cancel()
+      frameHandleRef.current = null
+      if (!track || track.readyState === 'ended') {
+        // The OS ended the track in the background — reacquire the stream.
+        // Permission is already granted, so no gesture is needed; on failure
+        // fall to the same playable 'no-camera' state as a failed start().
+        stopCamera({ video })
+        startCamera({ video })
+          .then(({ width, height }) => {
+            if (!runningRef.current) return
+            canvas.width = width
+            canvas.height = height
+            // A second recovery may have re-armed the loop while we awaited the
+            // camera — collapse to one before scheduling.
+            frameHandleRef.current?.cancel()
+            frameHandleRef.current = scheduleVideoFrame({ video, callback: tick })
+          })
+          .catch((err) => {
+            runningRef.current = false
+            setErrorMsg(describeCameraError(err))
+            setStatus('no-camera')
+          })
+        return
+      }
+      // Track survived, but the element may have been paused and the pending
+      // video-frame callback starved — kick both.
+      void video.play().catch(() => {})
+      frameHandleRef.current = scheduleVideoFrame({ video, callback: tick })
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [tick, videoRef, canvasRef])
 
   // Release renderer-side resources on unmount: the audio graph and the
   // MediaPipe landmarker's WASM. Both are lazily rebuilt on the next start().

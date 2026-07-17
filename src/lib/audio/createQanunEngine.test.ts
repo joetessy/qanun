@@ -138,7 +138,7 @@ describe('createQanunEngine — surface', () => {
     const { ToneMock } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     for (const fn of [
-      'start', 'dispose', 'pluck',
+      'start', 'resume', 'dispose', 'pluck',
       'holdStart', 'holdAlternate', 'holdStop',
       'setReverbEnabled', 'setReverbWet', 'setReverbSize', 'getSampleRate',
       'getRecorderTap'
@@ -162,6 +162,47 @@ describe('createQanunEngine — surface', () => {
     const { ToneMock } = makeMockTone()
     const e = createQanunEngine(ENGINE_ARGS(ToneMock))
     expect(e.getSampleRate()).toBe(48000)
+  })
+})
+
+// ─── resume (mobile app-switch recovery) ─────────────────────────────────────
+// Backgrounding the tab suspends the AudioContext (iOS: "interrupted") and
+// start() is latched — resume() is the re-unlock path on return to the
+// foreground / the next gesture.
+
+describe('createQanunEngine — resume', () => {
+  it('is a no-op before start() — never unlocks without the first gesture', async () => {
+    const { ToneMock } = makeMockTone()
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    await e.resume()
+    expect(ToneMock.start).not.toHaveBeenCalled()
+    expect(e.isStarted).toBe(false)
+  })
+
+  it('re-unlocks a suspended context after start()', async () => {
+    const base = makeMockTone()
+    const ToneMock = {
+      ...base.ToneMock,
+      getContext: vi.fn(() => ({ sampleRate: 48000, state: 'suspended' }))
+    }
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    await e.start()
+    expect(ToneMock.start).toHaveBeenCalledTimes(1)
+    await e.resume() // the app-switch left the context suspended
+    expect(ToneMock.start).toHaveBeenCalledTimes(2)
+  })
+
+  it('skips the redundant unlock while the context is already running', async () => {
+    const base = makeMockTone()
+    const ToneMock = {
+      ...base.ToneMock,
+      getContext: vi.fn(() => ({ sampleRate: 48000, state: 'running' }))
+    }
+    const e = createQanunEngine(ENGINE_ARGS(ToneMock))
+    await e.start()
+    await e.resume()
+    await e.resume() // resume rides every pluck — it must stay cheap
+    expect(ToneMock.start).toHaveBeenCalledTimes(1) // only the initial unlock
   })
 })
 

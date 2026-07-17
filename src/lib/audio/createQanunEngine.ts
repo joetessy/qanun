@@ -43,6 +43,7 @@ export interface QanunEngineOptions {
 
 export interface QanunEngine {
   start: () => Promise<void>
+  resume: () => Promise<void>
   dispose: () => void
   pluck: (args: { freqHz: number; velocity: number; time?: number; bloom?: boolean }) => void
   holdStart: (args: { freqHz: number; velocity: number; immediate?: boolean }) => void
@@ -293,6 +294,18 @@ export const createQanunEngine = ({
   }
 
   /**
+   * Re-unlock the context after a mobile app-switch: backgrounding suspends the
+   * AudioContext (iOS reports a non-standard "interrupted" state) and it does
+   * NOT come back on its own — start() is latched, so without this every strike
+   * after returning is silent. No-op before the first start() (the unlock
+   * gesture hasn't happened yet) and cheap while already running.
+   */
+  const resume = async (): Promise<void> => {
+    if (!started) return
+    if (Tone.getContext().state !== 'running') await Tone.start()
+  }
+
+  /**
    * Pluck a note: fires one sampler attack per COURSE_CENTS offset (triple-course
    * bloom) — 3 separate triggerAttacks at detuned frequencies so the unison-course
    * shimmer is preserved.
@@ -479,6 +492,7 @@ export const createQanunEngine = ({
 
   return {
     start,
+    resume,
     dispose,
     pluck,
     holdStart,
