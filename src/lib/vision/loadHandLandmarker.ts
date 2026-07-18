@@ -15,7 +15,7 @@ export const loadHandLandmarker = async (): Promise<HandLandmarker> => {
   return HandLandmarker.createFromOptions(vision, {
     baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
     runningMode: 'VIDEO',
-    // Classical theremin mapping: right hand = pitch + pinch gate, left hand = volume.
+    // Two hands, symmetric roles — both just pluck (see findHandedness.ts).
     numHands: 2,
     // Lower detection = faster re-acquisition when a hand returns to frame.
     minHandDetectionConfidence: 0.4,

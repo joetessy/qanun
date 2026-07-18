@@ -38,7 +38,7 @@ export const applyUpperJins = (
   if (ghammaz < 1 || ghammaz > DEGREE_COUNT) return state
   const gOffset = offsetOf(state, ghammaz)
   const upper = jinsById(upperId)
-  let next = state.slice() as unknown as MandalState
+  let next: MandalState = state.slice()
   for (let i = 1; i < upper.intervals.length; i++) {
     const deg = ghammaz + i
     if (deg > DEGREE_COUNT) break

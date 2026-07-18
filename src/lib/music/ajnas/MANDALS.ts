@@ -37,12 +37,6 @@ export const MANDAL_DEGREES: readonly MandalDegree[] = [
 // Default tuning: Rast on the tonic.
 export const DEFAULT_RAST_STATE: MandalState = [0, 2, 3.5, 5, 7, 9, 10.5]
 
-// Default tuning for Qanun (mandal) mode: the major scale (ʿAjam) on the tonic —
-// the all-natural scale. Each degree sits at the top (sharpest) of its positions
-// except the 4th, which holds the natural 4 with a raised 4 (F♯) available above
-// it for Hijaz/Nikriz. You flip mandals down from here (or the 4th up).
-export const MAJOR_STATE: MandalState = [0, 2, 4, 5, 7, 9, 11]
-
 export const positionsForDegree = (degree: number): readonly number[] =>
   MANDAL_DEGREES[degree - 1].positions
 

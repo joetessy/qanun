@@ -1,8 +1,7 @@
+import { clamp } from '../math/clamp'
+
 export const BPM_MIN = 30
 export const BPM_MAX = 300
-
-export const clamp = (value: number, lo: number, hi: number): number =>
-  Math.min(hi, Math.max(lo, value))
 
 const median = (values: readonly number[]): number => {
   const sorted = [...values].sort((a, b) => a - b)

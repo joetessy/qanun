@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import type { UpperJinsOption } from '../lib/music/sayr/upperJins'
+import { UPPER_JINS_KEYS } from '../lib/ui/keymap'
 
 interface UpperJinsSwitcherProps {
   options: UpperJinsOption[]
@@ -7,7 +8,8 @@ interface UpperJinsSwitcherProps {
   onSelect: (id: string) => void
 }
 
-const KEYS = ['1', '2', '3', '4', '5']
+// Shared keymap table (uppercased for display) — can't drift from the hook.
+const KEYS = UPPER_JINS_KEYS.map((k) => k.toUpperCase())
 
 // memo: re-renders only when the jins selection changes (options is memoized in
 // the hook), not on every per-pluck engine state push.

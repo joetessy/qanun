@@ -1,14 +1,17 @@
 import { memo } from 'react'
 import { MANDAL_DEGREES, offsetOf } from '../lib/music/ajnas/MANDALS'
 import { degreeNoteLabel } from '../lib/music/degreeLabel'
+import { QANUN_LOWER_KEYS, QANUN_RAISE_KEYS } from '../lib/ui/keymap'
 import type { MandalState } from '../lib/music/types'
 
 // Widest position set across the degrees — when expanded, shorter levers pad with
 // spacers at the top so the highest pitch of every column lines up along the bottom.
 const SLOTS = Math.max(...MANDAL_DEGREES.map((d) => d.positions.length))
 // Two directional key rows, one note per column: top key lowers, bottom raises.
-const RAISE_KEYS = ['Q', 'W', 'E', 'R', 'T', 'Y', 'U']
-const LOWER_KEYS = ['1', '2', '3', '4', '5', '6', '7']
+// Shared keymap tables (uppercased for display) so labels can't drift from the
+// engine's keydown handler.
+const RAISE_KEYS = QANUN_RAISE_KEYS.map((k) => k.toUpperCase())
+const LOWER_KEYS = QANUN_LOWER_KEYS.map((k) => k.toUpperCase())
 
 // Split a note label into its letter + accidental and tag the accidental, so CSS
 // can pull in the ♭/♯ glyphs' right-side bearing — otherwise an accidental note
@@ -47,7 +50,7 @@ export const MandalRail = memo(({ mandalState, tonicMidi, onSetMandal, onStep, e
             className="mandal-step mandal-lower"
             onClick={() => onStep(degree, -1)}
             aria-label={`Lower degree ${degree}`}
-            title="lower (hold to glide)"
+            title={`lower a quarter-tone (${LOWER_KEYS[degree - 1]}; hold key to glide)`}
           >
             ↓ {LOWER_KEYS[degree - 1]}
           </button>
@@ -88,7 +91,7 @@ export const MandalRail = memo(({ mandalState, tonicMidi, onSetMandal, onStep, e
             className="mandal-step mandal-raise"
             onClick={() => onStep(degree, 1)}
             aria-label={`Raise degree ${degree}`}
-            title="raise (hold to glide)"
+            title={`raise a quarter-tone (${RAISE_KEYS[degree - 1]}; hold key to glide)`}
           >
             ↑ {RAISE_KEYS[degree - 1]}
           </button>

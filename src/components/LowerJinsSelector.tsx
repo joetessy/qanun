@@ -1,7 +1,9 @@
 import { memo } from 'react'
 import { lowerJinsList } from '../lib/music/sayr/lowerJins'
+import { LOWER_JINS_KEYS } from '../lib/ui/keymap'
 
-const KEYS = ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O']
+// Shared keymap table (uppercased for display) — can't drift from the hook.
+const KEYS = LOWER_JINS_KEYS.map((k) => k.toUpperCase())
 
 interface LowerJinsSelectorProps {
   lowerJins: string

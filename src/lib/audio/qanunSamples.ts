@@ -21,26 +21,34 @@
  * notes audibly flams or even fuses them into unison, differently per string
  * pair. The shipped files are trimmed (attack − 15 ms pre-roll, 5 ms fade-in);
  * re-run the same trim on any replacement samples.
+ *
+ * FORMAT: mono AAC (.m4a, 96 kbps) — ~5x smaller than the original 16-bit WAVs,
+ * which gates time-to-first-sound. AAC adds ~2112 samples (~48 ms) of encoder
+ * priming, but the m4a edit list tells decoders to skip it: verified via
+ * decodeAudioData in Chromium that the decoded onset is sample-identical to
+ * the WAV original (and ffmpeg decode agrees). If a target browser ever
+ * ignores the edit list, the priming is UNIFORM across all 18 files, so it
+ * adds constant latency — not the per-string skew described above.
  */
 export const QANUN_SAMPLE_BASE_URL = '/samples/qanun/'
 
 export const QANUN_SAMPLE_URLS: Record<string, string> = {
-  'F3':  'qanun-F3.wav',
-  'G3':  'qanun-G3.wav',
-  'A3':  'qanun-A3.wav',
-  'B3':  'qanun-B3.wav',
-  'C#4': 'qanun-Cs4.wav',
-  'D#4': 'qanun-Ds4.wav',
-  'F4':  'qanun-F4.wav',
-  'G4':  'qanun-G4.wav',
-  'A4':  'qanun-A4.wav',
-  'B4':  'qanun-B4.wav',
-  'C#5': 'qanun-Cs5.wav',
-  'D#5': 'qanun-Ds5.wav',
-  'F5':  'qanun-F5.wav',
-  'G5':  'qanun-G5.wav',
-  'A5':  'qanun-A5.wav',
-  'B5':  'qanun-B5.wav',
-  'C#6': 'qanun-Cs6.wav',
-  'D#6': 'qanun-Ds6.wav',
+  'F3':  'qanun-F3.m4a',
+  'G3':  'qanun-G3.m4a',
+  'A3':  'qanun-A3.m4a',
+  'B3':  'qanun-B3.m4a',
+  'C#4': 'qanun-Cs4.m4a',
+  'D#4': 'qanun-Ds4.m4a',
+  'F4':  'qanun-F4.m4a',
+  'G4':  'qanun-G4.m4a',
+  'A4':  'qanun-A4.m4a',
+  'B4':  'qanun-B4.m4a',
+  'C#5': 'qanun-Cs5.m4a',
+  'D#5': 'qanun-Ds5.m4a',
+  'F5':  'qanun-F5.m4a',
+  'G5':  'qanun-G5.m4a',
+  'A5':  'qanun-A5.m4a',
+  'B5':  'qanun-B5.m4a',
+  'C#6': 'qanun-Cs6.m4a',
+  'D#6': 'qanun-Ds6.m4a',
 }

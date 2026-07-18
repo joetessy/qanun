@@ -3,6 +3,7 @@
 // No native deps — works in any browser that supports navigator.requestMIDIAccess.
 
 import { freqToNoteBend, bendToPitchBend14, nextMpeChannel } from './microtonal'
+import { clamp } from '../math/clamp'
 
 // ---------------------------------------------------------------------------
 // Minimal Web MIDI API typings (avoids relying on TS lib having them).
@@ -67,7 +68,6 @@ const NOTE_OFF_DELAY_MS = 600
 /** MPE member channels: 1..15 (channel 16 is reserved as the MPE master). */
 const MPE_CHANNELS = Array.from({ length: 15 }, (_, i) => i + 1)
 
-const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v))
 const clampMidi = (v: number): number => clamp(Math.round(v), 0, 127)
 const clampVelocity = (v: number): number => clamp(Math.round(v * 127), 1, 127)
 
@@ -188,13 +188,19 @@ export const createMidiOut = (opts: MidiOutOptions = {}): MidiOutEngine => {
   }
 
   const stop = (): void => {
+    // Flush sounding notes before dropping the output — their scheduled
+    // note-offs can no longer send once output is null, and a sustaining
+    // patch would otherwise ring forever.
+    activeNotes.forEach(({ note }, ch) => {
+      send([STATUS_NOTE_OFF | ch, note, 0])
+    })
+    activeNotes.clear()
     if (access) {
       access.onstatechange = null
       access = null
     }
     output = null
     outputId = null
-    activeNotes.clear()
   }
 
   return {

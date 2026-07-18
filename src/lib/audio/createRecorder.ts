@@ -11,10 +11,7 @@
 import workletUrl from './recorder-worklet.js?url'
 import EncoderWorker from './wav-encoder.worker.ts?worker'
 
-// 'saving' is owned by the consumer (the hook) — set during the post-encode
-// window when the file is being written via the platform save dialog. The
-// recorder itself only transitions through idle/recording/encoding.
-export type RecorderState = 'idle' | 'recording' | 'encoding' | 'saving'
+export type RecorderState = 'idle' | 'recording' | 'encoding'
 
 export interface CreateRecorderOptions {
   audioContext: AudioContext
@@ -153,11 +150,17 @@ export const createRecorder = ({
   const start = async (): Promise<void> => {
     if (state !== 'idle') throw new Error(`createRecorder.start: bad state ${state}`)
     await ensureWorkletRegistered(audioContext)
+    // Re-check after the await: a second start() racing across the first
+    // take's addModule() would otherwise connect a second worklet node that
+    // cleanupWorklet() can never disconnect. Resolve silently — the hook
+    // re-checks getState() after awaiting start() and treats a non-recording
+    // outcome as "didn't start".
+    if (state !== 'idle') return
     // Fresh per-take buffer (virtual until written — pages commit as recorded).
     buffer.channels = Array.from({ length: 2 }, () => new Float32Array(capacityFrames))
     buffer.lengthFrames = 0
     buffer.overflowFired = false
-    workletNode = new AudioWorkletNode(audioContext, 'theremin-recorder', {
+    workletNode = new AudioWorkletNode(audioContext, 'qanun-recorder', {
       numberOfInputs: 1,
       numberOfOutputs: 0,
       channelCount: 2,

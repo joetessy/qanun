@@ -7,7 +7,8 @@ import { midiName } from '../lib/music/midiName'
 import { DETUNE_LIMIT_CENTS } from '../lib/music/buildField'
 import { formatCents } from '../lib/ui/formatCents'
 import { DEFAULT_TREMOLO_HZ, TREMOLO_HZ_MIN, TREMOLO_HZ_MAX } from '../lib/audio/tremolo'
-import { BPM_MIN, BPM_MAX, clamp } from '../lib/practice/tapTempo'
+import { BPM_MIN, BPM_MAX } from '../lib/practice/tapTempo'
+import { clamp } from '../lib/math/clamp'
 
 interface ControlsProps {
   // Qanun mode has no fixed tonic (you root wherever you play), so the tonic
@@ -180,7 +181,7 @@ export const Controls = memo(({
               cancel
             </button>
             {/* is-live adds the pulsing red dot — only while actually recording,
-                not for the transient encoding/saving readouts below. */}
+                not for the transient encoding readout below. */}
             <span className="rec-elapsed is-live">{recordingElapsedDisplay}</span>
           </>
         ) : (

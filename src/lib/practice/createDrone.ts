@@ -1,5 +1,6 @@
 import * as ToneNamespace from 'tone'
 import { midiToFreq } from '../music/midiToFreq'
+import { clamp01 } from '../music/clamp01'
 
 export interface DroneOptions {
   // Injectable Tone namespace so tests can stub it. Defaults to the real `tone`.
@@ -34,7 +35,7 @@ export const createDrone = ({
 }: DroneOptions): DroneEngine => {
   let enabled = false
   let started = false
-  let targetGain = Math.min(1, Math.max(0, initialGain))
+  let targetGain = clamp01(initialGain)
 
   // Allocate the chain: osc → gain → output. Gain starts at 0 so we don't
   // hear anything until setEnabled(true).
@@ -46,7 +47,7 @@ export const createDrone = ({
   osc.frequency.rampTo(midiToFreq(initialTonicMidi), freqRamp)
 
   const setGain = (value: number): void => {
-    targetGain = Math.min(1, Math.max(0, value))
+    targetGain = clamp01(value)
     if (enabled) gain.gain.rampTo(targetGain, gainRamp)
   }
 

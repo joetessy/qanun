@@ -40,4 +40,4 @@ class RecorderProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('theremin-recorder', RecorderProcessor)
+registerProcessor('qanun-recorder', RecorderProcessor)

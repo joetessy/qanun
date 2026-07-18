@@ -537,6 +537,7 @@
 .controls-drawer.is-open {
   max-height: 380px;
   opacity: 1;
+  overflow-y: auto;
 }
 /* Closed, the drawer is `inert` (see Qanun.tsx) — collapsed by max-height but
    still display:block so the open/close transition can run. */
@@ -987,7 +988,6 @@
   font-weight: 600;
   letter-spacing: 0;
   color: var(--ink-faint);
-  opacity: 0.7;
   margin-right: 1px;
 }
 .jins-chip.is-active .jins-key,
@@ -1419,7 +1419,7 @@
 
   /* Ensure the controls drawer can expand enough to show two rows of controls. */
   .controls-drawer.is-open {
-    max-height: 280px;
+    max-height: min(60vh, 480px);
   }
 }
 
@@ -1564,6 +1564,12 @@
   .studio-slider { height: 6px; }
   .studio-slider::-webkit-slider-thumb { width: 20px; height: 20px; }
   .studio-slider::-moz-range-thumb { width: 20px; height: 20px; }
+  /* Header controls: same growth-toward-44px treatment as the chips above. */
+  .help-btn { width: 34px; height: 34px; }
+  .mode-toggle span { padding: 6px 9px; }
+  .levers-toggle,
+  .controls-toggle { padding: 8px 14px; }
+  .detune-readout { padding: 6px 8px; }
 }
 
 /* Reduced motion: still-frame the polish animations added above (the hover

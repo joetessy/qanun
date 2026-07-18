@@ -1,5 +1,6 @@
 import * as ToneNamespace from 'tone'
-import { BPM_MAX, BPM_MIN, clamp, tapTempoBpm } from './tapTempo'
+import { BPM_MAX, BPM_MIN, tapTempoBpm } from './tapTempo'
+import { clamp } from '../math/clamp'
 
 // Frequencies of the synthesised fallback click (used when no .wav files are
 // loaded). Higher pitch = downbeat, lower = offbeat. Plenty distinguishable

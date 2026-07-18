@@ -49,8 +49,8 @@ export const Qanun = () => {
           type="button"
           className="mode-toggle"
           onClick={() => engine.setModMode(engine.modMode === 'qanun' ? 'jins' : 'qanun')}
-          aria-label={`Modulation mode: ${engine.modMode}. Switch with Tab.`}
-          title="Switch modulation mode (Tab)"
+          aria-label={`Modulation mode: ${engine.modMode}. Switch with M.`}
+          title="Switch modulation mode (M)"
         >
           <span className={engine.modMode === 'jins' ? 'is-active' : ''}>jins</span>
           <span className={engine.modMode === 'qanun' ? 'is-active' : ''}>qanun</span>
@@ -94,6 +94,21 @@ export const Qanun = () => {
             </div>
           )}
         </div>
+        {/* Camera toggle: turn a running webcam off, or (re)start hand tracking —
+            doubling as the retry affordance from the no-camera notice. stop()
+            returns to the idle play cover (there's no camera-less "keep playing"
+            transition from running today). Hidden while loading/error so it can't
+            race an in-flight start. */}
+        {(engine.status === 'running' || engine.status === 'idle' || engine.status === 'no-camera') && (
+          <button
+            type="button"
+            className="controls-toggle"
+            aria-label={engine.status === 'running' ? 'Turn the camera off' : 'Turn the camera on'}
+            onClick={engine.status === 'running' ? engine.stop : () => { void engine.start() }}
+          >
+            {engine.status === 'running' ? 'cam off' : 'cam on'}
+          </button>
+        )}
         <button
           type="button"
           className="help-btn"
@@ -140,7 +155,12 @@ export const Qanun = () => {
         />
         {/* Play / start cover — a direct soundboard child so it sits ABOVE the
             strings (z-index), keeping the play button clickable. Self-hides when running. */}
-        <StageCover status={engine.status} errorMsg={engine.errorMsg} onStart={engine.start} />
+        <StageCover
+          status={engine.status}
+          errorMsg={engine.errorMsg}
+          onStart={engine.start}
+          onStartWithoutCamera={engine.startWithoutCamera}
+        />
         {/* First-run onboarding guide — overlaid above everything, dismissible. */}
         {showOnboarding && <Onboarding onDismiss={dismissOnboarding} />}
       </div>

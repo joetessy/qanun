@@ -505,7 +505,7 @@ export const createQanunEngine = ({
     getSampleRate,
     getRecorderTap,
     get sumBus() {
-      return sumBus as unknown as Gain
+      return sumBus
     },
     get isStarted() {
       return started

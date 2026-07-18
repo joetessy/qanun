@@ -1,10 +1,4 @@
-import { NOTE_NAMES } from './NOTE_NAMES'
-
-// Flat spelling of the 12 pitch classes — Arabic notation favours flats. Used
-// for ABSOLUTE readouts (the jins "home" note) so they match the tonic control
-// and last-note display (both spell with flats via midiName). The relative lever
-// labels keep NOTE_NAMES, where a sharp reads naturally for a raised lever.
-const FLAT_NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'] as const
+import { NOTE_NAMES, FLAT_NAMES } from './NOTE_NAMES'
 
 // The semitone offset of each scale degree in a major (natural) scale.
 // Index 0 = degree 1, index 6 = degree 7.

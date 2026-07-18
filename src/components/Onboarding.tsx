@@ -40,7 +40,8 @@ export const Onboarding = ({ onDismiss }: OnboardingProps) => {
                 the bottom: move your hand <em>up or down</em> to pick one, then pinch
                 your <em>index</em> finger to the thumb to pluck it. Sweep up and down
                 across the strings to strum. No camera? Click a string to pluck, or drag
-                up or down to strum.
+                up or down to strum. Or play from the keyboard: <em>A&ndash;L</em> run
+                up the scale, <em>Z</em> / <em>X</em> drop or raise the octave.
               </span>
             </div>
           </li>
@@ -63,7 +64,7 @@ export const Onboarding = ({ onDismiss }: OnboardingProps) => {
                 Pick a <em>lower jins</em> (the chips, or keys <em>Q&ndash;O</em>) to
                 set the home note, then an <em>upper jins</em> (keys <em>1&ndash;5</em>)
                 to modulate on the ghammāz. The readout names the maqam you build.
-                Or press <em>Tab</em> for <em>qanun</em> mode and raise / lower each
+                Or press <em>M</em> for <em>qanun</em> mode and raise / lower each
                 note with two key rows (<em>Q&ndash;U</em> raise, <em>1&ndash;7</em> lower).
                 Open <em>tune</em> for the key, recording, drone, metronome &amp; MIDI.
               </span>

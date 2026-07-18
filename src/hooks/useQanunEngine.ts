@@ -9,6 +9,7 @@ import { degreeNoteLabel } from '../lib/music/degreeLabel'
 import { applyLowerJins, lowerJinsById, lowerJinsList, maqamNameFor } from '../lib/music/sayr/lowerJins'
 import { applyUpperJins, upperOptions, ghammazFieldDegree, type UpperJinsOption } from '../lib/music/sayr/upperJins'
 import { courseWithHysteresis, coursesCrossed, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
+import { LOWER_JINS_KEYS, UPPER_JINS_KEYS, QANUN_RAISE_KEYS, QANUN_LOWER_KEYS, PLAY_KEYS } from '../lib/ui/keymap'
 import { createPinchPlay } from '../lib/gesture/pinchPlay'
 import { resolveActiveFinger, type ActiveFinger } from '../lib/gesture/activeFinger'
 // Audio modules that pull in Tone.js are imported DYNAMICALLY (inside the
@@ -17,11 +18,11 @@ import { resolveActiveFinger, type ActiveFinger } from '../lib/gesture/activeFin
 // compile time, so type-only imports here are free.
 import type { QanunEngine } from '../lib/audio/createQanunEngine'
 import { DEFAULT_TREMOLO_HZ } from '../lib/audio/tremolo'
-import { createRecorder, type Recorder, type RecorderState } from '../lib/audio/createRecorder'
-import { formatElapsed } from '../lib/audio/formatElapsed'
-import type { DroneEngine } from '../lib/practice/createDrone'
-import type { MetronomeEngine } from '../lib/practice/createMetronome'
-import { createMidiOut, type MidiOutEngine, type MidiSupportState, type MidiOutputInfo } from '../lib/midi/createMidiOut'
+import type { RecorderState } from '../lib/audio/createRecorder'
+import type { MidiSupportState, MidiOutputInfo } from '../lib/midi/createMidiOut'
+import { useRecorder } from './useRecorder'
+import { usePracticeTools } from './usePracticeTools'
+import { useMidiOut } from './useMidiOut'
 import { createOneEuroFilter } from '../lib/oneEuro/createOneEuroFilter'
 import { findHandedness } from '../lib/vision/findHandedness'
 import { loadHandLandmarker } from '../lib/vision/loadHandLandmarker'
@@ -119,6 +120,9 @@ export interface UseQanunEngine {
   // ring is the cursor, so the UI hides the OS pointer while this is on.
   handTracking: boolean
   start: () => Promise<void>
+  // Unlock audio and go straight to the playable mouse+keyboard 'no-camera'
+  // state without ever requesting the webcam.
+  startWithoutCamera: () => Promise<void>
   stop: () => void
   setTonic: (midi: number) => void
   setDetuneCents: (cents: number) => void
@@ -202,39 +206,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     buildField({ tonicMidi: DEFAULT_TONIC_MIDI, mandalState: DEFAULT_RAST_STATE, ...FIELD_WINDOW })
   )
 
-  // P4a: recording state (idle by default — recorder is lazily created).
-  const [recordingState, setRecordingState] = useState<RecorderState>('idle')
-  const [recordingElapsedFrames, setRecordingElapsedFrames] = useState(0)
-
   // Tremolo pulse (Hz) — one rate shared by the single-note rashsh and the
   // two-note trill. Ref mirrors state so the lazily-created engine can pick up
   // a value chosen before first interaction.
   const [tremoloHz, setTremoloHzState] = useState(DEFAULT_TREMOLO_HZ)
   const tremoloHzRef = useRef(DEFAULT_TREMOLO_HZ)
-
-  // P4a: drone state (off by default).
-  const [droneEnabled, setDroneEnabledState] = useState(false)
-  const [droneGain, setDroneGainState] = useState(0.25)
-
-  // P4a: metronome state (off by default, 120 BPM default).
-  const [metronomeEnabled, setMetronomeEnabledState] = useState(false)
-  const [metronomeBpm, setMetronomeBpmState] = useState(120)
-  // Ref that mirrors metronomeBpm so ensureMetronome can read the initial BPM
-  // without taking it as a dep (which would cause callback-identity churn on
-  // every BPM change before the metronome is even created).
-  const metronomeBpmRef = useRef(120)
-
-  // P4b: MIDI out state (off by default).
-  const [midiEnabled, setMidiEnabledState] = useState(false)
-  const [midiSupport, setMidiSupportState] = useState<MidiSupportState>('unknown')
-  const [midiOutputs, setMidiOutputsState] = useState<readonly MidiOutputInfo[]>([])
-  const [midiOutputId, setMidiOutputIdState] = useState<string | null>(null)
-  const [midiBendRange, setMidiBendRangeState] = useState(2)
-  const midiRef = useRef<MidiOutEngine | null>(null)
-  // Mirrors midiEnabled for the frame loop: tick re-arms itself with the closure
-  // it was started with, so reading the STATE there would pin the value from
-  // start time — a mid-session MIDI toggle would silently not take effect.
-  const midiEnabledRef = useRef(false)
 
   // Hot refs (read inside the frame loop without re-subscribing).
   const tonicRef = useRef(DEFAULT_TONIC_MIDI)
@@ -245,7 +221,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const homeDegreeRef = useRef(1)
   const modeRef = useRef<ModMode>('jins')
   // Qanun mode keeps its own tuning so toggling Jins ↔ Qanun never loses either
-  // side's work; it seeds from the major scale (ʿAjam).
+  // side's work; it seeds from the Rast default (DEFAULT_RAST_STATE), and
+  // resetMandals returns to the same state.
   const qanunStateRef = useRef<MandalState>(DEFAULT_RAST_STATE)
   // Computer-keyboard play layer: which octave the home-row keys play in (0 = from
   // the tonic). pluckCourseRef is the latest pluckCourse, read inside the keydown
@@ -263,11 +240,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // Sample rate is exposed as state (not a ref) so the elapsed display can read it
   // during render. It is set once when the engine is first started and never changes.
   const [sampleRate, setSampleRate] = useState(48000)
-  const recorderRef = useRef<Recorder | null>(null)
-  const droneRef = useRef<DroneEngine | null>(null)
-  const metronomeRef = useRef<MetronomeEngine | null>(null)
-  // Timer for polling elapsed frames while recording.
-  const elapsedTimerRef = useRef<number | null>(null)
   const frameHandleRef = useRef<FrameHandle | null>(null)
   const runningRef = useRef(false)
   const frameCounterRef = useRef(0)
@@ -277,6 +249,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // tick loop merges it into the per-frame hover set so the camera loop doesn't
   // stomp the held string's highlight the moment no hand hovers it.
   const holdingRef = useRef<number | null>(null)
+  // Expires the highlight + pluck glow for camera-less plucks: the tick loop
+  // owns expiry while the camera runs, but keyboard plucks in idle/'no-camera'
+  // have no pointerup either, so without this the last-played string stays lit.
+  const pluckGlowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // INDEX pinch = melodic PLUCK only (tremolo is the middle finger's job; the
   // strum below handles movement while closed). Thresholds are PALM-WIDTH
@@ -319,27 +295,79 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const handGraceRef = useRef(0)
   const lastHandTrackingRef = useRef(false)
 
+  // Stable accessor for the live audio engine — passed to the practice/recorder
+  // hooks so they can reach the engine (sumBus, recorder tap) without taking
+  // audioRef as a dependency.
+  const getEngine = useCallback((): QanunEngine | null => audioRef.current, [])
+
+  /** Lazily imports, creates + starts the audio engine on first user
+   *  interaction. The dynamic import is what keeps Tone.js out of the eager
+   *  bundle; the module is cached by the browser after the first call. A
+   *  failed import clears the cached promise so a later gesture can retry. */
+  const ensureAudioEngine = useCallback(async (): Promise<void> => {
+    if (!enginePromiseRef.current) {
+      enginePromiseRef.current = import('../lib/audio/createQanunEngine').then(({ createQanunEngine }) => {
+        const engine = createQanunEngine()
+        audioRef.current = engine
+        setSampleRate(engine.getSampleRate())
+        // The slider may have moved before first interaction — read the ref, not
+        // state, so this callback's identity never churns with the value.
+        engine.setTremoloHz(tremoloHzRef.current)
+        return engine
+      })
+      enginePromiseRef.current.catch(() => { enginePromiseRef.current = null })
+    }
+    const engine = await enginePromiseRef.current
+    if (!engine.isStarted) await engine.start()
+    // Already started: an app-switch may have left the context suspended (see
+    // the visibility-recovery effect) — this pluck is a user gesture, the most
+    // reliable place to re-unlock it. No-op while running.
+    else await engine.resume()
+  }, [])
+
+  // The drone follows the maqam's home note (not the fixed key), carrying the
+  // global fine-tune offset (cents → fractional MIDI) so it never clashes with
+  // the detuned strings. Refs are written before every recompute call, so this
+  // reads the same home-note pitch recompute derives inline.
+  const getDroneTonicMidi = useCallback((): number =>
+    tonicRef.current + offsetOf(mandalRef.current, homeDegreeRef.current) + detuneCentsRef.current / 100
+  , [])
+
+  // P4a/P4b clusters, composed out of the hot tracking loop. emitMidi must stay
+  // STABLE (useMidiOut returns it with an empty dep array) — the frame loop and
+  // soundCourse list it in their deps.
+  const recorder = useRecorder({ ensureAudioEngine, getEngine, sampleRate })
+  const practice = usePracticeTools({ ensureAudioEngine, getEngine, getDroneTonicMidi })
+  const midi = useMidiOut()
+  const { setDroneTonic } = practice
+  const { emitMidi } = midi
+
   const recompute = useCallback((next: MandalState, nextTonic: number): void => {
     const detune = detuneCentsRef.current
     const field = buildField({ tonicMidi: nextTonic, mandalState: next, detuneCents: detune, ...FIELD_WINDOW })
     coursesRef.current = field
     setCourses(field)
-    const id = identifyAjnas(next)
     const home = homeDegreeRef.current
     const homeNote = degreeNoteLabel({ tonicMidi: nextTonic, degree: home, offset: offsetOf(next, home), flats: true })
-    // The maqam reading is only shown in Jins mode; Qanun mode hides that cell
-    // (the same mandals are an ambiguous maqam without a fixed root). Keeping the
-    // identify here is harmless — the value just isn't displayed in Qanun mode.
-    setReading((r) => ({ ...r, maqamName: id.maqamName, homeNote }))
+    // The maqam cell is only SHOWN in Jins mode, where the name must come from
+    // the explicit lower+upper selection — identifyAjnas reads the raw
+    // (Rast-collection) scale and can misname a home-anchored maqam (Bayati
+    // identifies as Rast) or fail entirely (Saba → "custom"), which used to
+    // silently overwrite the correct name on any tonic/fine-tune change. The
+    // identify fallback only serves Qanun mode, where the cell is hidden anyway.
+    const maqamName = modeRef.current === 'jins'
+      ? maqamNameFor(lowerJinsRef.current, upperJinsRef.current)
+      : identifyAjnas(next).maqamName
+    setReading((r) => ({ ...r, maqamName, homeNote }))
     // The drone follows the maqam's home note (not the fixed key), carrying the
     // same fine-tune offset (cents → fractional MIDI) so it never clashes with
-    // the detuned strings.
-    droneRef.current?.setTonic(nextTonic + offsetOf(next, home) + detune / 100)
-  }, [])
+    // the detuned strings. No-op until the drone is lazily created.
+    setDroneTonic(nextTonic + offsetOf(next, home) + detune / 100)
+  }, [setDroneTonic])
 
   // Pick a lower jins: load its scale, re-anchor the home tonic to that jins's
-  // conventional degree, reset to its default upper, then OVERRIDE the readout
-  // with the explicit maqam name. The override is what makes "Bayati · D" show
+  // conventional degree, reset to its default upper. recompute derives the
+  // maqam name from these refs (they're written first), so "Bayati · D" shows
   // correctly even though identify reads the raw (Rast-collection) scale.
   const setLowerJins = useCallback((id: string): void => {
     const { mandalState: scale, homeDegree: home } = applyLowerJins(id)
@@ -353,11 +381,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     mandalRef.current = scale
     setMandalStateRaw(scale)
     recompute(scale, tonicRef.current)
-    setReading((r) => ({ ...r, maqamName: maqamNameFor(id, up) }))
   }, [recompute])
 
-  // Pick an upper jins: modulate on the ghammāz of the current lower jins, then
-  // override the readout name (identify can't name the modulated collection).
+  // Pick an upper jins: modulate on the ghammāz of the current lower jins.
+  // recompute names the result from the selection refs (written first).
   const setUpperJins = useCallback((id: string): void => {
     const next = applyUpperJins(mandalRef.current, id, homeDegreeRef.current, lowerJinsRef.current)
     upperJinsRef.current = id
@@ -365,7 +392,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     mandalRef.current = next
     setMandalStateRaw(next)
     recompute(next, tonicRef.current)
-    setReading((r) => ({ ...r, maqamName: maqamNameFor(lowerJinsRef.current, id) }))
   }, [recompute])
 
   const setTonic = useCallback((midi: number): void => {
@@ -415,7 +441,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       mandalRef.current = restored
       setMandalStateRaw(restored)
       recompute(restored, tonicRef.current)
-      setReading((r) => ({ ...r, maqamName: maqamNameFor(lowerJinsRef.current, upperJinsRef.current) }))
     }
   }, [recompute])
 
@@ -452,36 +477,28 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     recompute(DEFAULT_RAST_STATE, tonicRef.current)
   }, [recompute])
 
-  // Keyboard modulation. Tab toggles Jins ↔ Qanun mode. In Jins mode: Q W E R T Y
+  // Keyboard modulation. M toggles Jins ↔ Qanun mode (Tab is left alone so
+  // native keyboard focus traversal keeps working). In Jins mode: Q W E R T Y
   // U I O pick the lower jins, 1 2 3 4 5 the upper jins. In Qanun mode two stacked
   // key rows move the levers directionally: 1 2 3 4 5 6 7 raise C..B a quarter-tone,
   // Q W E R T Y U lower them (hold to glide — key repeat — clamped at the ends); 0 /
-  // Backspace resets to Rast. Ignored while typing in a field or (except Tab) when
-  // a modifier is held.
+  // Backspace resets to Rast. Ignored while typing in a field or when a modifier
+  // is held. Key tables live in lib/ui/keymap so the UI labels can't drift.
   useEffect(() => {
-    const LOWER_KEYS = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o']
-    const UPPER_KEYS = ['1', '2', '3', '4', '5']
-    // Qanun mode: two adjacent rows, one quarter-tone step per press, degree d =
-    // d-1. Raise on the Q row, lower on the number row directly above it.
-    const QANUN_RAISE = ['q', 'w', 'e', 'r', 't', 'y', 'u'] // C..B up
-    const QANUN_LOWER = ['1', '2', '3', '4', '5', '6', '7'] // C..B down
-    // Computer-keyboard play layer (both modes): the home row plays the scale up
-    // from the tonic; Z / X drop / raise the octave. The tonic course sits at index
+    // The home-row play layer: the tonic course sits at index
     // FIELD_LEADING_TONES (the full octave below it comes first in the field), so
     // 'a' still plays the tonic (C4 at the default tonic) regardless of that reach.
-    const PLAY_KEYS = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', "'"]
     const onKey = (e: KeyboardEvent): void => {
       const t = e.target as HTMLElement | null
       const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
-      // Tab flips modes — claimed before the modifier/field guards so it works
-      // from anywhere on the instrument (but not while typing in the drawer).
-      if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey && !inField) {
-        e.preventDefault()
-        setModMode(modeRef.current === 'qanun' ? 'jins' : 'qanun')
-        return
-      }
       if (e.metaKey || e.ctrlKey || e.altKey || inField) return
       const key = e.key.toLowerCase()
+      // M flips modes — one press per keydown (skip auto-repeat).
+      if (key === 'm') {
+        if (!e.repeat) setModMode(modeRef.current === 'qanun' ? 'jins' : 'qanun')
+        e.preventDefault()
+        return
+      }
       // Octave shift (Z down / X up). Skip auto-repeat so a held key steps once.
       if (key === 'z' || key === 'x') {
         if (!e.repeat) {
@@ -503,17 +520,17 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         return
       }
       if (modeRef.current === 'qanun') {
-        const ri = QANUN_RAISE.indexOf(key)
+        const ri = QANUN_RAISE_KEYS.indexOf(key)
         if (ri !== -1) { stepMandal(ri + 1, 1); e.preventDefault(); return }
-        const di = QANUN_LOWER.indexOf(key)
+        const di = QANUN_LOWER_KEYS.indexOf(key)
         if (di !== -1) { stepMandal(di + 1, -1); e.preventDefault(); return }
         if (e.key === '0' || e.key === 'Backspace') resetMandals()
         return
       }
-      const li = LOWER_KEYS.indexOf(key)
+      const li = LOWER_JINS_KEYS.indexOf(key)
       const families = lowerJinsList()
       if (li !== -1 && li < families.length) { setLowerJins(families[li].id); return }
-      const ui = UPPER_KEYS.indexOf(key)
+      const ui = UPPER_JINS_KEYS.indexOf(key)
       if (ui !== -1) {
         const opts = lowerJinsById(lowerJinsRef.current).upperOptions
         if (ui < opts.length) setUpperJins(opts[ui])
@@ -523,222 +540,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     return () => window.removeEventListener('keydown', onKey)
   }, [setLowerJins, setUpperJins, setModMode, stepMandal, resetMandals])
 
-  /** Lazily imports, creates + starts the audio engine on first user
-   *  interaction. The dynamic import is what keeps Tone.js out of the eager
-   *  bundle; the module is cached by the browser after the first call. A
-   *  failed import clears the cached promise so a later gesture can retry. */
-  const ensureAudioEngine = useCallback(async (): Promise<void> => {
-    if (!enginePromiseRef.current) {
-      enginePromiseRef.current = import('../lib/audio/createQanunEngine').then(({ createQanunEngine }) => {
-        const engine = createQanunEngine()
-        audioRef.current = engine
-        setSampleRate(engine.getSampleRate())
-        // The slider may have moved before first interaction — read the ref, not
-        // state, so this callback's identity never churns with the value.
-        engine.setTremoloHz(tremoloHzRef.current)
-        return engine
-      })
-      enginePromiseRef.current.catch(() => { enginePromiseRef.current = null })
-    }
-    const engine = await enginePromiseRef.current
-    if (!engine.isStarted) await engine.start()
-    // Already started: an app-switch may have left the context suspended (see
-    // the visibility-recovery effect) — this pluck is a user gesture, the most
-    // reliable place to re-unlock it. No-op while running.
-    else await engine.resume()
-  }, [])
-
-  // ── P4a: recorder helpers ───────────────────────────────────────────────────
-
-  /** Lazy-create the recorder, wired to the post-fx bus. */
-  const ensureRecorder = useCallback(async (): Promise<Recorder> => {
-    if (recorderRef.current) return recorderRef.current
-    const engine = audioRef.current
-    if (!engine) throw new Error('Audio engine not initialised before recorder')
-    // Tone is already loaded once the engine exists, so this resolves straight
-    // from the module cache — the dynamic form only keeps it out of the eager graph.
-    const { getContext } = await import('tone')
-    if (recorderRef.current) return recorderRef.current // re-check: a concurrent call may have won the await
-    const audioContext = getContext().rawContext as AudioContext
-    const rec = createRecorder({
-      audioContext,
-      sourceNode: engine.getRecorderTap(),
-      onStateChange: (state) => {
-        setRecordingState(state)
-        if (state !== 'recording') {
-          // Stop the elapsed polling timer when no longer recording.
-          if (elapsedTimerRef.current !== null) {
-            window.clearInterval(elapsedTimerRef.current)
-            elapsedTimerRef.current = null
-          }
-          setRecordingElapsedFrames(0)
-        }
-      },
-      onMaxDurationReached: () => {
-        // No toast in this phase; the UI will see state→encoding automatically.
-      },
-      onEncoderError: () => {
-        // Silently ignored — on a worker crash the recorder falls back to a
-        // main-thread encode of the full take, so stop() still resolves.
-      }
-    })
-    recorderRef.current = rec
-    return rec
-  }, [])
-
-  const startRecording = useCallback(async (): Promise<void> => {
-    // Ensure the audio engine is up before we try to tap it.
-    await ensureAudioEngine()
-    const rec = await ensureRecorder()
-    if (rec.getState() !== 'idle') return
-    await rec.start()
-    // Poll elapsed frames every 500 ms while recording.
-    elapsedTimerRef.current = window.setInterval(() => {
-      const frames = rec.getElapsedFrames()
-      setRecordingElapsedFrames(frames)
-    }, 500)
-  }, [ensureAudioEngine, ensureRecorder])
-
-  const stopRecording = useCallback((): void => {
-    const rec = recorderRef.current
-    if (!rec || rec.getState() !== 'recording') return
-    void rec.stop().then(({ wav }) => {
-      // Browser-only download (qanun is web-only, no Electron bridge).
-      const blob = new Blob([wav], { type: 'audio/wav' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `qanun-${new Date().toISOString().replace(/[:.]/g, '-')}.wav`
-      // Append to the DOM before clicking — a detached anchor's download click
-      // is silently ignored in some browsers (e.g. older Firefox).
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    }).catch(() => {
-      // Encoding errors are surfaced via onEncoderError; nothing to do here.
-    })
-  }, [])
-
-  const cancelRecording = useCallback((): void => {
-    recorderRef.current?.cancel()
-  }, [])
-
-  // ── P4a: drone helpers ──────────────────────────────────────────────────────
-
-  /** Lazy-create the drone engine, connected to the sumBus. */
-  const ensureDrone = useCallback(async (): Promise<DroneEngine> => {
-    if (droneRef.current) return droneRef.current
-    const engine = audioRef.current
-    if (!engine) throw new Error('Audio engine not initialised before drone')
-    const { createDrone } = await import('../lib/practice/createDrone')
-    if (droneRef.current) return droneRef.current // re-check: a concurrent call may have won the await
-    const d = createDrone({ output: engine.sumBus, initialTonicMidi: tonicRef.current + offsetOf(mandalRef.current, homeDegreeRef.current) + detuneCentsRef.current / 100 })
-    droneRef.current = d
-    return d
-  }, [])
-
-  const setDroneEnabled = useCallback((b: boolean): void => {
-    void ensureAudioEngine()
-      .then(() => ensureDrone())
-      .then((d) => d.setEnabled(b).then(() => setDroneEnabledState(d.enabled)))
-  }, [ensureAudioEngine, ensureDrone])
-
-  const setDroneGain = useCallback((v: number): void => {
-    setDroneGainState(v)
-    droneRef.current?.setGain(v)
-  }, [])
-
   /** Retune the tremolo pulse — a running hold retunes in place, no restart. */
   const setTremoloHz = useCallback((hz: number): void => {
     setTremoloHzState(hz)
     tremoloHzRef.current = hz
     audioRef.current?.setTremoloHz(hz)
-  }, [])
-
-  // ── P4a: metronome helpers ──────────────────────────────────────────────────
-
-  /** Lazy-create the metronome engine, connected to the sumBus. */
-  const ensureMetronome = useCallback(async (): Promise<MetronomeEngine> => {
-    if (metronomeRef.current) return metronomeRef.current
-    const engine = audioRef.current
-    if (!engine) throw new Error('Audio engine not initialised before metronome')
-    const { createMetronome } = await import('../lib/practice/createMetronome')
-    if (metronomeRef.current) return metronomeRef.current // re-check: a concurrent call may have won the await
-    // Read BPM from the ref so this callback doesn't need metronomeBpm in its
-    // dep array — that would cause identity churn on every BPM keystroke.
-    const m = createMetronome({ output: engine.sumBus, initialBpm: metronomeBpmRef.current })
-    metronomeRef.current = m
-    return m
-  }, [])
-
-  const setMetronomeEnabled = useCallback((b: boolean): void => {
-    void ensureAudioEngine()
-      .then(() => ensureMetronome())
-      .then((m) => m.setEnabled(b).then(() => setMetronomeEnabledState(m.enabled)))
-  }, [ensureAudioEngine, ensureMetronome])
-
-  const setMetronomeBpm = useCallback((bpm: number): void => {
-    // Guard non-numbers (an emptied/invalid number input parses to NaN/0 —
-    // the engine clamps internally, but state should never hold NaN).
-    if (!Number.isFinite(bpm)) return
-    metronomeBpmRef.current = bpm
-    setMetronomeBpmState(bpm)
-    metronomeRef.current?.setBpm(bpm)
-  }, [])
-
-  const tapMetronome = useCallback((): void => {
-    // Ensure engine is ready; metronome tap is fire-and-forget.
-    void ensureAudioEngine()
-      .then(() => ensureMetronome())
-      .then((m) => {
-        m.tap()
-        // Sync displayed BPM after tap (tap may have updated it).
-        setMetronomeBpmState(m.bpm)
-      })
-  }, [ensureAudioEngine, ensureMetronome])
-
-  // ── P4b: MIDI out helpers ────────────────────────────────────────────────────
-
-  /** Lazily create the MIDI engine (constructed once). */
-  const ensureMidi = useCallback((): MidiOutEngine => {
-    if (!midiRef.current) {
-      midiRef.current = createMidiOut({
-        onOutputsChange: (outputs) => setMidiOutputsState(outputs)
-      })
-    }
-    return midiRef.current
-  }, [])
-
-  const setMidiEnabled = useCallback(async (b: boolean): Promise<void> => {
-    midiEnabledRef.current = b
-    setMidiEnabledState(b)
-    if (!b) return
-    const midi = ensureMidi()
-    await midi.start()
-    setMidiSupportState(midi.support)
-    setMidiOutputsState(midi.outputs)
-  }, [ensureMidi])
-
-  const setMidiOutputId = useCallback((id: string | null): void => {
-    setMidiOutputIdState(id)
-    midiRef.current?.setOutput(id)
-  }, [])
-
-  const setMidiBendRange = useCallback((semitones: number): void => {
-    setMidiBendRangeState(semitones)
-    midiRef.current?.setBendRange(semitones)
-  }, [])
-
-  /**
-   * Fire-and-forget MIDI note emission. Called alongside every audio.pluck() when
-   * MIDI is enabled. Deliberately cheap — just delegates to playNote() with no
-   * await. Reads the enabled flag from a ref (stable identity) so the running
-   * frame loop sees toggles immediately.
-   */
-  const emitMidi = useCallback((freqHz: number, velocity: number): void => {
-    if (!midiEnabledRef.current) return
-    midiRef.current?.playNote({ freqHz, velocity })
   }, [])
 
   // ── Pointer play primitives ─────────────────────────────────────────────────
@@ -769,11 +575,30 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     pluckClearRef.current = frameCounterRef.current + PLUCK_GLOW_FRAMES
     const playedMidi = field[index].midi
     setReading((r) => (r.lastPluckMidi === playedMidi ? r : { ...r, lastPluckMidi: playedMidi }))
+    // With no camera tick running nothing else expires the glow, so arm a
+    // shared timeout (~2× the tick loop's PLUCK_GLOW_FRAMES at 60 fps). Keeps
+    // the dedupe key refs in sync so a later tick sees consistent state.
+    if (!runningRef.current) {
+      if (pluckGlowTimerRef.current !== null) clearTimeout(pluckGlowTimerRef.current)
+      pluckGlowTimerRef.current = setTimeout(() => {
+        pluckGlowTimerRef.current = null
+        setPluckedIndices([])
+        lastPluckedKeyRef.current = ''
+        if (holdingRef.current === null) {
+          setHighlightIndices([])
+          lastHoverKeyRef.current = ''
+        }
+      }, 120)
+    }
     void ensureAudioEngine().then(() => {
       const audio = audioRef.current
       if (!audio || !field[index]) return
       audio.pluck({ freqHz: field[index].freqHz, velocity: POINTER_VELOCITY, bloom: true })
       emitMidi(field[index].freqHz, POINTER_VELOCITY)
+    }).catch(() => {
+      // A failed Tone import already cleared ensureAudioEngine's cached promise
+      // (a later gesture retries); without this catch every pluck after a
+      // failed import raises an unhandled rejection.
     })
   }, [ensureAudioEngine, emitMidi])
 
@@ -784,13 +609,18 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const glideCourse = useCallback((index: number): void => soundCourse(index), [soundCourse])
 
   const holdCourse = useCallback((index: number): void => {
+    // Arm SYNCHRONOUSLY, before the (async, first-gesture) audio init: if the
+    // pointer lifts while the Tone import is still in flight, releaseHold nulls
+    // this ref and the guard below drops the deferred holdStart — otherwise the
+    // late .then would start an orphan rashsh nothing can stop.
+    holdingRef.current = index
     void ensureAudioEngine().then(() => {
+      if (holdingRef.current !== index) return // released (or re-held) while audio was starting
       const audio = audioRef.current
       const field = coursesRef.current
       if (!audio || !field[index]) return
       setHighlightIndices([index])
       lastHoverKeyRef.current = String(index)
-      holdingRef.current = index
       // Pass immediate:false because pluckCourse() already attacked ~150 ms
       // earlier on pointer-down; we only want to start the rashsh loop. Use the
       // softer sustain level (the pluck already gave the louder attack).
@@ -798,6 +628,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       emitMidi(field[index].freqHz, SUSTAIN_VELOCITY)
       const heldMidi = field[index].midi
       setReading((r) => (r.lastPluckMidi === heldMidi ? r : { ...r, lastPluckMidi: heldMidi }))
+    }).catch(() => {
+      // Failed audio init: the cached promise is already cleared for retry.
     })
   }, [ensureAudioEngine, emitMidi])
 
@@ -1161,6 +993,16 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     if (status === 'running' || status === 'loading') return
     setErrorMsg(null)
     setStatus('loading')
+    // Kick the hand-model download off NOW — it's a multi-MB CDN fetch that is
+    // independent of both audio init and camera acquisition, so serializing it
+    // before getUserMedia gated the permission prompt behind the download on a
+    // cold cache. The fire-and-forget catch stops an early return (failed audio
+    // init) from surfacing an unhandled rejection; Promise.all below still
+    // observes the original promise.
+    const lmPromise = landmarkerRef.current
+      ? Promise.resolve(landmarkerRef.current)
+      : loadHandLandmarker()
+    lmPromise.catch(() => {})
     // Audio is the one hard requirement — this user gesture unlocks it. If even
     // that fails the instrument is mute, so surface a blocking error to retry.
     try {
@@ -1174,11 +1016,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     // tracking model can't load — fall through to a fully playable 'no-camera'
     // state (mouse + keyboard) instead of blocking the instrument behind the cover.
     try {
-      if (!landmarkerRef.current) landmarkerRef.current = await loadHandLandmarker()
       const video = videoRef.current
       const canvas = canvasRef.current
       if (!video || !canvas) throw new Error('Video/canvas element missing')
-      const { width, height } = await startCamera({ video })
+      const [lm, { width, height }] = await Promise.all([lmPromise, startCamera({ video })])
+      landmarkerRef.current = lm
       canvas.width = width
       canvas.height = height
       resetGestureState()
@@ -1190,10 +1032,32 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       frameHandleRef.current = scheduleVideoFrame({ video, callback: tick })
     } catch (err) {
       runningRef.current = false
+      // With concurrent acquisition a model failure can land AFTER getUserMedia
+      // succeeded — release the live stream or the webcam light stays on while
+      // the UI reads 'no-camera' (stopCamera is null-safe and idempotent).
+      stopCamera({ video: videoRef.current })
       setErrorMsg(describeCameraError(err))
       setStatus('no-camera')
     }
   }, [status, videoRef, canvasRef, tick, ensureAudioEngine, resetGestureState])
+
+  // Start WITHOUT requesting the webcam: unlock audio on this gesture, then go
+  // straight to the fully playable mouse+keyboard 'no-camera' state (errorMsg
+  // stays null — nothing failed). The header camera toggle / retry affordances
+  // can still bring hand tracking up later via start().
+  const startWithoutCamera = useCallback(async (): Promise<void> => {
+    if (status === 'running' || status === 'loading') return
+    setErrorMsg(null)
+    setStatus('loading')
+    try {
+      await ensureAudioEngine()
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : String(err))
+      setStatus('error')
+      return
+    }
+    setStatus('no-camera')
+  }, [status, ensureAudioEngine])
 
   const stop = useCallback((): void => {
     runningRef.current = false
@@ -1225,6 +1089,11 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         // held rashsh would otherwise resume ringing with the context.
         holdingRef.current = null
         audioRef.current?.holdStop()
+        // Clear the reconcile key too: activeFingerRef hysteresis survives the
+        // hide, so a stale key would make the per-frame reconcile skip the
+        // holdStart on return — a silent tremolo until the pinch re-opens.
+        // ('' === '' when nothing was held, so no spurious holdStop either.)
+        lastHoldKeyRef.current = ''
         return
       }
       void audioRef.current?.resume()
@@ -1243,7 +1112,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         stopCamera({ video })
         startCamera({ video })
           .then(({ width, height }) => {
-            if (!runningRef.current) return
+            if (!runningRef.current) {
+              // stop() ran while the acquisition was in flight — release the
+              // freshly attached live stream or the webcam stays on (light lit)
+              // behind an idle UI until the page unloads.
+              stopCamera({ video })
+              return
+            }
             canvas.width = width
             canvas.height = height
             // A second recovery may have re-armed the loop while we awaited the
@@ -1267,22 +1142,29 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
   }, [tick, videoRef, canvasRef])
 
-  // Release renderer-side resources on unmount: the audio graph and the
-  // MediaPipe landmarker's WASM. Both are lazily rebuilt on the next start().
-  useEffect(
-    () => () => {
-      if (elapsedTimerRef.current !== null) {
-        window.clearInterval(elapsedTimerRef.current)
+  // Release renderer-side resources on unmount: the camera stream + frame
+  // loop, the audio graph, and the MediaPipe landmarker's WASM. Everything is
+  // lazily rebuilt on the next start().
+  useEffect(() => {
+    // Capture the element at MOUNT: React nulls videoRef during the unmount
+    // mutation phase, before this cleanup runs, so reading videoRef.current
+    // inside the cleanup would miss the stream and leave the webcam capturing.
+    const video = videoRef.current
+    return () => {
+      runningRef.current = false
+      frameHandleRef.current?.cancel()
+      frameHandleRef.current = null
+      stopCamera({ video })
+      if (pluckGlowTimerRef.current !== null) {
+        clearTimeout(pluckGlowTimerRef.current)
       }
-      recorderRef.current?.dispose()
-      droneRef.current?.dispose()
-      metronomeRef.current?.dispose()
+      // The recorder, drone, metronome and MIDI engines dispose themselves in
+      // their own hooks (useRecorder / usePracticeTools / useMidiOut); the core
+      // still owns the audio engine and the MediaPipe landmarker.
       audioRef.current?.dispose()
       landmarkerRef.current?.close()
-      midiRef.current?.dispose()
-    },
-    []
-  )
+    }
+  }, [videoRef])
 
 
   // Ghammāz upper-jins options for the active lower jins; the selected upper is
@@ -1293,9 +1175,6 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // (5 for Rast, 4 for Bayati, 3 for Sikah) — shown in the switcher header.
   const ghammazDegree = ghammazFieldDegree(lowerJins, homeDegree)
   const ghammazLabel = String(ghammazDegree - homeDegree + 1)
-
-  // P4a: derive display string for recording elapsed time from stored frame count.
-  const recordingElapsedDisplay = formatElapsed(recordingElapsedFrames, sampleRate)
 
   return {
     status,
@@ -1309,6 +1188,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     pluckedIndices,
     handTracking,
     start,
+    startWithoutCamera,
     stop,
     setTonic,
     setDetuneCents,
@@ -1329,33 +1209,28 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     glideCourse,
     holdCourse,
     releaseHold,
-    // P4a: recording
-    recordingState,
-    recordingElapsedDisplay,
-    startRecording,
-    stopRecording,
-    cancelRecording,
     tremoloHz,
     setTremoloHz,
-    // P4a: drone
-    droneEnabled,
-    setDroneEnabled,
-    droneGain,
-    setDroneGain,
-    // P4a: metronome
-    metronomeEnabled,
-    setMetronomeEnabled,
-    metronomeBpm,
-    setMetronomeBpm,
-    tapMetronome,
-    // P4b: MIDI out
-    midiEnabled,
-    setMidiEnabled,
-    midiSupport,
-    midiOutputs,
-    midiOutputId,
-    setMidiOutputId,
-    midiBendRange,
-    setMidiBendRange,
+    // P4a: recording
+    ...recorder,
+    // P4a: drone + metronome (setDroneTonic is internal — recompute uses it)
+    droneEnabled: practice.droneEnabled,
+    setDroneEnabled: practice.setDroneEnabled,
+    droneGain: practice.droneGain,
+    setDroneGain: practice.setDroneGain,
+    metronomeEnabled: practice.metronomeEnabled,
+    setMetronomeEnabled: practice.setMetronomeEnabled,
+    metronomeBpm: practice.metronomeBpm,
+    setMetronomeBpm: practice.setMetronomeBpm,
+    tapMetronome: practice.tapMetronome,
+    // P4b: MIDI out (emitMidi is internal — the play paths call it directly)
+    midiEnabled: midi.midiEnabled,
+    setMidiEnabled: midi.setMidiEnabled,
+    midiSupport: midi.midiSupport,
+    midiOutputs: midi.midiOutputs,
+    midiOutputId: midi.midiOutputId,
+    setMidiOutputId: midi.setMidiOutputId,
+    midiBendRange: midi.midiBendRange,
+    setMidiBendRange: midi.setMidiBendRange,
   }
 }

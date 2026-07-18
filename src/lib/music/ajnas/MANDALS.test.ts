@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   DEGREE_COUNT,
   DEFAULT_RAST_STATE,
-  MAJOR_STATE,
   MANDAL_DEGREES,
   stepMandalPosition,
   offsetOf,
@@ -42,24 +41,6 @@ describe('DEFAULT_RAST_STATE', () => {
   it('every default offset is a legal position for its degree', () => {
     for (let d = 1; d <= 7; d++) {
       expect(positionsForDegree(d)).toContain(offsetOf(DEFAULT_RAST_STATE, d))
-    }
-  })
-})
-
-describe('MAJOR_STATE', () => {
-  it('is the major scale on the tonic: [0, 2, 4, 5, 7, 9, 11]', () => {
-    expect(MAJOR_STATE).toEqual([0, 2, 4, 5, 7, 9, 11])
-    expect(MAJOR_STATE).toHaveLength(7)
-  })
-  it('every major offset is a legal position for its degree', () => {
-    for (let d = 1; d <= 7; d++) {
-      expect(positionsForDegree(d)).toContain(offsetOf(MAJOR_STATE, d))
-    }
-  })
-  it('is the all-natural scale (each degree at its natural offset)', () => {
-    const naturals = [0, 2, 4, 5, 7, 9, 11]
-    for (let d = 1; d <= 7; d++) {
-      expect(offsetOf(MAJOR_STATE, d)).toBe(naturals[d - 1])
     }
   })
 })

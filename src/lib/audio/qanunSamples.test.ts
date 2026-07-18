@@ -8,8 +8,8 @@ describe('qanunSamples', () => {
     expect(Object.keys(QANUN_SAMPLE_URLS)).toHaveLength(18)
   })
 
-  it('every filename matches /^qanun-[A-G]s?\\d\\.wav$/', () => {
-    const re = /^qanun-[A-G]s?\d\.wav$/
+  it('every filename matches /^qanun-[A-G]s?\\d\\.m4a$/', () => {
+    const re = /^qanun-[A-G]s?\d\.m4a$/
     for (const [, filename] of Object.entries(QANUN_SAMPLE_URLS)) {
       expect(filename).toMatch(re)
     }
@@ -40,8 +40,8 @@ describe('qanunSamples', () => {
   })
 
   it('contains F3 as the lowest note and D#6 as the highest', () => {
-    expect(QANUN_SAMPLE_URLS['F3']).toBe('qanun-F3.wav')
-    expect(QANUN_SAMPLE_URLS['D#6']).toBe('qanun-Ds6.wav')
+    expect(QANUN_SAMPLE_URLS['F3']).toBe('qanun-F3.m4a')
+    expect(QANUN_SAMPLE_URLS['D#6']).toBe('qanun-Ds6.m4a')
   })
 
   it('every mapped filename exists on disk in public/samples/qanun/', () => {

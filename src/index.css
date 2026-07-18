@@ -23,7 +23,7 @@
 
   --ink: #f4ead2;              /* primary readable text on wood */
   --ink-dim: #b89a6a;          /* secondary */
-  --ink-faint: #7a6038;        /* labels */
+  --ink-faint: #96794c;        /* labels — keeps ≥4.5:1 on the dark chrome */
   --ink-engrave: #1c1108;      /* engraved-into-brass dark text */
 
   --accent: #e7c25b;
