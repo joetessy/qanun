@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 // Worker format `es` kept for parity with theremin — a future recorder
 // sub-plan (P4) reuses its ESM worker.
 //
@@ -12,7 +14,7 @@ import react from '@vitejs/plugin-react'
 // modulepreloaded ~120 kB gz of audio + vision code the first paint never runs.
 export default defineConfig({
   base: '/',
-  plugins: [react()],
+  plugins: [react(), cloudflare()],
   worker: { format: 'es' },
   // Honor an externally assigned port (preview/CI harnesses set PORT); normal
   // `npm run dev` leaves PORT unset and keeps Vite's default 5173.

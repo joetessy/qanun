@@ -28,3 +28,10 @@ docs/research/
 
 # Vite dep pre-bundle cache
 .vite/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
