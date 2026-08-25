@@ -118,6 +118,14 @@ export const Qanun = () => {
         >
           ?
         </button>
+        <a
+          className="contact-btn"
+          href="mailto:yusuftwinfish@gmail.com?subject=Qanun"
+          aria-label="Contact by email"
+          title="Contact"
+        >
+          ✉
+        </a>
         <button
           type="button"
           className={`controls-toggle ${controlsOpen ? 'is-open' : ''}`}

@@ -1325,7 +1325,8 @@
 }
 
 /* "?" help button in the header — brass dot, always visible */
-.help-btn {
+.help-btn,
+.contact-btn {
   flex-shrink: 0;
   width: 24px;
   height: 24px;
@@ -1343,14 +1344,22 @@
   box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.08);
   transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
-.help-btn:hover {
+.help-btn:hover,
+.contact-btn:hover {
   color: var(--brass-glow);
   border-color: rgba(231, 194, 91, 0.5);
   box-shadow:
     inset 0 1px 0 rgba(255, 222, 150, 0.14),
     0 0 10px rgba(231, 194, 91, 0.22);
 }
-.help-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.help-btn:focus-visible,
+.contact-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The contact link is an anchor wearing the round header-button shell. */
+.contact-btn {
+  font-size: 12px;
+  text-decoration: none;
+}
 
 /* Reduced-motion: no rise animation on the card. */
 @media (prefers-reduced-motion: reduce) {
@@ -1565,7 +1574,8 @@
   .studio-slider::-webkit-slider-thumb { width: 20px; height: 20px; }
   .studio-slider::-moz-range-thumb { width: 20px; height: 20px; }
   /* Header controls: same growth-toward-44px treatment as the chips above. */
-  .help-btn { width: 34px; height: 34px; }
+  .help-btn,
+  .contact-btn { width: 34px; height: 34px; }
   .mode-toggle span { padding: 6px 9px; }
   .levers-toggle,
   .controls-toggle { padding: 8px 14px; }
