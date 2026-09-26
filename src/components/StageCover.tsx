@@ -19,13 +19,12 @@ export const StageCover = ({ status, errorMsg, onStart, onStartWithoutCamera }: 
   if (status !== 'no-camera' && noticeDismissed) setNoticeDismissed(false)
   // The instrument is fully playable without the camera ('no-camera', mouse +
   // keyboard) — no blocking cover, but a camera denial/failure must not be
-  // silent: surface the reason in a small dismissible corner notice with a
-  // retry (start() is re-entrant from 'no-camera').
+  // silent: offer a small dismissible retry (start() is re-entrant from
+  // 'no-camera').
   if (status === 'no-camera') {
     if (!errorMsg || noticeDismissed) return null
     return (
       <div className="camera-notice" role="status">
-        <span className="camera-notice-msg">{errorMsg} — playing without hand tracking</span>
         <button type="button" className="camera-notice-retry" onClick={onStart}>
           retry camera
         </button>

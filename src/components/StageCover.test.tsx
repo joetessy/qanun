@@ -48,7 +48,7 @@ describe('StageCover (start / permission flow)', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('surfaces a non-blocking notice with a camera retry in no-camera with an error', () => {
+  it('offers a camera retry without the error text in no-camera with an error', () => {
     const onStart = vi.fn()
     render(
       <StageCover
@@ -58,7 +58,7 @@ describe('StageCover (start / permission flow)', () => {
         onStartWithoutCamera={() => {}}
       />
     )
-    expect(screen.getByText(/camera permission denied/i)).toBeTruthy()
+    expect(screen.queryByText(/camera permission denied/i)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /retry camera/i }))
     expect(onStart).toHaveBeenCalledTimes(1)
   })
