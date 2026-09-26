@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LOWER_JINS, applyLowerJins, maqamNameFor, lowerJinsList } from './lowerJins'
+import { LOWER_JINS, applyLowerJins, lowerJinsList } from './lowerJins'
 import { jinsById } from '../ajnas/JINS'
 
 describe('LOWER_JINS table', () => {
@@ -11,8 +11,8 @@ describe('LOWER_JINS table', () => {
       expect([1, 2, 3]).toContain(j.homeDegree)
       expect(j.defaultScale).toHaveLength(7)
       expect(j.defaultScale[0]).toBe(0)
-      expect(j.upperOptions.length).toBeGreaterThanOrEqual(1)
-      for (const u of j.upperOptions) expect(() => jinsById(u)).not.toThrow()
+      expect(j.commonUppers.length).toBeGreaterThanOrEqual(1)
+      for (const u of j.commonUppers) expect(() => jinsById(u)).not.toThrow()
     }
   })
   it('Sikah keeps the Rast collection (no note change), only the home moves', () => {
@@ -28,14 +28,13 @@ describe('LOWER_JINS table', () => {
     expect(LOWER_JINS.find((j) => j.id === 'hijaz')!.defaultScale).toEqual([0, 2, 3, 6, 7, 9, 10.5])
     expect(LOWER_JINS.find((j) => j.id === 'nahawand')!.defaultScale).toEqual([0, 2, 3, 5, 7, 8, 11])
   })
-  it('Rast does not offer ʿAjam as an upper', () => {
-    expect(LOWER_JINS.find((j) => j.id === 'rast')!.upperOptions).not.toContain('ajam')
-  })
-  it('Sikah offers Bayati as an upper', () => {
-    expect(LOWER_JINS.find((j) => j.id === 'sikah')!.upperOptions).toContain('bayati')
-  })
-  it('Nahawand offers Rast as an upper', () => {
-    expect(LOWER_JINS.find((j) => j.id === 'nahawand')!.upperOptions).toContain('rast')
+  it('keeps each family’s conventional uppers (the default comes first)', () => {
+    const common = (id: string) => LOWER_JINS.find((j) => j.id === id)!.commonUppers
+    expect(common('rast')[0]).toBe('rast')
+    expect(common('rast')).not.toContain('ajam') // Rast + ʿAjam is Mahur — named, not Rast's own
+    expect(common('sikah')).toContain('bayati')
+    expect(common('nahawand')).toContain('rast')
+    expect(common('hijaz')).toContain('nikriz')  // → Hijazkar, the family's most common variant
   })
 
   // Lock every family's full default scale (offsets from the key). Kurd's
@@ -53,7 +52,7 @@ describe('LOWER_JINS table', () => {
       // Saba's degree 6 is A natural (9): the default scale must equal its own
       // default upper jins applied — Hijaz on the ghammāz F gives F G♭ A B♭ —
       // matching the canonical Saba preset (an 8 here would make the upper
-      // tetrachord Kurd, which isn't even in saba's upperOptions).
+      // tetrachord Kurd).
       saba:     [0, 2, 3.5, 5, 6, 9, 10],
       sikah:    [0, 2, 3.5, 5, 7, 9, 10.5]
     }
@@ -69,20 +68,5 @@ describe('applyLowerJins', () => {
   })
   it('returns a fresh array (not the table reference)', () => {
     expect(applyLowerJins('rast').mandalState).not.toBe(LOWER_JINS[0].defaultScale)
-  })
-})
-
-describe('maqamNameFor', () => {
-  it('special-cases the named maqamat, else "Maqam <lower>"', () => {
-    expect(maqamNameFor('rast', 'hijaz')).toBe('Maqam Suznak')
-    expect(maqamNameFor('rast', 'bayati')).toBe('Maqam Nairuz')
-    expect(maqamNameFor('sikah', 'hijaz')).toBe('Maqam Huzam')
-    expect(maqamNameFor('bayati', 'hijaz')).toBe('Maqam Bayati Shuri')
-    expect(maqamNameFor('bayati', 'rast')).toBe('Maqam Bayati')
-    expect(maqamNameFor('ajam', 'ajam')).toBe('Maqam ʿAjam')
-    expect(maqamNameFor('hijaz', 'hijazkar')).toBe('Maqam Hijazkar')
-  })
-  it('Hijaz offers Hijazkar as a compound upper option', () => {
-    expect(LOWER_JINS.find((j) => j.id === 'hijaz')!.upperOptions).toContain('hijazkar')
   })
 })

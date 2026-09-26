@@ -6,8 +6,10 @@
 
 // Jins mode: pick the lower jins family (in lowerJinsList order).
 export const LOWER_JINS_KEYS: readonly string[] = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o']
-// Jins mode: pick the upper jins on the ghammāz (in upperOptions order).
-export const UPPER_JINS_KEYS: readonly string[] = ['1', '2', '3', '4', '5']
+// Jins mode: pick the upper jins on the ghammāz — the SAME family order, one
+// row up, so each family owns a keyboard column: 3 = upper Hijaz, E = lower.
+// A lower-only family's digit is silent (9, over Sikah's O).
+export const UPPER_JINS_KEYS: readonly string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
 // Qanun mode: two adjacent rows, one quarter-tone step per press, degree d =
 // index + 1. Raise on the Q row, lower on the number row directly above it.
 export const QANUN_RAISE_KEYS: readonly string[] = ['q', 'w', 'e', 'r', 't', 'y', 'u'] // C..B up

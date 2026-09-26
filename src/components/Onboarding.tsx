@@ -61,12 +61,17 @@ export const Onboarding = ({ onDismiss }: OnboardingProps) => {
             <div className="step-body">
               <strong>choose a maqam</strong>
               <span>
-                Pick a <em>lower jins</em> (the chips, or keys <em>Q&ndash;O</em>) to
-                set the home note, then an <em>upper jins</em> (keys <em>1&ndash;5</em>)
-                to modulate on the ghammāz. The readout names the maqam you build.
-                Or press <em>M</em> for <em>qanun</em> mode and raise / lower each
-                note with two key rows (<em>Q&ndash;U</em> raise, <em>1&ndash;7</em> lower).
-                Open <em>tune</em> for the key, recording, drone, metronome &amp; MIDI.
+                Pick a <em>lower jins</em> (keys <em>Q&ndash;O</em>) to set the home
+                note, then an <em>upper jins</em> on top of it with the digit
+                right above (<em>1&ndash;8</em> &mdash; same column, same family;
+                Sikah only starts a maqam).
+                The readout names the maqam you build; a dot marks a named one.
+                Or press <em>M</em> for <em>qanun</em> mode: every string starts
+                natural (C D E F G A B), and two key rows raise or lower each note
+                a quarter-tone at a time, up to two either way (<em>Q&ndash;U</em>
+                raise, <em>1&ndash;7</em> lower, <em>0</em> resets). Open
+                <em> tune</em> for the key, the string range, recording, drone,
+                metronome &amp; MIDI.
               </span>
             </div>
           </li>

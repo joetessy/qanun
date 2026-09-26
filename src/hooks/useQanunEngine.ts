@@ -1,15 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { HandLandmarker } from '@mediapipe/tasks-vision'
-import type { MandalState, Course } from '../lib/music/types'
+import type { MandalState, Course, FieldRange, RangeEndChange } from '../lib/music/types'
 import type { NormPoint, QanunReading, QanunStatus } from '../types'
-import { DEFAULT_RAST_STATE, DEGREE_COUNT, offsetOf, positionsForDegree, setMandal, stepMandalPosition } from '../lib/music/ajnas/MANDALS'
-import { buildField, DEFAULT_TONIC_MIDI, DETUNE_LIMIT_CENTS, FIELD_LEADING_TONES, FIELD_REACH_ABOVE_TONIC } from '../lib/music/buildField'
+import { DEFAULT_RAST_STATE, DEGREE_COUNT, NATURAL_STATE, offsetOf, positionsForDegree, setMandal, stepMandalPosition } from '../lib/music/ajnas/MANDALS'
+import { isNaturalState } from '../lib/music/ajnas/isNaturalState'
+import { buildField, DEFAULT_TONIC_MIDI, DETUNE_LIMIT_CENTS } from '../lib/music/buildField'
+import { DEFAULT_FIELD_RANGE } from '../lib/music/range/FIELD_RANGE'
+import { fieldWindow } from '../lib/music/range/fieldWindow'
+import { setRangeEnd } from '../lib/music/range/setRangeEnd'
+import { playOctaveBounds } from '../lib/music/range/playOctaveBounds'
+import { defaultPlayOctave } from '../lib/music/range/defaultPlayOctave'
 import { identifyAjnas } from '../lib/music/identifyAjnas'
+import { jinsById } from '../lib/music/ajnas/JINS'
 import { degreeNoteLabel } from '../lib/music/degreeLabel'
-import { applyLowerJins, lowerJinsById, lowerJinsList, maqamNameFor } from '../lib/music/sayr/lowerJins'
-import { applyUpperJins, upperOptions, ghammazFieldDegree, type UpperJinsOption } from '../lib/music/sayr/upperJins'
+import { lowerJinsById, lowerJinsList } from '../lib/music/sayr/lowerJins'
+import { upperOptions, ghammazFieldDegree, type UpperJinsOption } from '../lib/music/sayr/upperJins'
+import { jinsTuning } from '../lib/music/sayr/jinsTuning'
+import { maqamNameFor } from '../lib/music/sayr/maqamNameFor'
 import { courseWithHysteresis, coursesCrossed, PLAY_FIELD_LEFT, PLAY_FIELD_RIGHT } from '../lib/gesture/nearestCourse'
 import { LOWER_JINS_KEYS, UPPER_JINS_KEYS, QANUN_RAISE_KEYS, QANUN_LOWER_KEYS, PLAY_KEYS } from '../lib/ui/keymap'
+import { ownsKeyboard } from '../lib/ui/ownsKeyboard'
+import { clamp } from '../lib/math/clamp'
 import { createPinchPlay } from '../lib/gesture/pinchPlay'
 import { resolveActiveFinger, type ActiveFinger } from '../lib/gesture/activeFinger'
 // Audio modules that pull in Tone.js are imported DYNAMICALLY (inside the
@@ -34,14 +45,9 @@ import { INDEX_TIP, INDEX_DIP, THUMB_TIP, THUMB_IP, MIDDLE_TIP, MIDDLE_DIP, INDE
 import { extrapolateTip } from '../lib/vision/extrapolateTip'
 import { projectPoint } from '../lib/draw/projectPoint'
 
-// The playable string window — trims the raw octave grid to a full octave + 2
-// leading tones below the tonic + 2 full octaves + 1 tone above it (25 strings;
-// bottom is two strings below the octave-down tonic — two below C3 at default
-// tonic; top is D6 at default tonic). buildField grows its raw grid to fit the
-// requested
-// reach. Shared by every buildField call so the field shape can't drift between
-// init and recompute.
-const FIELD_WINDOW = { leadingTones: FIELD_LEADING_TONES, reachAboveTonic: FIELD_REACH_ABOVE_TONIC } as const
+// Qanun mode has no key: its strings are the natural letters C D E F G A B from
+// C4 whatever the Jins-mode tonic is, and the levers spell every accidental.
+const QANUN_TONIC_MIDI = DEFAULT_TONIC_MIDI
 // Frames a freshly plucked string stays lit before the highlight clears.
 const PLUCK_GLOW_FRAMES = 6
 // Frames the "a hand is being tracked" flag stays true after the last frame a
@@ -103,7 +109,7 @@ export interface UseQanunEngineArgs {
 }
 
 // Which modulation control surface is live: 'jins' (pick a lower + upper jins)
-// or 'qanun' (flip individual mandals on the major scale). See docs spec.
+// or 'qanun' (flip individual mandals from the naturals). See docs spec.
 export type ModMode = 'jins' | 'qanun'
 
 export interface UseQanunEngine {
@@ -112,7 +118,15 @@ export interface UseQanunEngine {
   reading: QanunReading
   courses: Course[]
   mandalState: MandalState
+  // The Jins-mode key (the tonic control's value).
   tonicMidi: number
+  // The tonic the strings are actually built on: tonicMidi in Jins mode, C4 in
+  // Qanun mode (natural letters). Note labels must use this one.
+  fieldTonicMidi: number
+  // The playable string window (strings from the tonic) and its two ends.
+  fieldRange: FieldRange
+  setFieldRangeEnd: (change: RangeEndChange) => void
+  resetFieldRange: () => void
   detuneCents: number
   highlightIndices: number[]
   pluckedIndices: number[]
@@ -129,7 +143,8 @@ export interface UseQanunEngine {
   lowerJins: string
   upperJins: string
   homeDegree: number
-  ghammazLabel: string | null
+  // The note the upper jins sits on (the ghammāz), e.g. "G".
+  ghammazNote: string
   ghammazDegree: number
   setLowerJins: (id: string) => void
   setUpperJins: (id: string) => void
@@ -202,8 +217,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   // True while a hand is actively tracked (its thumb-ring cursor is on screen).
   // Drives hiding the OS mouse cursor over the play field — see TRACK_GRACE_FRAMES.
   const [handTracking, setHandTracking] = useState(false)
+  // The playable string window — both ends movable from the tune drawer.
+  const [fieldRange, setFieldRangeState] = useState<FieldRange>(DEFAULT_FIELD_RANGE)
   const [courses, setCourses] = useState<Course[]>(() =>
-    buildField({ tonicMidi: DEFAULT_TONIC_MIDI, mandalState: DEFAULT_RAST_STATE, ...FIELD_WINDOW })
+    buildField({ tonicMidi: DEFAULT_TONIC_MIDI, mandalState: DEFAULT_RAST_STATE, ...fieldWindow(DEFAULT_FIELD_RANGE) })
   )
 
   // Tremolo pulse (Hz) — one rate shared by the single-note rashsh and the
@@ -220,14 +237,16 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const upperJinsRef = useRef('rast')
   const homeDegreeRef = useRef(1)
   const modeRef = useRef<ModMode>('jins')
+  const fieldRangeRef = useRef<FieldRange>(DEFAULT_FIELD_RANGE)
   // Qanun mode keeps its own tuning so toggling Jins ↔ Qanun never loses either
-  // side's work; it seeds from the Rast default (DEFAULT_RAST_STATE), and
-  // resetMandals returns to the same state.
-  const qanunStateRef = useRef<MandalState>(DEFAULT_RAST_STATE)
+  // side's work; it seeds from the naturals (every lever down: C D E F G A B),
+  // and resetMandals returns to the same state.
+  const qanunStateRef = useRef<MandalState>(NATURAL_STATE)
   // Computer-keyboard play layer: which octave the home-row keys play in (0 = from
-  // the tonic). pluckCourseRef is the latest pluckCourse, read inside the keydown
-  // handler without making it a dependency (pluckCourse is defined further down).
-  const playOctaveRef = useRef(0)
+  // the tonic; clamped to the string window on use). pluckCourseRef is the latest
+  // pluckCourse, read inside the keydown handler without making it a dependency
+  // (pluckCourse is defined further down).
+  const playOctaveRef = useRef(defaultPlayOctave({ range: DEFAULT_FIELD_RANGE, keyCount: PLAY_KEYS.length }))
   const pluckCourseRef = useRef<(index: number) => void>(() => {})
   const coursesRef = useRef<Course[]>(courses)
   const landmarkerRef = useRef<HandLandmarker | null>(null)
@@ -325,13 +344,19 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     else await engine.resume()
   }, [])
 
+  // The tonic the strings are built on: the chosen key in Jins mode, C in Qanun
+  // mode (natural letters — the Jins key is kept for when you switch back).
+  const fieldTonic = useCallback((): number =>
+    modeRef.current === 'qanun' ? QANUN_TONIC_MIDI : tonicRef.current
+  , [])
+
   // The drone follows the maqam's home note (not the fixed key), carrying the
   // global fine-tune offset (cents → fractional MIDI) so it never clashes with
   // the detuned strings. Refs are written before every recompute call, so this
   // reads the same home-note pitch recompute derives inline.
   const getDroneTonicMidi = useCallback((): number =>
-    tonicRef.current + offsetOf(mandalRef.current, homeDegreeRef.current) + detuneCentsRef.current / 100
-  , [])
+    fieldTonic() + offsetOf(mandalRef.current, homeDegreeRef.current) + detuneCentsRef.current / 100
+  , [fieldTonic])
 
   // P4a/P4b clusters, composed out of the hot tracking loop. emitMidi must stay
   // STABLE (useMidiOut returns it with an empty dep array) — the frame loop and
@@ -342,9 +367,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   const { setDroneTonic } = practice
   const { emitMidi } = midi
 
-  const recompute = useCallback((next: MandalState, nextTonic: number): void => {
+  // Rebuild the string field (and everything that reads it) from a tuning.
+  // Tonic, window, fine-tune, home and mode all come from their refs, which
+  // every caller writes BEFORE calling — so one recompute serves them all.
+  const recompute = useCallback((next: MandalState): void => {
     const detune = detuneCentsRef.current
-    const field = buildField({ tonicMidi: nextTonic, mandalState: next, detuneCents: detune, ...FIELD_WINDOW })
+    const nextTonic = fieldTonic()
+    const field = buildField({ tonicMidi: nextTonic, mandalState: next, detuneCents: detune, ...fieldWindow(fieldRangeRef.current) })
     coursesRef.current = field
     setCourses(field)
     const home = homeDegreeRef.current
@@ -356,22 +385,22 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     // silently overwrite the correct name on any tonic/fine-tune change. The
     // identify fallback only serves Qanun mode, where the cell is hidden anyway.
     const maqamName = modeRef.current === 'jins'
-      ? maqamNameFor(lowerJinsRef.current, upperJinsRef.current)
+      ? maqamNameFor({ lowerId: lowerJinsRef.current, upperId: upperJinsRef.current })
       : identifyAjnas(next).maqamName
     setReading((r) => ({ ...r, maqamName, homeNote }))
     // The drone follows the maqam's home note (not the fixed key), carrying the
     // same fine-tune offset (cents → fractional MIDI) so it never clashes with
     // the detuned strings. No-op until the drone is lazily created.
     setDroneTonic(nextTonic + offsetOf(next, home) + detune / 100)
-  }, [setDroneTonic])
+  }, [setDroneTonic, fieldTonic])
 
   // Pick a lower jins: load its scale, re-anchor the home tonic to that jins's
   // conventional degree, reset to its default upper. recompute derives the
   // maqam name from these refs (they're written first), so "Bayati · D" shows
   // correctly even though identify reads the raw (Rast-collection) scale.
   const setLowerJins = useCallback((id: string): void => {
-    const { mandalState: scale, homeDegree: home } = applyLowerJins(id)
-    const up = lowerJinsById(id).upperOptions[0]
+    const up = lowerJinsById(id).commonUppers[0]
+    const { mandalState: scale, homeDegree: home } = jinsTuning({ lowerId: id, upperId: up })
     lowerJinsRef.current = id
     upperJinsRef.current = up
     homeDegreeRef.current = home
@@ -380,24 +409,28 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setHomeDegreeState(home)
     mandalRef.current = scale
     setMandalStateRaw(scale)
-    recompute(scale, tonicRef.current)
+    recompute(scale)
   }, [recompute])
 
-  // Pick an upper jins: modulate on the ghammāz of the current lower jins.
-  // recompute names the result from the selection refs (written first).
+  // Pick an upper jins — any family but a lower-only one (Sikah) — on the
+  // ghammāz of the current lower jins. Rebuilt from the lower's default scale
+  // (jinsTuning), so the result depends only on the pair: a previous upper's
+  // wrapped leading tone can't linger. recompute names the result from the
+  // selection refs (written first).
   const setUpperJins = useCallback((id: string): void => {
-    const next = applyUpperJins(mandalRef.current, id, homeDegreeRef.current, lowerJinsRef.current)
+    if (jinsById(id).lowerOnly) return
+    const { mandalState: next } = jinsTuning({ lowerId: lowerJinsRef.current, upperId: id })
     upperJinsRef.current = id
     setUpperJinsState(id)
     mandalRef.current = next
     setMandalStateRaw(next)
-    recompute(next, tonicRef.current)
+    recompute(next)
   }, [recompute])
 
   const setTonic = useCallback((midi: number): void => {
     tonicRef.current = midi
     setTonicMidi(midi)
-    recompute(mandalRef.current, midi)
+    recompute(mandalRef.current)
     // (recompute re-tunes the drone — it follows the home note.)
   }, [recompute])
 
@@ -408,11 +441,29 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     const clamped = Math.max(-DETUNE_LIMIT_CENTS, Math.min(DETUNE_LIMIT_CENTS, Math.round(cents)))
     detuneCentsRef.current = clamped
     setDetuneCentsState(clamped)
-    recompute(mandalRef.current, tonicRef.current)
+    recompute(mandalRef.current)
   }, [recompute])
 
+  // String window: move one end (clamped to the compass, never under
+  // MIN_STRINGS) or restore the default. Tuning is untouched — recompute just
+  // lays out more or fewer strings of the same maqam. The keyboard play layer
+  // restarts in the octave that best fits the new window (the tonic's own when
+  // it can), rather than wherever Z / X last left it in the old one.
+  const applyFieldRange = useCallback((next: FieldRange): void => {
+    const cur = fieldRangeRef.current
+    if (next.low === cur.low && next.high === cur.high) return
+    fieldRangeRef.current = next
+    playOctaveRef.current = defaultPlayOctave({ range: next, keyCount: PLAY_KEYS.length })
+    setFieldRangeState(next)
+    recompute(mandalRef.current)
+  }, [recompute])
+  const setFieldRangeEnd = useCallback(({ end, value }: RangeEndChange): void =>
+    applyFieldRange(setRangeEnd({ range: fieldRangeRef.current, end, value }))
+  , [applyFieldRange])
+  const resetFieldRange = useCallback((): void => applyFieldRange(DEFAULT_FIELD_RANGE), [applyFieldRange])
+
   // ── Qanun (mandal) mode ─────────────────────────────────────────────────────
-  // Per-degree modulation over the major scale. Each action retunes one (or all)
+  // Per-degree modulation from the naturals. Each action retunes one (or all)
   // mandal(s) and funnels through recompute, so the HUD, drone, and MIDI-out all
   // follow with no extra wiring. Qanun mode keeps its tuning in qanunStateRef so
   // switching modes never clobbers it.
@@ -423,24 +474,24 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     setModModeState(mode)
     if (mode === 'qanun') {
       // Qanun mode has no movable home — like a real qanun, you root the melody
-      // wherever you play. We still pin degree 1 (the key) internally so the drone
-      // and the readout have a tonic reference, but nothing in the UI calls it
-      // "home". Default tuning is Rast.
+      // wherever you play. We still pin degree 1 (C) internally so the drone and
+      // the readout have a tonic reference, but nothing in the UI calls it
+      // "home". The strings are the natural letters from C (fieldTonic), and
+      // every lever starts down: C D E F G A B.
       homeDegreeRef.current = 1
       setHomeDegreeState(1)
       mandalRef.current = qanunStateRef.current
       setMandalStateRaw(qanunStateRef.current)
-      recompute(qanunStateRef.current, tonicRef.current)
+      recompute(qanunStateRef.current)
     } else {
       // Back to Jins mode: rebuild the exact tuning from the saved selection so
       // the user's lower+upper choice (and home anchor) come back untouched.
-      const { mandalState: base, homeDegree: home } = applyLowerJins(lowerJinsRef.current)
-      const restored = applyUpperJins(base, upperJinsRef.current, home, lowerJinsRef.current)
+      const { mandalState: restored, homeDegree: home } = jinsTuning({ lowerId: lowerJinsRef.current, upperId: upperJinsRef.current })
       homeDegreeRef.current = home
       setHomeDegreeState(home)
       mandalRef.current = restored
       setMandalStateRaw(restored)
-      recompute(restored, tonicRef.current)
+      recompute(restored)
     }
   }, [recompute])
 
@@ -451,11 +502,12 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     const positions = positionsForDegree(degree)
     if (positions.length <= 1) return // safety: nothing to step (no single-position degrees today)
     const nextOffset = stepMandalPosition(positions, offsetOf(qanunStateRef.current, degree), dir)
+    if (nextOffset === offsetOf(qanunStateRef.current, degree)) return // held key at the end stop
     const updated = setMandal(qanunStateRef.current, degree, nextOffset)
     qanunStateRef.current = updated
     mandalRef.current = updated
     setMandalStateRaw(updated)
-    recompute(updated, tonicRef.current)
+    recompute(updated)
   }, [recompute])
 
   // Set one mandal directly to a chosen position — the rail click handler.
@@ -465,33 +517,39 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     qanunStateRef.current = updated
     mandalRef.current = updated
     setMandalStateRaw(updated)
-    recompute(updated, tonicRef.current)
+    recompute(updated)
   }, [recompute])
 
-  // Reset Qanun mode to the Rast default.
+  // Every lever back down: the naturals, C D E F G A B.
   const resetMandals = useCallback((): void => {
-    if (modeRef.current !== 'qanun') return
-    qanunStateRef.current = DEFAULT_RAST_STATE
-    mandalRef.current = DEFAULT_RAST_STATE
-    setMandalStateRaw(DEFAULT_RAST_STATE)
-    recompute(DEFAULT_RAST_STATE, tonicRef.current)
+    if (modeRef.current !== 'qanun' || isNaturalState(qanunStateRef.current)) return
+    qanunStateRef.current = NATURAL_STATE
+    mandalRef.current = NATURAL_STATE
+    setMandalStateRaw(NATURAL_STATE)
+    recompute(NATURAL_STATE)
   }, [recompute])
 
   // Keyboard modulation. M toggles Jins ↔ Qanun mode (Tab is left alone so
-  // native keyboard focus traversal keeps working). In Jins mode: Q W E R T Y
-  // U I O pick the lower jins, 1 2 3 4 5 the upper jins. In Qanun mode two stacked
-  // key rows move the levers directionally: 1 2 3 4 5 6 7 raise C..B a quarter-tone,
-  // Q W E R T Y U lower them (hold to glide — key repeat — clamped at the ends); 0 /
-  // Backspace resets to Rast. Ignored while typing in a field or when a modifier
-  // is held. Key tables live in lib/ui/keymap so the UI labels can't drift.
+  // native keyboard focus traversal keeps working). In Jins mode the jins
+  // families own keyboard columns: Q W E R T Y U I O pick the lower jins and the
+  // digits directly above pick the SAME family as the upper jins (1–8; Sikah is
+  // lower-only, so 9 over its O is silent — setUpperJins refuses it). In Qanun
+  // mode two stacked key rows move the levers directionally: Q W E R T Y U raise
+  // C..B a quarter-tone, 1 2 3 4 5 6 7 lower them (hold to glide — key repeat —
+  // clamped two quarter-tones from natural); 0 / Backspace resets every lever to
+  // natural. Yields only to controls that need raw keystrokes (text entry, a
+  // focused select — see ownsKeyboard): a slider or chip you just clicked never
+  // swallows the instrument's keys. Ignored when a modifier is held. Key tables
+  // live in lib/ui/keymap so the UI labels can't drift.
   useEffect(() => {
-    // The home-row play layer: the tonic course sits at index
-    // FIELD_LEADING_TONES (the full octave below it comes first in the field), so
-    // 'a' still plays the tonic (C4 at the default tonic) regardless of that reach.
+    // The home-row play layer runs the scale up from the tonic, which sits at
+    // index -range.low of the field (the strings under it come first); Z / X
+    // shift it an octave at a time, as far as any key still lands on a string
+    // (so every string in the window is playable — keys off the ends are silent).
     const onKey = (e: KeyboardEvent): void => {
-      const t = e.target as HTMLElement | null
-      const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
-      if (e.metaKey || e.ctrlKey || e.altKey || inField) return
+      // The FOCUSED element, not e.target: a drawer select can hand a key back
+      // (releaseFocusAfterPointer blurs it mid-dispatch), and then it's ours.
+      if (e.metaKey || e.ctrlKey || e.altKey || ownsKeyboard(document.activeElement)) return
       const key = e.key.toLowerCase()
       // M flips modes — one press per keydown (skip auto-repeat).
       if (key === 'm') {
@@ -499,12 +557,13 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         e.preventDefault()
         return
       }
+      const range = fieldRangeRef.current
+      const octaves = playOctaveBounds({ range, keyCount: PLAY_KEYS.length })
       // Octave shift (Z down / X up). Skip auto-repeat so a held key steps once.
       if (key === 'z' || key === 'x') {
         if (!e.repeat) {
-          const maxOct = Math.max(0, Math.floor((coursesRef.current.length - 1 - FIELD_LEADING_TONES) / DEGREE_COUNT))
-          const next = playOctaveRef.current + (key === 'x' ? 1 : -1)
-          playOctaveRef.current = Math.max(0, Math.min(maxOct, next))
+          const current = clamp(playOctaveRef.current, octaves.min, octaves.max)
+          playOctaveRef.current = clamp(current + (key === 'x' ? 1 : -1), octaves.min, octaves.max)
         }
         e.preventDefault()
         return
@@ -513,7 +572,8 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
       const pi = PLAY_KEYS.indexOf(key)
       if (pi !== -1) {
         if (!e.repeat) {
-          const idx = FIELD_LEADING_TONES + playOctaveRef.current * DEGREE_COUNT + pi
+          const octave = clamp(playOctaveRef.current, octaves.min, octaves.max)
+          const idx = -range.low + octave * DEGREE_COUNT + pi
           if (idx >= 0 && idx < coursesRef.current.length) pluckCourseRef.current(idx)
         }
         e.preventDefault()
@@ -524,17 +584,14 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
         if (ri !== -1) { stepMandal(ri + 1, 1); e.preventDefault(); return }
         const di = QANUN_LOWER_KEYS.indexOf(key)
         if (di !== -1) { stepMandal(di + 1, -1); e.preventDefault(); return }
-        if (e.key === '0' || e.key === 'Backspace') resetMandals()
+        if (e.key === '0' || e.key === 'Backspace') { resetMandals(); e.preventDefault() }
         return
       }
-      const li = LOWER_JINS_KEYS.indexOf(key)
       const families = lowerJinsList()
-      if (li !== -1 && li < families.length) { setLowerJins(families[li].id); return }
+      const li = LOWER_JINS_KEYS.indexOf(key)
+      if (li !== -1 && li < families.length) { setLowerJins(families[li].id); e.preventDefault(); return }
       const ui = UPPER_JINS_KEYS.indexOf(key)
-      if (ui !== -1) {
-        const opts = lowerJinsById(lowerJinsRef.current).upperOptions
-        if (ui < opts.length) setUpperJins(opts[ui])
-      }
+      if (ui !== -1 && ui < families.length) { setUpperJins(families[ui].id); e.preventDefault() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -1167,14 +1224,15 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
   }, [videoRef])
 
 
-  // Ghammāz upper-jins options for the active lower jins; the selected upper is
-  // lit. Memoized so UpperJinsSwitcher's memo() holds across per-frame renders.
-  const upperJinsOptions = useMemo(() => upperOptions(lowerJins, upperJins), [lowerJins, upperJins])
+  // Upper-jins options (every family) for the active lower jins; the selected
+  // upper is lit. Memoized so JinsPicker's memo() holds across per-frame renders.
+  const upperJinsOptions = useMemo(() => upperOptions({ lowerId: lowerJins, currentUpperId: upperJins }), [lowerJins, upperJins])
 
-  // The scale degree the upper jins pivots on, relative to the maqam tonic
-  // (5 for Rast, 4 for Bayati, 3 for Sikah) — shown in the switcher header.
+  // The field degree the upper jins pivots on (G for most families, F for
+  // Saba), named as a note for the picker's "upper on G" label.
   const ghammazDegree = ghammazFieldDegree(lowerJins, homeDegree)
-  const ghammazLabel = String(ghammazDegree - homeDegree + 1)
+  const ghammazNote = degreeNoteLabel({ tonicMidi, degree: ghammazDegree, offset: offsetOf(mandalState, ghammazDegree), flats: true })
+  const fieldTonicMidi = modMode === 'qanun' ? QANUN_TONIC_MIDI : tonicMidi
 
   return {
     status,
@@ -1183,6 +1241,10 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     courses,
     mandalState,
     tonicMidi,
+    fieldTonicMidi,
+    fieldRange,
+    setFieldRangeEnd,
+    resetFieldRange,
     detuneCents,
     highlightIndices,
     pluckedIndices,
@@ -1195,7 +1257,7 @@ export const useQanunEngine = ({ videoRef, canvasRef }: UseQanunEngineArgs): Use
     lowerJins,
     upperJins,
     homeDegree,
-    ghammazLabel,
+    ghammazNote,
     ghammazDegree,
     setLowerJins,
     setUpperJins,

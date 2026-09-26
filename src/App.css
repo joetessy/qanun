@@ -135,7 +135,7 @@
   /* Fixed width sized to the longest PREFIX-STRIPPED name ("Nahawand Murassaʿ"
      — the HUD drops the redundant "Maqam ", see QanunHud) → it never truncates
      and the readout never grows when the name changes. (ellipsis is a safety
-     net only; the mid-width band narrows this further.) */
+     net for the odd long free pairing; the title carries the full name.) */
   display: block;
   width: 8.5em;
   overflow: hidden;
@@ -391,6 +391,20 @@
   opacity: 0.95;
 }
 
+/* Qanun mode's C strings: a faint copper tint — the octave landmarks a harp's
+   coloured C strings give — so the natural rows are easy to count up. Well
+   below the Jins-mode home glow: it marks the letter, not a tonic. */
+.string-field .course.is-landmark .str {
+  background: linear-gradient(
+    90deg,
+    #ffe3c7 0%,
+    #d6936a 30%,
+    #bf7a52 70%,
+    var(--brass-shadow) 100%
+  );
+  opacity: 0.95;
+}
+
 /* Finger hover: a GENTLE lift, deliberately dim so it doesn't wash out the warm
    per-octave tonic anchors (is-home) you navigate octaves by. */
 .string-field .course.is-highlight .str {
@@ -545,45 +559,10 @@
 .controls {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: clamp(12px, 2vw, 26px);
+  align-items: flex-start;
+  gap: clamp(10px, 1.6vw, 20px);
   padding: 14px clamp(16px, 2.4vw, 28px);
 }
-
-.controls .ctrl {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.controls .ctrl > span {
-  font-size: 9px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--ink-faint);
-}
-.controls .ctrl select {
-  font-family: var(--font-body);
-  /* Custom brass chevron replaces the OS arrow (appearance: none) — the one
-     native-widget glyph that broke the engraved look. */
-  appearance: none;
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6'%3E%3Cpath d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23b89a6a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 10px center,
-    linear-gradient(180deg, #2c1d10, #1b1107);
-  color: var(--brass-lit);
-  border: 1px solid rgba(231, 194, 91, 0.25);
-  border-radius: 6px;
-  padding: 5px 28px 5px 10px;
-  font-size: 13px;
-  cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.08);
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.controls .ctrl select:hover {
-  border-color: rgba(231, 194, 91, 0.5);
-  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.12), 0 0 8px rgba(184, 138, 46, 0.18);
-}
-.controls .ctrl select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ═══ STUDIO + MIDI — opt-in panels (record / drone / metronome / midi) ══════
    Grouped walnut cards with brass accents, matching the jins chips + toggles. */
@@ -726,13 +705,157 @@
 }
 .studio-section select:hover { border-color: rgba(231, 194, 91, 0.5); }
 
-/* ═══ JINS BAR — inline in the single-line header ════════════════════════════
-   Wedged between the readout and the header buttons: upper jins first (its
-   digit keys mirror the keyboard's top row, as the old stacked layout did),
-   then the lower-jins rail, one compact line — the header stays short and the
-   soundboard gets the height. Chips wrap within their group only as a
-   safety valve between the responsive breakpoints (see the fallbacks at the
-   bottom of this file). */
+/* Key picker — the twelve keys as one row of small plates. The accidental keys
+   sit darker, like a keyboard's black keys, so the row scans at a glance. */
+.key-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.key-chip {
+  min-width: 27px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-dim);
+  background: linear-gradient(180deg, #2c1d10, #1b1107);
+  border: 1px solid rgba(110, 79, 28, 0.35);
+  border-radius: 5px;
+  padding: 4px 4px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.06);
+  transition: color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.key-chip.is-accidental {
+  color: var(--ink-faint);
+  background: linear-gradient(180deg, #170e06, #0e0803);
+}
+.key-chip:hover {
+  color: var(--brass-lit);
+  border-color: rgba(184, 138, 46, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.1), 0 0 8px rgba(184, 138, 46, 0.2);
+}
+.key-chip.is-active {
+  color: var(--ink-engrave);
+  background: linear-gradient(180deg, var(--brass-lit), var(--brass-base));
+  border-color: var(--brass-lit);
+  box-shadow: inset 0 1px 0 rgba(255, 248, 220, 0.5), 0 0 12px rgba(231, 194, 91, 0.3);
+  font-weight: 600;
+}
+
+/* String range — the end notes either side of a two-thumb slider over the
+   whole compass, then the string count (click to reset). */
+.string-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.range-end {
+  min-width: 3.2em;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brass-glow);
+  text-align: center;
+  white-space: nowrap;
+}
+.range-dual {
+  --thumb: 14px;
+  position: relative;
+  /* Shrinks on phones so the whole row (ends, slider, count) fits the card. */
+  width: clamp(116px, 33vw, 168px);
+  height: 20px;
+  cursor: pointer;
+  touch-action: none;
+}
+/* The track, inset by half a thumb so the lit window lines up with the native
+   thumb centres; --lo / --hi are the window's ends along it. */
+.range-dual::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--thumb) / 2);
+  right: calc(var(--thumb) / 2);
+  top: 50%;
+  height: 4px;
+  translate: 0 -50%;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(110, 79, 28, 0.35) var(--lo),
+    var(--brass-base) var(--lo),
+    var(--brass-lit) var(--hi),
+    rgba(110, 79, 28, 0.35) var(--hi)
+  );
+}
+/* A small tick under the track marks the tonic. */
+.range-dual::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--tonic-f));
+  bottom: 0;
+  width: 1px;
+  height: 5px;
+  background: var(--brass-lit);
+  opacity: 0.7;
+  pointer-events: none;
+}
+/* Both ends are stacked native range inputs; only their thumbs take the
+   pointer, so a press on the bare track reaches .range-dual (see StringRange). */
+.range-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: none;
+}
+.range-thumb::-webkit-slider-runnable-track {
+  height: 4px;
+  background: none;
+}
+.range-thumb::-moz-range-track {
+  height: 4px;
+  background: none;
+}
+.range-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  pointer-events: auto;
+  width: var(--thumb);
+  height: var(--thumb);
+  margin-top: -5px; /* centre on the 4px track */
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff4c8, var(--brass-base));
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+  transition: transform 0.12s ease, box-shadow 0.15s;
+}
+.range-thumb::-moz-range-thumb {
+  pointer-events: auto;
+  width: var(--thumb);
+  height: var(--thumb);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff4c8, var(--brass-base));
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+}
+.range-thumb:hover::-webkit-slider-thumb { transform: scale(1.12); }
+.range-thumb:active::-webkit-slider-thumb { cursor: grabbing; }
+.range-thumb:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--accent); }
+.range-thumb:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 2px var(--accent); }
+.range-thumb:focus-visible { outline: none; }
+.range-count { min-width: 26px; }
+
+/* ═══ JINS BAR — inline in the header ═══════════════════════════════════════
+   Wedged between the readout and the header buttons. Both modes put a control
+   here that is laid out like its keys and about as tall: the two-row jins
+   picker, or the three-row lever rail — so switching modes doesn't make the
+   header jump. Below the breakpoint at the bottom of this file the bar drops
+   to its own row. */
 .jins-bar {
   flex: 1 1 auto;
   min-width: 0;
@@ -744,10 +867,7 @@
   padding-left: 0;
 }
 
-/* Holds whichever rail set is live (jins rails or the mandal rail). The two
-   jins groups sit INLINE — lower jins first (the family anchors the maqam; the
-   upper jins modulates on top of it), so the whole bar is one short line; a
-   hairline divider (on .upper-jins-switcher) separates the axes. */
+/* Holds whichever control set is live (the jins picker or the mandal rail). */
 .jins-bar-body {
   flex: 1 1 auto;
   min-width: 0;
@@ -797,10 +917,10 @@
 .mode-toggle:hover span:not(.is-active) { color: var(--brass-lit); }
 
 /* ═══ MANDAL RAIL — Qanun-mode levers / ʿurab (keys 1–7) ══════════════════════
-   One column per note course, every position shown as a stacked lever so the
-   whole tuning reads at a glance. Lit slot = live pitch; click any to set. Slots
-   run high → low; shorter levers pad with hidden spacers so the bases bottom-align.
-   No home — the qanun has no fixed tonic. */
+   One column per note course; every lever has the same five stops, two
+   quarter-tones either side of its natural letter. Collapsed, a column shows
+   the set note (lit when flipped off natural); expanded, the whole stack — click
+   any stop to set it. No home — the qanun has no fixed tonic. */
 /* Centers the rail + its expand toggle, side by side, in the bar. */
 .mandal-rail-row {
   display: flex;
@@ -858,12 +978,17 @@
     0 0 11px rgba(231, 194, 91, 0.28);
   font-weight: 600;
 }
-.mandal-slot.is-spacer {
-  visibility: hidden;
-  border-color: transparent;
-  background: none;
-  pointer-events: none;
+/* A lever resting on its natural: still the set note, but quiet — the flipped
+   levers are the ones that light, so the rail reads as the accidentals. */
+.mandal-slot.is-active.is-natural {
+  color: var(--brass-lit);
+  background: linear-gradient(180deg, #33230f 0%, #1f1408 100%);
+  border-color: rgba(231, 194, 91, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 222, 150, 0.1);
 }
+/* Expanded stack: the unset natural stop keeps a firmer rim, so the rest
+   position is easy to find among the five. */
+.mandal-slot.is-natural:not(.is-active) { border-color: rgba(184, 138, 46, 0.5); }
 /* Directional keycaps capping each lever column — lower on top, raise below,
    mirroring the keyboard (1–7 lower, Q–U raise). Click to step a quarter-tone. */
 .mandal-step {
@@ -894,61 +1019,104 @@
   background: linear-gradient(180deg, var(--brass-lit), var(--brass-base));
   border-color: var(--brass-lit);
 }
-
-/* ═══ LOWER-JINS SELECTOR — the family rail (first in the jins bar) ══════════
-   Picking a family re-anchors the home tonic. Each chip carries a dim keycap
-   (Q–O) mirroring the hook. */
-.jins-selector {
-  flex: 0 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: clamp(4px, 0.6vw, 7px);
-  background: none;
-  border: none;
+/* End stop: the lever is already two quarter-tones out that way. Marked with
+   aria-disabled (the keycap stays focusable), so it must also shed the hover
+   and press states a real :disabled would. */
+.mandal-step[aria-disabled='true'],
+.mandal-step[aria-disabled='true']:hover,
+.mandal-step[aria-disabled='true']:active {
+  opacity: 0.32;
+  cursor: default;
+  color: var(--brass-lit);
+  background: linear-gradient(180deg, #3b2814 0%, #241507 100%);
+  border-color: rgba(184, 138, 46, 0.5);
   box-shadow: none;
-  padding: 2px 0;
+  scale: none;
 }
 
-/* "jins" label — sits inline before the chips. */
-.jins-selector-label {
+/* Beside the rail: expand/collapse over the naturals reset. */
+.levers-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.levers-toggle[aria-disabled='true'],
+.levers-toggle[aria-disabled='true']:hover,
+.levers-toggle[aria-disabled='true']:active {
+  opacity: 0.4;
+  cursor: default;
+  color: var(--ink-dim);
+  border-color: rgba(110, 79, 28, 0.35);
+  translate: none;
+  scale: none;
+}
+
+/* ═══ JINS PICKER — the maqam builder, laid out like its keys ═════════════════
+   Two rows on one grid: the upper jins (digits 1–9) over the lower jins (Q–O),
+   one column per family, so a family lines up with itself the way 3 sits over
+   E. Columns size to their widest chip and chips stretch to fill them, so both
+   rows share edges. Any upper sits on any lower; a dot under an upper chip
+   marks a pairing that spells a named maqam. */
+.jins-picker {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto repeat(9, auto);
+  gap: clamp(2px, 0.35vmin, 4px) clamp(2px, 0.28vw, 5px);
+  align-items: center;
+  justify-content: start;
+  /* If a zoom level squeezes the grid, both rows scroll sideways together
+     (keeping the columns aligned) instead of overlapping the header buttons. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.jins-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+/* Browsers without subgrid (before ~2023): each row lays out on its own — still
+   one row per axis, just not column-aligned. */
+@supports not (grid-template-columns: subgrid) {
+  .jins-row {
+    display: flex;
+    gap: inherit;
+  }
+}
+
+/* Row label ("upper on G" / "lower") — the first column, right-aligned so the
+   words sit against the chips they name. */
+.jins-row-label {
+  justify-self: end;
+  padding-right: clamp(2px, 0.3vw, 5px);
   font-family: var(--font-body);
   font-size: 8px;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-dim);
-  flex-shrink: 0;
+  white-space: nowrap;
   user-select: none;
 }
-
-/* Chip row — fills its line and wraps onto extra rows only if the chips can't
-   all fit at the current width (e.g. when zoomed in). Wrapping keeps every jins
-   visible at a glance and the header grows just enough to hold them — no hidden
-   chips behind a scroll fade. */
-.jins-chips {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  /* Inline layout: chips never wrap (a second line would grow the header and
-     eat the soundboard). If a zoom level squeezes the row anyway, the group
-     scrolls sideways invisibly instead of overlapping the header buttons.
-     The own-row fallback (bottom of file) restores wrapping. */
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-  gap: clamp(2px, 0.4vmin, 4px) clamp(2px, 0.28vw, 5px);
+/* The ghammāz note after "on" — display font, a touch larger, so the pivot
+   pitch reads at a glance. */
+.jins-row-note {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: none;
 }
 
-/* Individual jins chip — same compact pill as .preset-chip. */
+/* Lower-jins chip — compact brass pill. */
 .jins-chip {
   font-family: var(--font-body);
   font-size: clamp(9px, 1vmin, 11px);
   font-weight: 500;
   letter-spacing: 0.03em;
   white-space: nowrap;
-  flex-shrink: 0;
   color: var(--ink-dim);
   background: linear-gradient(180deg, #2c1d10 0%, #1b1107 100%);
   border: 1px solid rgba(110, 79, 28, 0.35);
@@ -966,7 +1134,7 @@
     0 0 8px rgba(184, 138, 46, 0.2);
 }
 
-/* Active jins: lit brass — matches the maqam-preset active treatment. */
+/* Active lower jins: lit brass. */
 .jins-chip.is-active {
   color: var(--ink-engrave);
   background: linear-gradient(180deg, var(--brass-lit) 0%, var(--brass-base) 100%);
@@ -981,7 +1149,7 @@
 
 /* Dim keycap inside a chip (Q W E R … / 1 2 3 …) — a small monospaced glyph that
    reads as a hardware key hint without competing with the family name. Shared by
-   the jins selector and the upper-jins switcher. */
+   both picker rows and the lever reset. */
 .jins-key {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 0.7em;
@@ -996,70 +1164,15 @@
   opacity: 0.65;
 }
 
-/* ═══ UPPER-JINS SWITCHER — ghammāz family chip group (after the lower rail) ═
-   Sits to the right of the lower-jins rail, behind the divider; a warmer
-   accent marks it as a different axis of modulation. */
-.upper-jins-switcher {
-  flex: 0 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: clamp(4px, 0.6vw, 7px);
-  background: none;
-  box-shadow: none;
-  /* Hairline divider from the lower-jins group before it (echoes the readout's
-     cell separators). */
-  border: none;
-  border-left: 1px solid rgba(231, 194, 91, 0.14);
-  padding: 2px 0 2px clamp(5px, 0.55vw, 11px);
-}
-
-.upper-jins-label {
-  font-family: var(--font-body);
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
-  flex-shrink: 0;
-  user-select: none;
-  white-space: nowrap;
-}
-
-/* The note name after "on" — rendered in the display font at a slightly larger
-   size so the ghammāz pitch reads at a glance. */
-.upper-jins-ghammaz {
-  font-family: var(--font-display);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  color: var(--ink-dim);
-  text-transform: none;
-}
-
-/* Chip row — fills its line and wraps onto extra rows only if the chips can't
-   all fit at the current width (mirrors the lower-jins rail). */
-.upper-jins-chips {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  /* nowrap + invisible sideways scroll — same reasoning as .jins-chips. */
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-  gap: clamp(2px, 0.4vmin, 4px) clamp(2px, 0.28vw, 5px);
-}
-
-/* Individual upper-jins chip — same pill shape as .preset-chip but with a
-   slightly warmer accent so it reads as a different axis of modulation. */
+/* Upper-jins chip — the same pill with a warmer accent, so the two rows read
+   as separate axes of modulation. */
 .upper-chip {
+  position: relative;
   font-family: var(--font-body);
   font-size: clamp(9px, 1vmin, 11px);
   font-weight: 500;
   letter-spacing: 0.03em;
   white-space: nowrap;
-  flex-shrink: 0;
   color: var(--ink-dim);
   background: linear-gradient(180deg, #2e1e0f 0%, #1c1108 100%);
   border: 1px solid rgba(138, 98, 36, 0.38);
@@ -1077,8 +1190,8 @@
     0 0 9px rgba(200, 155, 55, 0.25);
 }
 
-/* Active upper: lit amber — distinct from the brass-gold of maqam presets so
-   the two rails read as separate dimensions at a glance. */
+/* Active upper: lit amber — distinct from the lower row's brass-gold so the
+   two rails read as separate dimensions at a glance. */
 .upper-chip.is-active {
   color: var(--ink-engrave);
   background: linear-gradient(180deg, #c87b1a 0%, #8a5010 100%);
@@ -1090,6 +1203,23 @@
     0 0 26px rgba(180, 100, 20, 0.18);
   font-weight: 600;
 }
+
+/* Named-maqam dot: this upper, on the current lower, spells a maqam with a name
+   of its own (the tooltip says which). Free combinations carry no dot. */
+.upper-chip.is-named::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 1px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  translate: -50% 0;
+  background: #d4a04a;
+  opacity: 0.85;
+  pointer-events: none;
+}
+.upper-chip.is-named.is-active::after { background: var(--ink-engrave); opacity: 0.6; }
 
 /* Toggle button (drone / metronome / MIDI switches in the drawer) */
 .controls .toggle {
@@ -1373,26 +1503,14 @@
    header controls, and controls drawer must not overlap or clip.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* The header is ONE line by default (the compact sizing above). The keycap
-   hints (Q W E… / 1 2…) and the JINS / UPPER JINS group labels are NEVER
-   hidden: both groups repeat family names (Bayati, Hijaz, Nahawand appear in
-   each), so without labels + keys the bar reads as one long row of duplicates
-   and the keyboard feels broken. Two graceful fallbacks as the viewport
-   narrows (thresholds measured in Chrome with real margin at each band edge):
-   1. 1471–1760px: only DISPLAY extras step aside — the ghammaz sub-label
-      (" on 5") and a narrower maqam plate. All controls keep their hints.
-   2. ≤1470px: the full jins rail can't share the line, so the bar drops onto
-      its own full-width row beneath the wordmark/readout line (still far
-      shorter than the original stacked header). */
-@media (max-width: 1760px) and (min-width: 1471px) {
-  /* The ghammaz sub-label (" on 5") steps aside; each chip's title still
-     carries the full maqam it builds. */
-  .upper-jins-ghammaz { display: none; }
-  /* Narrower (still FIXED, so no wiggle) maqam plate: rare long names ellipsize
-     behind their title tooltip instead of costing the rails ~20px of line. */
-  .readout .cell.maqam .v { width: 7em; }
-}
-@media (max-width: 1470px) {
+/* The header is ONE line by default (two chip rows tall): wordmark · mode ·
+   readout · jins picker or lever rail · buttons. The keycap hints and the
+   UPPER / LOWER row labels are NEVER hidden: both picker rows repeat the same
+   nine family names, so without labels + keys the bar reads as duplicates and
+   the keyboard feels broken. Below 1320px (measured in Chrome with margin; the
+   picker is ~575px) the bar can't share the line, so it drops onto its own
+   full-width row beneath the wordmark/readout line. */
+@media (max-width: 1320px) {
   .qanun-header {
     flex-wrap: wrap;
     row-gap: clamp(3px, 0.7vmin, 8px);
@@ -1406,12 +1524,35 @@
     width: 100%;
     padding-left: 0;
   }
-  /* With the full width to work in, chips can wrap tidily again instead of
-     scrolling (the inline nowrap above is only for the shared line). */
-  .jins-bar .jins-chips,
-  .jins-bar .upper-jins-chips {
-    flex-wrap: wrap;
-    overflow-x: visible;
+}
+
+/* Phones: the picker scrolls sideways, so its row labels stay pinned at the
+   left edge (over a fade in the header's colour) — the UPPER / LOWER cue
+   never scrolls away from the chips it names. */
+@media (max-width: 700px) {
+  .jins-row-label {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    justify-self: stretch;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.35em;
+    padding-right: 8px;
+    background: linear-gradient(90deg, #180e08 82%, rgba(24, 14, 8, 0));
+  }
+  /* Slimmer lever columns so the seven levers AND their expand / naturals
+     buttons fit a phone's width… */
+  .mandal-rail { gap: 5px; }
+  .mandal-col { width: 34px; }
+  .mandal-rail-row { gap: 8px; }
+  /* …and if a narrower screen still can't hold them, the bar scrolls sideways
+     instead of clipping the reset out of reach. */
+  .jins-bar-body {
+    overflow-x: auto;
+    scrollbar-width: none;
   }
 }
 
@@ -1455,6 +1596,7 @@
 .levers-toggle:focus-visible,
 .jins-chip:focus-visible,
 .upper-chip:focus-visible,
+.key-chip:focus-visible,
 .mandal-slot:focus-visible,
 .mandal-step:focus-visible,
 .studio-btn:focus-visible,
@@ -1503,7 +1645,7 @@
   }
   /* Lever slots + keycaps: press feedback only (a hover lift would jiggle the
      tightly stacked columns). */
-  .mandal-slot:active:not(.is-spacer),
+  .mandal-slot:active,
   .mandal-step:active {
     scale: 0.96;
   }
@@ -1570,6 +1712,9 @@
   .mandal-step { height: 26px; }
   .jins-chip,
   .upper-chip { padding: 7px 14px; }
+  .key-chip { padding: 8px 6px; min-width: 34px; }
+  .range-dual { --thumb: 22px; height: 28px; }
+  .range-thumb::-webkit-slider-thumb { margin-top: -9px; }
   .studio-slider { height: 6px; }
   .studio-slider::-webkit-slider-thumb { width: 20px; height: 20px; }
   .studio-slider::-moz-range-thumb { width: 20px; height: 20px; }

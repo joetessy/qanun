@@ -14,6 +14,9 @@ interface StringFieldProps {
   pluckedIndices: number[]        // courses that just sounded (for feedback)
   homeDegree: number              // field degree the maqam tonic is anchored on (1/2/3)
   ghammazDegree: number           // field degree of the ghammāz pivot (subtler highlight)
+  // Qanun mode has no home, so its C strings are faintly tinted instead — the
+  // octave landmarks a harp's coloured strings give (0 = none).
+  landmarkDegree: number
   // Pointer play
   onPluckCourse: (index: number) => void
   onGlideCourse: (index: number) => void
@@ -28,6 +31,7 @@ interface CourseLineProps {
   degree: number
   isHome: boolean
   isGhammaz: boolean
+  isLandmark: boolean
   isHighlight: boolean
   isPlucked: boolean
 }
@@ -36,11 +40,12 @@ interface CourseLineProps {
 // booleans on the one or two courses involved, so the other ~23 rows skip
 // re-rendering entirely — the field re-renders per course *crossing* during a
 // sweep, and re-painting 100 spans each time was the bulk of that work.
-const CourseLine = memo(({ yPct, degree, isHome, isGhammaz, isHighlight, isPlucked }: CourseLineProps) => {
+const CourseLine = memo(({ yPct, degree, isHome, isGhammaz, isLandmark, isHighlight, isPlucked }: CourseLineProps) => {
   const classes = [
     'course',
     isHome ? 'is-home' : '',
     isGhammaz ? 'is-ghammaz' : '',
+    isLandmark ? 'is-landmark' : '',
     isHighlight ? 'is-highlight' : '',
     isPlucked ? 'is-plucked' : ''
   ].filter(Boolean).join(' ')
@@ -64,6 +69,7 @@ export const StringField = memo(({
   pluckedIndices,
   homeDegree,
   ghammazDegree,
+  landmarkDegree,
   onPluckCourse,
   onGlideCourse,
   onHoldCourse,
@@ -183,6 +189,7 @@ export const StringField = memo(({
           degree={c.degree}
           isHome={c.degree === homeDegree}
           isGhammaz={c.degree === ghammazDegree && c.degree !== homeDegree}
+          isLandmark={c.degree === landmarkDegree}
           isHighlight={highlightIndices.includes(c.index)}
           isPlucked={pluckedIndices.includes(c.index)}
         />

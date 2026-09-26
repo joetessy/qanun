@@ -1,7 +1,9 @@
 import type { MandalState } from '../types'
 import { jinsById } from '../ajnas/JINS'
 import { DEGREE_COUNT, offsetOf, setMandal } from '../ajnas/MANDALS'
-import { lowerJinsById, maqamNameFor } from './lowerJins'
+import { upperJinsFamilies } from './upperJinsFamilies'
+import { isNamedMaqam } from './isNamedMaqam'
+import { maqamNameFor } from './maqamNameFor'
 
 const lowerGhammaz = (lowerId: string): number => jinsById(lowerId).ghammazDegree
 
@@ -10,39 +12,35 @@ const lowerGhammaz = (lowerId: string): number => jinsById(lowerId).ghammazDegre
 export const ghammazFieldDegree = (lowerId: string, homeDegree: number): number =>
   homeDegree + lowerGhammaz(lowerId) - 1
 
-// Apply an upper jins on the ghammāz of the current (home-anchored) lower jins.
-// Only degrees ABOVE the ghammāz are rewritten; the lower tetrachord + home are
-// untouched. Degrees beyond 7 are dropped (no wrap into the next octave).
-export const applyUpperJins = (
-  state: MandalState,
-  upperId: string,
-  homeDegree: number,
+interface ApplyUpperJinsArgs {
+  state: MandalState
+  upperId: string
+  homeDegree: number
   lowerId: string
-): MandalState => {
-  if (upperId === 'hijazkar') {
-    // Maqam Hijazkar: Nikriz on the ghammāz + the raised leading tone a
-    // semitone under the home (the Nikriz pentachord's 4th note wrapping the
-    // octave — over D-rooted Hijaz: G A B♭ C♯ arriving on the octave D). A
-    // compound — it also sets the sub-tonic (degree 1), unlike a normal
-    // upper-jins. Mandals are octave-global, so the C♯ lands on EVERY
-    // degree-1 string, below the home as well as above. That's deliberate
-    // (revisited 2026-07: classical Hijazkar carries the raised 7th under the
-    // tonic too — descents run D → C♯, not D → C).
-    // (Not the generic path because JINS's 'hijazkar' intervals describe the
-    // root-position jins, not this on-the-ghammāz treatment.)
-    let next = applyUpperJins(state, 'nikriz', homeDegree, lowerId) // A, B♭ above the ghammāz
-    next = setMandal(next, 1, offsetOf(state, homeDegree) - 1)
-    return next
-  }
+}
+
+// Apply an upper jins on the ghammāz of the current (home-anchored) lower jins.
+// The lower jins's own notes — home up to the ghammāz — are never rewritten.
+// Upper notes that run past degree 7 wrap into the next octave's courses (the
+// mandals are octave-global): one that lands back on the lower jins is dropped
+// (a pentachord's octave over Rast is the home itself), but one that lands
+// UNDER the home of a D- or E½♭-rooted jins retunes that sub-tonic string.
+// That wrap is Maqam Hijazkar: Nikriz on Hijaz's ghammāz G reaches G A B♭ C♯,
+// and the C♯ becomes the raised leading tone — on EVERY degree-1 string, below
+// the home as well as above. That's deliberate (revisited 2026-07: classical
+// Hijazkar carries the raised 7th under the tonic too — descents run D → C♯,
+// not D → C).
+export const applyUpperJins = ({ state, upperId, homeDegree, lowerId }: ApplyUpperJinsArgs): MandalState => {
   const ghammaz = ghammazFieldDegree(lowerId, homeDegree)
   if (ghammaz < 1 || ghammaz > DEGREE_COUNT) return state
   const gOffset = offsetOf(state, ghammaz)
   const upper = jinsById(upperId)
   let next: MandalState = state.slice()
   for (let i = 1; i < upper.intervals.length; i++) {
-    const deg = ghammaz + i
-    if (deg > DEGREE_COUNT) break
-    next = setMandal(next, deg, gOffset + upper.intervals[i])
+    const wraps = Math.floor((ghammaz + i - 1) / DEGREE_COUNT)
+    const deg = ghammaz + i - wraps * DEGREE_COUNT
+    if (deg >= homeDegree && deg <= ghammaz) continue // the lower jins's own note
+    next = setMandal(next, deg, gOffset + upper.intervals[i] - 12 * wraps)
   }
   return next
 }
@@ -50,32 +48,26 @@ export const applyUpperJins = (
 export interface UpperJinsOption {
   id: string
   label: string
-  maqamName: string // "Maqam <name>" for (lower, this-upper) — used as the chip tooltip
+  maqamName: string // what (lower, this-upper) spells — "Maqam Suznak" or "Rast ▸ Kurd"; the chip tooltip
+  named: boolean    // the pair is a recognised maqam, not a free combination
   active: boolean
 }
 
-const upperLabel = (id: string): string => {
-  if (id === 'rast') return 'Upper Rast'
-  if (id === 'ajam') return 'Upper ʿAjam'
-  // "Hijazkar", not "Nikriz Hijazkar": the chip tooltip already names the maqam
-  // it builds, and the long form is the one label wide enough to overflow the
-  // single-line header at laptop widths. The compound's anatomy (Nikriz on the
-  // ghammāz + a raised leading tone) stays documented on applyUpperJins.
-  if (id === 'hijazkar') return 'Hijazkar'
-  return jinsById(id).label
+interface UpperOptionsArgs {
+  lowerId: string
+  currentUpperId: string
 }
 
-// The contextual upper-jins chips for the current lower jins. `active` flags the
-// CURRENTLY-SELECTED upper jins by id — NOT a re-analysis of the scale, which is
-// ambiguous: a compound upper (Hijazkar also sets degree 1) makes a simpler upper
-// (Nahawand) spuriously "match" the resulting state. Tracking the selection is exact.
-export const upperOptions = (
-  lowerId: string,
-  currentUpperId: string
-): UpperJinsOption[] =>
-  lowerJinsById(lowerId).upperOptions.map((id) => ({
+// Every family that can be an upper jins (all but Sikah), offered on any lower
+// — in the lower rail's order, so a family keeps its column (and key) in both
+// rows. `active` flags the CURRENTLY-SELECTED upper by id, not a re-analysis
+// of the scale: two uppers can leave the same notes above the ghammāz, and only
+// the selection says which one the player chose.
+export const upperOptions = ({ lowerId, currentUpperId }: UpperOptionsArgs): UpperJinsOption[] =>
+  upperJinsFamilies().map(({ id }) => ({
     id,
-    label: upperLabel(id),
-    maqamName: maqamNameFor(lowerId, id),
+    label: jinsById(id).label,
+    maqamName: maqamNameFor({ lowerId, upperId: id }),
+    named: isNamedMaqam({ lowerId, upperId: id }),
     active: id === currentUpperId
   }))

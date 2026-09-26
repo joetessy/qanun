@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyUpperJins, upperOptions, ghammazFieldDegree } from './upperJins'
+import { lowerJinsList } from './lowerJins'
+import { upperJinsFamilies } from './upperJinsFamilies'
 
 describe('ghammazFieldDegree', () => {
   it('shifts the jins ghammāz by the home degree (all families land on G=deg5 except Saba)', () => {
@@ -12,50 +14,60 @@ describe('ghammazFieldDegree', () => {
 
 describe('applyUpperJins (home-aware)', () => {
   it('Bayati(home 2) + Nahawand re-tunes degrees 6–7 from the G ghammāz', () => {
-    const bayati = [0, 2, 3.5, 5, 7, 9, 10.5]
-    expect(applyUpperJins(bayati, 'nahawand', 2, 'bayati')).toEqual([0, 2, 3.5, 5, 7, 9, 10])
+    const state = [0, 2, 3.5, 5, 7, 9, 10.5]
+    expect(applyUpperJins({ state, upperId: 'nahawand', homeDegree: 2, lowerId: 'bayati' })).toEqual([0, 2, 3.5, 5, 7, 9, 10])
   })
   it('Rast(home 1) + Hijaz → Suznak collection', () => {
-    const rast = [0, 2, 3.5, 5, 7, 9, 10.5]
-    expect(applyUpperJins(rast, 'hijaz', 1, 'rast')).toEqual([0, 2, 3.5, 5, 7, 8, 11])
+    const state = [0, 2, 3.5, 5, 7, 9, 10.5]
+    expect(applyUpperJins({ state, upperId: 'hijaz', homeDegree: 1, lowerId: 'rast' })).toEqual([0, 2, 3.5, 5, 7, 8, 11])
   })
   it('does not alter degrees at or below the ghammāz', () => {
-    const bayati = [0, 2, 3.5, 5, 7, 9, 10.5]
-    expect(applyUpperJins(bayati, 'hijaz', 2, 'bayati').slice(0, 5)).toEqual(bayati.slice(0, 5))
+    const state = [0, 2, 3.5, 5, 7, 9, 10.5]
+    expect(applyUpperJins({ state, upperId: 'hijaz', homeDegree: 2, lowerId: 'bayati' }).slice(0, 5)).toEqual(state.slice(0, 5))
   })
-  it('Hijaz(home 2) + Hijazkar → Nikriz on the ghammāz + raised leading tone (C♯)', () => {
-    // The C♯ is octave-global (every degree-1 string), below the home as well
-    // as above — deliberate: classical Hijazkar carries the raised 7th under
-    // the tonic too, so descents run D → C♯, not D → C.
-    const hijaz = [0, 2, 3, 6, 7, 9, 10.5]
-    expect(applyUpperJins(hijaz, 'hijazkar', 2, 'hijaz')).toEqual([1, 2, 3, 6, 7, 9, 10])
+  it('Hijaz(home 2) + Nikriz → Hijazkar: the raised 4th wraps to the leading tone (C♯)', () => {
+    // G A B♭ C♯ — the C♯ is octave-global (every degree-1 string), below the
+    // home as well as above: classical Hijazkar descends D → C♯, not D → C.
+    const state = [0, 2, 3, 6, 7, 9, 10.5]
+    expect(applyUpperJins({ state, upperId: 'nikriz', homeDegree: 2, lowerId: 'hijaz' })).toEqual([1, 2, 3, 6, 7, 9, 10])
+  })
+  it('never wraps onto the lower jins itself — over a C-rooted Rast the home stays C', () => {
+    // Nikriz on G would reach C♯ at the octave, but that string IS Rast's home.
+    const state = [0, 2, 3.5, 5, 7, 9, 10.5]
+    expect(applyUpperJins({ state, upperId: 'nikriz', homeDegree: 1, lowerId: 'rast' })).toEqual([0, 2, 3.5, 5, 7, 9, 10])
+  })
+  it('Saba as an upper over Bayati wraps its diminished 4th (C♭) under the home', () => {
+    const state = [0, 2, 3.5, 5, 7, 9, 10]
+    expect(applyUpperJins({ state, upperId: 'saba', homeDegree: 2, lowerId: 'bayati' })).toEqual([-1, 2, 3.5, 5, 7, 8.5, 10])
   })
 })
 
 describe('upperOptions', () => {
-  it('returns the lower jins upper list with the selected one flagged', () => {
-    const opts = upperOptions('bayati', 'nahawand')
-    expect(opts.map((o) => o.id)).toEqual(['nahawand', 'rast', 'hijaz'])
-    expect(opts[0].label).toBe('Nahawand')
-    expect(opts.find((o) => o.id === 'nahawand')!.active).toBe(true)
+  it('offers every family but Sikah as an upper on any lower, in the lower rail’s order', () => {
+    const uppers = upperJinsFamilies().map((j) => j.id)
+    for (const { id: lowerId } of lowerJinsList()) {
+      const offered = upperOptions({ lowerId, currentUpperId: 'rast' }).map((o) => o.id)
+      expect(offered).toEqual(uppers)
+      expect(offered).not.toContain('sikah')
+    }
   })
-  it('lights "Hijazkar" on Hijaz when it is the selected upper', () => {
-    const opts = upperOptions('hijaz', 'hijazkar')
-    const hijazkar = opts.find((o) => o.id === 'hijazkar')!
-    expect(hijazkar).toBeDefined()
-    // Short chip label; the tooltip (maqamName) carries "Maqam Hijazkar".
-    expect(hijazkar.label).toBe('Hijazkar')
-    expect(hijazkar.maqamName).toBe('Maqam Hijazkar')
-    expect(hijazkar.active).toBe(true)
+  it('flags the selected upper and names what each pairing spells', () => {
+    const opts = upperOptions({ lowerId: 'rast', currentUpperId: 'hijaz' })
+    const hijaz = opts.find((o) => o.id === 'hijaz')!
+    expect(hijaz.active).toBe(true)
+    expect(hijaz.label).toBe('Hijaz')
+    expect(hijaz.maqamName).toBe('Maqam Suznak')
+    expect(hijaz.named).toBe(true)
+    expect(opts.filter((o) => o.active)).toHaveLength(1)
   })
-  it('does NOT also light Nahawand when Hijazkar is the selected upper (regression)', () => {
-    const opts = upperOptions('hijaz', 'hijazkar')
-    expect(opts.find((o) => o.id === 'nahawand')!.active).toBe(false)
+  it('marks a free combination as unnamed', () => {
+    const kurd = upperOptions({ lowerId: 'rast', currentUpperId: 'rast' }).find((o) => o.id === 'kurd')!
+    expect(kurd.named).toBe(false)
+    expect(kurd.maqamName).toBe('Rast ▸ Kurd')
   })
-  it('defaults to Hijaz as the lit secondary jins for Saba (regression)', () => {
-    // Saba's first upperOption is the default the engine selects; it must light.
-    const opts = upperOptions('saba', 'hijaz')
-    expect(opts[0].id).toBe('hijaz')
-    expect(opts.find((o) => o.id === 'hijaz')!.active).toBe(true)
+  it('lights Nikriz (Hijazkar) alone on Hijaz — no spurious Nahawand match', () => {
+    const opts = upperOptions({ lowerId: 'hijaz', currentUpperId: 'nikriz' })
+    expect(opts.find((o) => o.id === 'nikriz')!.maqamName).toBe('Maqam Hijazkar')
+    expect(opts.filter((o) => o.active).map((o) => o.id)).toEqual(['nikriz'])
   })
 })

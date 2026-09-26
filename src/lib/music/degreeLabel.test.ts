@@ -116,3 +116,12 @@ describe('degreeNoteLabel — D tonic (MIDI 50)', () => {
     expect(degreeNoteLabel({ tonicMidi: 50, degree: 7, offset: 10.5 })).toBe('C#½♭')
   })
 })
+
+describe('degreeNoteLabel — lever extremes (qanun mode reaches the enharmonic stops)', () => {
+  it('spells a lever pushed onto its neighbour as the lever note', () => {
+    expect(degreeNoteLabel({ tonicMidi: 60, degree: 3, offset: 5 })).toBe('E♯')
+    expect(degreeNoteLabel({ tonicMidi: 60, degree: 4, offset: 4 })).toBe('F♭')
+    expect(degreeNoteLabel({ tonicMidi: 60, degree: 1, offset: -1 })).toBe('C♭')
+    expect(degreeNoteLabel({ tonicMidi: 60, degree: 7, offset: 12 })).toBe('B♯')
+  })
+})

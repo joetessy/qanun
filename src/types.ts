@@ -20,3 +20,12 @@ export interface QanunReading {
   homeNote: string
   lastPluckMidi: number | null
 }
+
+// React's style typing omits CSS custom properties, which the DOM applies like
+// any other style — declare them so `style={{ '--lo': '40%' }}` type-checks
+// without a cast.
+declare module 'react' {
+  interface CSSProperties {
+    [customProperty: `--${string}`]: string | number | undefined
+  }
+}

@@ -3,6 +3,7 @@ import {
   DEGREE_COUNT,
   DEFAULT_RAST_STATE,
   MANDAL_DEGREES,
+  NATURAL_STATE,
   stepMandalPosition,
   offsetOf,
   positionsForDegree,
@@ -10,15 +11,22 @@ import {
 } from './MANDALS'
 
 describe('MANDAL_DEGREES (docs/MUSIC-THEORY.md §5)', () => {
-  it('has 7 degrees with the full-coverage position sets', () => {
+  it('gives every course the same five stops: two quarter-tones either side of natural', () => {
     expect(DEGREE_COUNT).toBe(7)
-    expect(positionsForDegree(1)).toEqual([0, 0.5, 1])
+    expect(positionsForDegree(1)).toEqual([-1, -0.5, 0, 0.5, 1])     // C♭ · C½♭ · C · C½♯ · C♯
     expect(positionsForDegree(2)).toEqual([1, 1.5, 2, 2.5, 3])
-    expect(positionsForDegree(3)).toEqual([3, 3.5, 4, 4.5])
-    expect(positionsForDegree(4)).toEqual([4.5, 5, 5.5, 6])
+    expect(positionsForDegree(3)).toEqual([3, 3.5, 4, 4.5, 5])       // … E♯ reaches F
+    expect(positionsForDegree(4)).toEqual([4, 4.5, 5, 5.5, 6])       // F♭ reaches E …
     expect(positionsForDegree(5)).toEqual([6, 6.5, 7, 7.5, 8])
     expect(positionsForDegree(6)).toEqual([8, 8.5, 9, 9.5, 10])
-    expect(positionsForDegree(7)).toEqual([10, 10.5, 11, 11.5])
+    expect(positionsForDegree(7)).toEqual([10, 10.5, 11, 11.5, 12])  // … B♯ reaches C
+  })
+
+  it('centres each lever on its natural letter (C D E F G A B)', () => {
+    for (const { natural, positions } of MANDAL_DEGREES) {
+      expect(positions[2]).toBe(natural)
+    }
+    expect(MANDAL_DEGREES.map((d) => d.natural)).toEqual([0, 2, 4, 5, 7, 9, 11])
   })
 
   it('together the seven courses reach all 24 quarter-tones (any maqam, any root)', () => {
@@ -30,6 +38,17 @@ describe('MANDAL_DEGREES (docs/MUSIC-THEORY.md §5)', () => {
       expect(reachable.has(q / 2)).toBe(true) // 0, 0.5, 1, … 11.5
     }
     expect(reachable.size).toBe(24)
+  })
+})
+
+describe('NATURAL_STATE (Qanun mode resting tuning)', () => {
+  it('is every lever at natural: C D E F G A B', () => {
+    expect(NATURAL_STATE).toEqual([0, 2, 4, 5, 7, 9, 11])
+  })
+  it('every natural is a legal position for its degree', () => {
+    for (let d = 1; d <= 7; d++) {
+      expect(positionsForDegree(d)).toContain(offsetOf(NATURAL_STATE, d))
+    }
   })
 })
 
@@ -46,7 +65,7 @@ describe('DEFAULT_RAST_STATE', () => {
 })
 
 describe('stepMandalPosition', () => {
-  const deg3 = positionsForDegree(3) // [3, 3.5, 4, 4.5]
+  const deg3 = positionsForDegree(3) // [3, 3.5, 4, 4.5, 5]
   it('steps flatter (dir −1) down the positions list', () => {
     expect(stepMandalPosition(deg3, 4, -1)).toBe(3.5)
     expect(stepMandalPosition(deg3, 3.5, -1)).toBe(3)
@@ -54,20 +73,28 @@ describe('stepMandalPosition', () => {
   it('steps sharper (dir +1) up the positions list', () => {
     expect(stepMandalPosition(deg3, 3, 1)).toBe(3.5)
     expect(stepMandalPosition(deg3, 4, 1)).toBe(4.5)
+    expect(stepMandalPosition(deg3, 4.5, 1)).toBe(5)
   })
-  it('clamps at both ends (no wrap)', () => {
-    expect(stepMandalPosition(deg3, 3, -1)).toBe(3)     // already lowest → stays
-    expect(stepMandalPosition(deg3, 4.5, 1)).toBe(4.5)  // already highest → stays
+  it('reaches two quarter-tones either way from natural, then clamps (no wrap)', () => {
+    let down = 4
+    let up = 4
+    for (let i = 0; i < 5; i++) {
+      down = stepMandalPosition(deg3, down, -1)
+      up = stepMandalPosition(deg3, up, 1)
+    }
+    expect(down).toBe(3) // E♭ — two quarter-tones down, and no further
+    expect(up).toBe(5)   // E♯ — two quarter-tones up, and no further
   })
   it('snaps a stray offset to an end', () => {
-    expect(stepMandalPosition(deg3, 99, 1)).toBe(3)     // dir +1 → lowest
-    expect(stepMandalPosition(deg3, 99, -1)).toBe(4.5)  // dir −1 → highest
+    expect(stepMandalPosition(deg3, 99, 1)).toBe(3)   // dir +1 → lowest
+    expect(stepMandalPosition(deg3, 99, -1)).toBe(5)  // dir −1 → highest
   })
-  it('steps the tonic among its raise positions and clamps', () => {
-    const deg1 = positionsForDegree(1) // [0, 0.5, 1]
-    expect(stepMandalPosition(deg1, 0, 1)).toBe(0.5)   // up one
-    expect(stepMandalPosition(deg1, 1, 1)).toBe(1)     // at top → stays
-    expect(stepMandalPosition(deg1, 0, -1)).toBe(0)    // at bottom → stays
+  it('lowers the C course too — the tonic string is a lever like any other', () => {
+    const deg1 = positionsForDegree(1) // [-1, -0.5, 0, 0.5, 1]
+    expect(stepMandalPosition(deg1, 0, -1)).toBe(-0.5)
+    expect(stepMandalPosition(deg1, 0, 1)).toBe(0.5)
+    expect(stepMandalPosition(deg1, -1, -1)).toBe(-1) // at bottom → stays
+    expect(stepMandalPosition(deg1, 1, 1)).toBe(1)    // at top → stays
   })
 })
 

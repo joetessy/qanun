@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { JINS, jinsById } from './JINS'
 
 describe('JINS table', () => {
-  it('includes the 9 family-head ajnas plus Hijazkar', () => {
+  it('includes the 9 family-head ajnas (Hijazkar is Hijaz + Nikriz, not a jins here)', () => {
     const ids = JINS.map((j) => j.id).sort()
     expect(ids).toEqual(
-      ['ajam', 'bayati', 'hijaz', 'hijazkar', 'kurd', 'nahawand', 'nikriz', 'rast', 'saba', 'sikah'].sort()
+      ['ajam', 'bayati', 'hijaz', 'kurd', 'nahawand', 'nikriz', 'rast', 'saba', 'sikah'].sort()
     )
   })
 
@@ -35,7 +35,6 @@ describe('JINS table', () => {
     expect(jinsById('saba').intervals).toEqual([0, 1.5, 3, 4])
     expect(jinsById('sikah').intervals).toEqual([0, 1.5, 3.5])
     expect(jinsById('nikriz').intervals).toEqual([0, 2, 3, 6, 7])
-    expect(jinsById('hijazkar').intervals).toEqual([0, 1, 4, 5])
   })
 
   it('roots Sikah on the half-flat 3rd degree (homeDegree 3); others on 1', () => {
@@ -51,12 +50,11 @@ describe('JINS table', () => {
     expect(jinsById('rast').ghammazDegree).toBe(5)
   })
 
-  it('jinsById throws on an unknown id', () => {
-    expect(() => jinsById('nope')).toThrow()
+  it('marks Sikah — and only Sikah — as lower-only (it never serves as an upper jins)', () => {
+    expect(JINS.filter((j) => j.lowerOnly).map((j) => j.id)).toEqual(['sikah'])
   })
 
-  it('declares hijaz before hijazkar (identifyAjnas tie-break relies on order)', () => {
-    const ids = JINS.map((j) => j.id)
-    expect(ids.indexOf('hijaz')).toBeLessThan(ids.indexOf('hijazkar'))
+  it('jinsById throws on an unknown id', () => {
+    expect(() => jinsById('nope')).toThrow()
   })
 })

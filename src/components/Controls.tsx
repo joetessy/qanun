@@ -2,23 +2,32 @@ import { memo } from 'react'
 import type { RecorderState } from '../lib/audio/createRecorder'
 import type { MidiSupportState, MidiOutputInfo } from '../lib/midi/createMidiOut'
 import type { ModMode } from '../hooks/useQanunEngine'
+import type { FieldRange, RangeEndChange } from '../lib/music/types'
 import { TypedSelect } from './TypedSelect'
-import { midiName } from '../lib/music/midiName'
+import { KeyPicker } from './KeyPicker'
+import { StringRange } from './StringRange'
 import { DETUNE_LIMIT_CENTS } from '../lib/music/buildField'
 import { formatCents } from '../lib/ui/formatCents'
+import { releaseFocusAfterPointer } from '../lib/ui/releaseFocusAfterPointer'
 import { DEFAULT_TREMOLO_HZ, TREMOLO_HZ_MIN, TREMOLO_HZ_MAX } from '../lib/audio/tremolo'
 import { BPM_MIN, BPM_MAX } from '../lib/practice/tapTempo'
 import { clamp } from '../lib/math/clamp'
 
 interface ControlsProps {
-  // Qanun mode has no fixed tonic (you root wherever you play), so the tonic
-  // selector is hidden there.
+  // Qanun mode has no key — the strings are the naturals and the levers set
+  // each note — so the key picker gives way to a note there.
   modMode: ModMode
   tonicMidi: number
   onTonic: (midi: number) => void
   // Global fine-tune (cents), −DETUNE_LIMIT_CENTS…+DETUNE_LIMIT_CENTS.
   detuneCents: number
   onDetuneCents: (cents: number) => void
+  // The string window and the note names of its two ends.
+  fieldRange: FieldRange
+  rangeLowLabel: string
+  rangeHighLabel: string
+  onRangeEnd: (change: RangeEndChange) => void
+  onRangeReset: () => void
   // Tremolo pulse (Hz), shared by single- and two-note holds.
   tremoloHz: number
   onTremoloHz: (hz: number) => void
@@ -50,30 +59,38 @@ interface ControlsProps {
   onMidiBendRange: (semitones: number) => void
 }
 
-// 12 tonic choices, one per pitch class, anchored around the C4 default tonic.
-const TONICS = Array.from({ length: 12 }, (_, i) => ({
-  value: String(57 + i),
-  label: midiName(57 + i)
-}))
-
 const BEND_RANGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: '2', label: '±2 st' },
   { value: '12', label: '±12 st' },
   { value: '24', label: '±24 st' },
-  { value: '48', label: '±48 st' },
+  { value: '48', label: '±48 st' }
 ]
 
-// Progressive disclosure (spec §1): tonic + fine-tune.
-// P4a: opt-in studio section (off by default) — record/drone/metronome.
-// P4b: opt-in MIDI section (off by default) — microtonal MIDI out.
-// memo: the drawer stays mounted (hidden) while the engine pushes per-pluck
-// state, so without it the ~60-element tree re-renders on every pluck.
+// Wires releaseFocusAfterPointer to the drawer through a callback ref (React
+// runs the returned cleanup on unmount). Module-level so its identity is
+// stable: an inline ref would re-attach on every render — mid-drag, too.
+const attachFocusRelease = (root: HTMLDivElement | null): (() => void) | undefined =>
+  root ? releaseFocusAfterPointer(root) : undefined
+
+// The tune drawer, in four cards: TUNING (key + fine-tune), STRINGS (the
+// string window + tremolo speed — how many strings there are and how a held
+// one is struck), then the opt-in STUDIO (record / drone / metronome) and
+// MIDI (microtonal MIDI out) cards, both off by default. Nothing here keeps
+// the keyboard after a click or drag (releaseFocusAfterPointer), so the
+// instrument's keys always play. memo: the drawer stays mounted (hidden)
+// while the engine pushes per-pluck state, so without it the tree re-renders
+// on every pluck.
 export const Controls = memo(({
   modMode,
   tonicMidi,
   onTonic,
   detuneCents,
   onDetuneCents,
+  fieldRange,
+  rangeLowLabel,
+  rangeHighLabel,
+  onRangeEnd,
+  onRangeReset,
   tremoloHz,
   onTremoloHz,
   recordingState,
@@ -97,72 +114,88 @@ export const Controls = memo(({
   midiBendRange,
   onMidiEnabled,
   onMidiOutputId,
-  onMidiBendRange,
+  onMidiBendRange
 }: ControlsProps) => (
-  <div className="controls">
-    {modMode !== 'qanun' && (
-      <label className="ctrl">
-        <span>tonic</span>
-        <TypedSelect
-          value={String(tonicMidi)}
-          options={TONICS}
-          onChange={(v) => onTonic(Number(v))}
+  <div className="controls" ref={attachFocusRelease}>
+    <section className="studio-section" aria-label="Tuning">
+      <span className="studio-label">tuning</span>
+      <div className="studio-row">
+        <span className="studio-row-label">key</span>
+        {modMode === 'qanun' ? (
+          <span className="studio-hint">naturals C–B — the levers set each note</span>
+        ) : (
+          <KeyPicker value={tonicMidi} onChange={onTonic} />
+        )}
+      </div>
+      {/* Fine-tune: a master detune in cents, ± a semitone. Slider + click-to-reset
+          readout. Shifts the whole instrument's pitch without renaming any note. */}
+      <div className="studio-row">
+        <span className="studio-row-label">fine</span>
+        <input
+          type="range"
+          className="studio-slider"
+          min={-DETUNE_LIMIT_CENTS}
+          max={DETUNE_LIMIT_CENTS}
+          step={1}
+          value={detuneCents}
+          onChange={(e) => onDetuneCents(Number(e.target.value))}
+          aria-label="fine tune in cents"
+          title={`fine tune ${formatCents(detuneCents)}`}
         />
-      </label>
-    )}
-    {/* Fine-tune: a master detune in cents, ± a semitone. Slider + click-to-reset
-        readout. Shifts the whole instrument's pitch without renaming any note. */}
-    <div className="ctrl">
-      <span>fine</span>
-      <input
-        type="range"
-        className="studio-slider"
-        min={-DETUNE_LIMIT_CENTS}
-        max={DETUNE_LIMIT_CENTS}
-        step={1}
-        value={detuneCents}
-        onChange={(e) => onDetuneCents(Number(e.target.value))}
-        aria-label="fine tune in cents"
-        title={`fine tune ${formatCents(detuneCents)}`}
-      />
-      <button
-        type="button"
-        className="detune-readout"
-        onClick={() => onDetuneCents(0)}
-        title="reset fine tune to 0"
-        aria-label={`fine tune ${formatCents(detuneCents)}, click to reset`}
-      >
-        {formatCents(detuneCents)}
-      </button>
-    </div>
-    {/* Tremolo pulse: one rate for both hold shapes (single-note rashsh and the
-        two-note trill — they alternate at the same pulse, so their relationship
-        never changes). Click the readout to reset to the default. */}
-    <div className="ctrl">
-      <span>trem</span>
-      <input
-        type="range"
-        className="studio-slider"
-        min={TREMOLO_HZ_MIN}
-        max={TREMOLO_HZ_MAX}
-        step={0.5}
-        value={tremoloHz}
-        onChange={(e) => onTremoloHz(Number(e.target.value))}
-        aria-label="tremolo speed in strikes per second"
-        title={`tremolo ${tremoloHz} strikes/s`}
-      />
-      <button
-        type="button"
-        className="detune-readout"
-        onClick={() => onTremoloHz(DEFAULT_TREMOLO_HZ)}
-        title={`reset tremolo to ${DEFAULT_TREMOLO_HZ}/s`}
-        aria-label={`tremolo ${tremoloHz} strikes per second, click to reset`}
-      >
-        {tremoloHz}/s
-      </button>
-    </div>
+        <button
+          type="button"
+          className="detune-readout"
+          onClick={() => onDetuneCents(0)}
+          title="reset fine tune to 0"
+          aria-label={`fine tune ${formatCents(detuneCents)}, click to reset`}
+        >
+          {formatCents(detuneCents)}
+        </button>
+      </div>
+    </section>
+
+    <section className="studio-section" aria-label="Strings">
+      <span className="studio-label">strings</span>
+      <div className="studio-row">
+        <span className="studio-row-label">range</span>
+        <StringRange
+          range={fieldRange}
+          lowLabel={rangeLowLabel}
+          highLabel={rangeHighLabel}
+          onEnd={onRangeEnd}
+          onReset={onRangeReset}
+        />
+      </div>
+      {/* Tremolo pulse: one rate for both hold shapes (single-note rashsh and the
+          two-note trill — they alternate at the same pulse, so their relationship
+          never changes). Click the readout to reset to the default. */}
+      <div className="studio-row">
+        <span className="studio-row-label">trem</span>
+        <input
+          type="range"
+          className="studio-slider"
+          min={TREMOLO_HZ_MIN}
+          max={TREMOLO_HZ_MAX}
+          step={0.5}
+          value={tremoloHz}
+          onChange={(e) => onTremoloHz(Number(e.target.value))}
+          aria-label="tremolo speed in strikes per second"
+          title={`tremolo ${tremoloHz} strikes/s`}
+        />
+        <button
+          type="button"
+          className="detune-readout"
+          onClick={() => onTremoloHz(DEFAULT_TREMOLO_HZ)}
+          title={`reset tremolo to ${DEFAULT_TREMOLO_HZ}/s`}
+          aria-label={`tremolo ${tremoloHz} strikes per second, click to reset`}
+        >
+          {tremoloHz}/s
+        </button>
+      </div>
+    </section>
+
     {/* P4a: Studio extras — all opt-in, off by default */}
-    <div className="studio-section">
+    <section className="studio-section" aria-label="Studio">
       <span className="studio-label">studio</span>
 
       {/* Recording */}
@@ -235,16 +268,19 @@ export const Controls = memo(({
           // clamps internally); on blur the display snaps to the real range so
           // it can't sit at e.g. 0 while the metronome actually ticks at 30.
           onBlur={(e) => onMetronomeBpm(clamp(Number(e.target.value) || BPM_MIN, BPM_MIN, BPM_MAX))}
+          // Enter / Escape finish the edit and hand the keys back to the
+          // instrument (a focused text field keeps them otherwise).
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur() }}
           aria-label="metronome BPM"
         />
         <button type="button" className="studio-btn tap-btn" onClick={onTapMetronome}>
           tap
         </button>
       </div>
-    </div>
+    </section>
 
     {/* P4b: MIDI out — off by default */}
-    <div className="studio-section">
+    <section className="studio-section" aria-label="MIDI">
       <span className="studio-label">midi</span>
 
       <div className="studio-row">
@@ -296,6 +332,6 @@ export const Controls = memo(({
           </div>
         </>
       )}
-    </div>
+    </section>
   </div>
 ))

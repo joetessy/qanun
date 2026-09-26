@@ -1,40 +1,36 @@
 import type { MandalState } from '../types'
+import { NATURAL_OFFSETS } from '../degreeLabel'
 
 export const DEGREE_COUNT = 7
 
 export interface MandalDegree {
   degree: number                 // 1..7
+  natural: number                // the unaltered (lever-down) offset — C D E F G A B from a C tonic
   positions: readonly number[]   // ordered low → high (semitone offsets from tonic)
 }
 
-// Qanun-mode mandal positions: each note's full set of useful inflections — every
-// quarter-tone that sits strictly BETWEEN its diatonic neighbours. Together the
-// seven courses reach all 24 quarter-tones, so any common maqam can be spelled
-// from any root (e.g. Rast-on-G needs B½♭ on degree 7 and F½♯ on degree 4, both
-// reachable). The asymmetry is principled, not arbitrary: a note a whole tone
-// from its neighbour gets the chromatic step (♭/♯) plus the quarter between; a
-// note only a SEMITONE from its neighbour (E→F, B→C) has no room for that extra
-// step on the crowded side, so it has one fewer position there. The tonic
-// (degree 1) only rises from natural — it anchors the key, and the pitch just
-// below it is already reachable as degree 7's B½♯.
-//   1 C : C  · C½♯ · C♯
-//   2 D : D♭ · D½♭ · D · D½♯ · D♯
-//   3 E : E♭ · E½♭ · E · E½♯            (no E♯ — that's F)
-//   4 F : F½♭ · F · F½♯ · F♯            (no F♭ — that's E)
-//   5 G : G♭ · G½♭ · G · G½♯ · G♯
-//   6 A : A♭ · A½♭ · A · A½♯ · A♯
-//   7 B : B♭ · B½♭ · B · B½♯            (no B♯ — that's C)
-export const MANDAL_DEGREES: readonly MandalDegree[] = [
-  { degree: 1, positions: [0, 0.5, 1] },
-  { degree: 2, positions: [1, 1.5, 2, 2.5, 3] },
-  { degree: 3, positions: [3, 3.5, 4, 4.5] },
-  { degree: 4, positions: [4.5, 5, 5.5, 6] },
-  { degree: 5, positions: [6, 6.5, 7, 7.5, 8] },
-  { degree: 6, positions: [8, 8.5, 9, 9.5, 10] },
-  { degree: 7, positions: [10, 10.5, 11, 11.5] }
-]
+// How far a lever moves its string either way from natural, in semitones:
+// two quarter-tones.
+export const LEVER_REACH = 1
 
-// Default tuning: Rast on the tonic.
+// Qanun-mode mandal positions: every course reaches two quarter-tones either
+// side of its natural, the same five stops on all seven strings —
+//   ♭ · ½♭ · ♮ · ½♯ · ♯
+// so each lever moves the same way however it's set. The symmetric set keeps
+// the enharmonic stops (E♯ = F, F♭ = E, B♯ = C, C♭ = B): a lever that reaches
+// its neighbour's pitch is ordinary on a real qanun, and it means no string is
+// ever one step short of its partner. Together the courses reach all 24
+// quarter-tones, so any maqam can be spelled from any root.
+export const MANDAL_DEGREES: readonly MandalDegree[] = NATURAL_OFFSETS.map((natural, i) => ({
+  degree: i + 1,
+  natural,
+  positions: [natural - LEVER_REACH, natural - LEVER_REACH / 2, natural, natural + LEVER_REACH / 2, natural + LEVER_REACH]
+}))
+
+// Qanun mode's resting tuning: every lever at natural — C D E F G A B.
+export const NATURAL_STATE: MandalState = [...NATURAL_OFFSETS]
+
+// Jins mode's default tuning: Rast on the tonic.
 export const DEFAULT_RAST_STATE: MandalState = [0, 2, 3.5, 5, 7, 9, 10.5]
 
 export const positionsForDegree = (degree: number): readonly number[] =>

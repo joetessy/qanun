@@ -2,14 +2,15 @@ import { useRef, useState, useCallback } from 'react'
 import { Stage } from './Stage'
 import { StageCover } from './StageCover'
 import { StringField } from './StringField'
-import { LowerJinsSelector } from './LowerJinsSelector'
-import { UpperJinsSwitcher } from './UpperJinsSwitcher'
+import { JinsPicker } from './JinsPicker'
 import { MandalRail } from './MandalRail'
 import { QanunHud } from './QanunHud'
 import { Controls } from './Controls'
 import { Rosette } from './Rosette'
 import { Onboarding } from './Onboarding'
 import { useQanunEngine } from '../hooks/useQanunEngine'
+import { isNaturalState } from '../lib/music/ajnas/isNaturalState'
+import { courseNoteName } from '../lib/music/courseNoteName'
 import { hasOnboarded, setOnboarded } from '../lib/ui/onboardingStorage'
 
 // The instrument. Composes the camera stage, the painted soundboard overlays
@@ -39,6 +40,12 @@ export const Qanun = () => {
   }, [])
   const reopenOnboarding = useCallback(() => setShowOnboarding(true), [])
 
+  // Nothing to reset while every lever already rests on its natural.
+  const leversAtNatural = isNaturalState(engine.mandalState)
+  // The string window's end notes for the range control, e.g. "G3" – "D6".
+  const fieldLow = engine.courses[0]
+  const fieldHigh = engine.courses[engine.courses.length - 1]
+
   return (
     <div className="qanun">
       <header className="qanun-header">
@@ -56,18 +63,19 @@ export const Qanun = () => {
           <span className={engine.modMode === 'qanun' ? 'is-active' : ''}>qanun</span>
         </button>
         <QanunHud reading={engine.reading} modMode={engine.modMode} />
-        {/* Modulation controls inline in the header: Jins mode shows the lower-jins
-            (Q–O) rail first, then the upper-jins (1–5) — the family anchors the
-            maqam, the upper modulates on top of it; Qanun mode swaps in the mandal
-            levers. */}
+        {/* Modulation controls inline in the header, each laid out like the keys
+            that drive it: Jins mode stacks the upper jins (digits 1–9) over the
+            lower jins (Q–O), one column per family; Qanun mode swaps in the
+            mandal levers (1–7 lower over Q–U raise). */}
         <div className="jins-bar">
           {engine.modMode === 'jins' ? (
             <div className="jins-bar-body">
-              <LowerJinsSelector lowerJins={engine.lowerJins} onSelect={engine.setLowerJins} />
-              <UpperJinsSwitcher
-                options={engine.upperJinsOptions}
-                ghammazLabel={engine.ghammazLabel}
-                onSelect={engine.setUpperJins}
+              <JinsPicker
+                lowerJins={engine.lowerJins}
+                upperOptions={engine.upperJinsOptions}
+                ghammazNote={engine.ghammazNote}
+                onLower={engine.setLowerJins}
+                onUpper={engine.setUpperJins}
               />
             </div>
           ) : (
@@ -75,21 +83,34 @@ export const Qanun = () => {
               <div className="mandal-rail-row">
                 <MandalRail
                   mandalState={engine.mandalState}
-                  tonicMidi={engine.tonicMidi}
+                  tonicMidi={engine.fieldTonicMidi}
                   onSetMandal={engine.setMandalAt}
                   onStep={engine.stepMandal}
                   expanded={leversExpanded}
                   onToggleExpand={toggleLevers}
                 />
-                <button
-                  type="button"
-                  className="levers-toggle"
-                  aria-expanded={leversExpanded}
-                  onClick={toggleLevers}
-                  title={leversExpanded ? 'Show only the set note' : 'Show all positions'}
-                >
-                  {leversExpanded ? 'collapse ▴' : 'expand ▾'}
-                </button>
+                <div className="levers-actions">
+                  <button
+                    type="button"
+                    className="levers-toggle"
+                    aria-expanded={leversExpanded}
+                    onClick={toggleLevers}
+                    title={leversExpanded ? 'Show only the set note' : 'Show all positions'}
+                  >
+                    {leversExpanded ? 'collapse ▴' : 'expand ▾'}
+                  </button>
+                  {/* aria-disabled, not disabled: a disabled button drops the
+                      keyboard focus it had the moment it resets the levers. */}
+                  <button
+                    type="button"
+                    className="levers-toggle levers-reset"
+                    onClick={engine.resetMandals}
+                    aria-disabled={leversAtNatural}
+                    title={leversAtNatural ? 'Every lever is natural' : 'Every lever back to natural — C D E F G A B (0)'}
+                  >
+                    <span className="jins-key">0</span> naturals
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -156,6 +177,7 @@ export const Qanun = () => {
           pluckedIndices={engine.pluckedIndices}
           homeDegree={engine.modMode === 'qanun' ? 0 : engine.homeDegree}
           ghammazDegree={engine.modMode === 'qanun' ? 0 : engine.ghammazDegree}
+          landmarkDegree={engine.modMode === 'qanun' ? 1 : 0}
           onPluckCourse={engine.pluckCourse}
           onGlideCourse={engine.glideCourse}
           onHoldCourse={engine.holdCourse}
@@ -183,6 +205,11 @@ export const Qanun = () => {
           onTonic={engine.setTonic}
           detuneCents={engine.detuneCents}
           onDetuneCents={engine.setDetuneCents}
+          fieldRange={engine.fieldRange}
+          rangeLowLabel={courseNoteName({ course: fieldLow, tonicMidi: engine.fieldTonicMidi })}
+          rangeHighLabel={courseNoteName({ course: fieldHigh, tonicMidi: engine.fieldTonicMidi })}
+          onRangeEnd={engine.setFieldRangeEnd}
+          onRangeReset={engine.resetFieldRange}
           tremoloHz={engine.tremoloHz}
           onTremoloHz={engine.setTremoloHz}
           recordingState={engine.recordingState}
